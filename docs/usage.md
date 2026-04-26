@@ -46,6 +46,12 @@ docker compose exec ndx-agent ndx "간단히 준비 완료라고 응답해"
 Docker Desktop Exec tab also works after the container is running. Open the `ndx-agent` container and run:
 
 ```bash
+ndx
+```
+
+That opens the ndx prompt. Submit tasks at `ndx>`, use `/help` for local commands, and `/exit` to leave. You can still run one-shot prompts with:
+
+```bash
 ndx "원하는 작업"
 ```
 
