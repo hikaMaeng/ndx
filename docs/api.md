@@ -38,11 +38,11 @@ Project config overrides global config. `[env]` tables are merged by key.
 
 ## Model API
 
-The OpenAI adapter sends `POST /v1/responses` with:
+The OpenAI-compatible adapter sends `POST /v1/chat/completions` with:
 
 - `model`
-- `instructions`
-- `input`
+- `messages`
 - `tools` containing the local `shell` function schema
-- `parallel_tool_calls = false`
-- `previous_response_id` after the first turn
+- `tool_choice = "auto"`
+
+The adapter keeps chat history in memory for the current CLI run and converts shell results into `role = "tool"` messages.
