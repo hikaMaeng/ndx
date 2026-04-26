@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "start": "node dist/src/cli.js",
-    "deploy": "npm run build && docker compose down --remove-orphans && NDX_GIT_REF=$(git branch --show-current) NDX_GIT_CACHE_BUST=$(git rev-parse HEAD) docker compose build ndx-agent && docker compose run --rm ndx-agent npm test && docker compose run --rm ndx-agent node dist/src/cli.js --mock \"create a file named tmp/ndx-docker-verify.txt with text verified\" && docker compose down --remove-orphans"
+    "deploy": "npm run build && docker compose down --remove-orphans && NDX_GIT_REF=$(git branch --show-current) docker compose build --no-cache ndx-agent && docker compose run --rm --workdir /opt/ndx ndx-agent npm test && docker compose run --rm --workdir /workspace ndx-agent ndx --mock \"create a file named tmp/ndx-docker-verify.txt with text verified\" && docker compose down --remove-orphans"
   },
   "dependencies": {},
   "devDependencies": {

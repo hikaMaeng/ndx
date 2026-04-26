@@ -17,13 +17,12 @@ Verify the Dockerfile builds ndx by cloning a selected remote Git branch instead
 - The feature branch is committed and pushed before Docker remote-clone verification.
 - Docker daemon is running.
 - `NDX_GIT_REF` points to the branch under test.
-- `NDX_GIT_CACHE_BUST` points to the commit under test.
 
 ## Steps
 
 1. Run `npm test` locally before committing.
 2. Commit and push `codex/docker-remote-clone-build`.
-3. Run `NDX_GIT_REF=codex/docker-remote-clone-build NDX_GIT_CACHE_BUST=<commit> docker compose build ndx-agent`.
+3. Run `NDX_GIT_REF=codex/docker-remote-clone-build docker compose build --no-cache ndx-agent`.
 4. Run `docker compose run --rm ndx-agent npm test`.
 5. Run `docker compose run --rm ndx-agent node dist/src/cli.js --mock "create a file named tmp/ndx-docker-verify.txt with text verified"`.
 6. Run `docker compose up -d ndx-agent` and `docker compose exec -T ndx-agent ndx --help`.

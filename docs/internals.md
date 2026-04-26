@@ -22,4 +22,4 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 ## Docker Context
 
-Docker build does not copy source folders from the local build context. The Dockerfile installs Git, clones `NDX_GIT_REPO` at `NDX_GIT_REF`, uses `NDX_GIT_CACHE_BUST` to avoid stale branch-cache builds, then installs dependencies and builds inside the cloned checkout.
+Docker build does not copy source folders from the local build context. The Dockerfile installs Git, clones `https://github.com/hikaMaeng/ndx.git` at `NDX_GIT_REF` into `/opt/ndx`, then installs dependencies and builds inside the cloned checkout. Compose mounts `./docker/volume/workspace` to `/workspace` and `./docker/volume/home-ndx` to `/home/.ndx` for runtime state.

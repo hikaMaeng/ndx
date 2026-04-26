@@ -36,7 +36,7 @@ The active provider comes from settings. Empty provider keys are allowed for loc
 
 ## Docker
 
-`npm run deploy` builds the Docker image from the current pushed Git branch, not from local source folders. Push the feature branch before running deploy.
+`npm run deploy` builds the Docker image from the current pushed Git branch, not from local source folders. Push the feature branch before running deploy. Compose stores runtime workspace and global settings under `./docker/volume`.
 
 ```bash
 npm run deploy
@@ -45,7 +45,7 @@ npm run deploy
 Build another branch explicitly with:
 
 ```bash
-NDX_GIT_REF=codex/example-feature NDX_GIT_CACHE_BUST=$(git rev-parse HEAD) docker compose build ndx-agent
+NDX_GIT_REF=codex/example-feature docker compose build --no-cache ndx-agent
 ```
 
 ## Local OpenAI-Compatible Model
@@ -75,4 +75,4 @@ That opens the ndx prompt. Submit tasks at `ndx>`, use `/help` for local command
 ndx "원하는 작업"
 ```
 
-The default compose service stays alive with `sleep infinity` so interactive exec sessions can start `ndx` on demand.
+The default compose service stays alive with `sleep infinity` so interactive exec sessions can start `ndx` on demand. Files created by the agent persist in `./docker/volume/workspace`, and global settings persist in `./docker/volume/home-ndx`.

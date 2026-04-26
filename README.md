@@ -31,7 +31,7 @@ Use a real model by configuring provider settings in `.ndx/settings.json` or loc
 npm run deploy
 ```
 
-The deploy script builds TypeScript locally, then builds the Docker image by cloning the current pushed Git branch through Docker build args, runs tests in Docker, and executes the mock agent through the shell tool.
+The deploy script builds TypeScript locally, then builds the Docker image by cloning the current pushed Git branch selected by `NDX_GIT_REF`, runs tests in Docker, and executes the mock agent through the shell tool. Runtime workspace and global settings are bind-mounted under `./docker/volume`.
 
 ## License
 
