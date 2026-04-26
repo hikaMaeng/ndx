@@ -39,11 +39,19 @@ Create `.env` from `.env.example` and adjust the endpoint if needed:
 
 ```bash
 cp .env.example .env
-docker compose build ndx-agent
-docker compose up --abort-on-container-exit ndx-agent
+docker compose up -d --build ndx-agent
+docker compose exec ndx-agent ndx "간단히 준비 완료라고 응답해"
 ```
 
-The default compose command uses:
+Docker Desktop Exec tab also works after the container is running. Open the `ndx-agent` container and run:
+
+```bash
+ndx "원하는 작업"
+```
+
+The default compose service stays alive with `sleep infinity` so interactive exec sessions can start `ndx` on demand.
+
+The default compose environment uses:
 
 - `OPENAI_BASE_URL=http://192.168.0.6:12345/v1`
 - `NDX_MODEL=qwen3.6-35b-a3b:mm`

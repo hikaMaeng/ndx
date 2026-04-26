@@ -9,6 +9,8 @@ RUN corepack enable && pnpm install --frozen-lockfile
 COPY src ./src
 COPY tests ./tests
 COPY docs ./docs
-RUN pnpm build
+RUN pnpm build \
+    && chmod +x dist/src/cli.js \
+    && ln -sf /workspace/dist/src/cli.js /usr/local/bin/ndx
 
-CMD ["node", "dist/src/cli.js", "--help"]
+CMD ["sleep", "infinity"]
