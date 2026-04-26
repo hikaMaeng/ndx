@@ -1,32 +1,23 @@
 {
-  "name": "codex-monorepo",
+  "name": "ndx",
+  "version": "0.1.0",
   "private": true,
-  "description": "Tools for repo-wide maintenance.",
+  "type": "module",
+  "description": "TypeScript-first local coding agent.",
+  "bin": {
+    "ndx": "dist/src/cli.js"
+  },
   "scripts": {
-    "format": "prettier --check *.json *.md docs/*.md .github/workflows/*.yml **/*.js",
-    "format:fix": "prettier --write *.json *.md docs/*.md .github/workflows/*.yml **/*.js",
-    "write-hooks-schema": "cargo run --manifest-path ./codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures"
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "start": "node dist/src/cli.js",
+    "deploy": "npm run build && docker compose down --remove-orphans && docker compose build ndx-agent && docker compose run --rm ndx-agent npm test && docker compose run --rm ndx-agent node dist/src/cli.js --mock \"create a file named tmp/ndx-docker-verify.txt with text verified\" && docker compose down --remove-orphans"
   },
+  "dependencies": {},
   "devDependencies": {
-    "prettier": "^3.5.3"
-  },
-  "resolutions": {
-    "@modelcontextprotocol/sdk": "1.26.0",
-    "braces": "^3.0.3",
-    "flatted": "3.4.2",
-    "glob@10.4.5": "10.5.0",
-    "handlebars": "4.7.9",
-    "micromatch": "^4.0.8",
-    "minimatch@3.1.2": "3.1.4",
-    "minimatch@9.0.5": "9.0.7",
-    "path-to-regexp": "8.4.0",
-    "picomatch@2.3.1": "2.3.2",
-    "picomatch@4.0.3": "4.0.4",
-    "rollup": "4.59.0",
-    "semver": "^7.7.1"
-  },
-  "overrides": {
-    "punycode": "^2.3.1"
+    "@types/node": "^20.19.18",
+    "prettier": "^3.5.3",
+    "typescript": "^5.9.2"
   },
   "engines": {
     "node": ">=22",

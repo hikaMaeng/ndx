@@ -1,0 +1,8 @@
+services:
+  ndx-agent:
+    build:
+      context: .
+    image: ndx-agent:local
+    environment:
+      NDX_HOME: /home/ndx/.ndx
+    working_dir: /workspace

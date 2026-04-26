@@ -1,0 +1,9 @@
+.git
+node_modules
+dist
+codex-rs
+codex-cli
+sdk
+third_party
+target
+.DS_Store
