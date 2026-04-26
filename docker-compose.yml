@@ -2,6 +2,10 @@ services:
   ndx-agent:
     build:
       context: .
+      args:
+        NDX_GIT_REPO: ${NDX_GIT_REPO:-https://github.com/hikaMaeng/ndx.git}
+        NDX_GIT_REF: ${NDX_GIT_REF:-main}
+        NDX_GIT_CACHE_BUST: ${NDX_GIT_CACHE_BUST:-manual}
     image: ndx-agent:local
     working_dir: /workspace
     stdin_open: true

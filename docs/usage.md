@@ -36,8 +36,16 @@ The active provider comes from settings. Empty provider keys are allowed for loc
 
 ## Docker
 
+`npm run deploy` builds the Docker image from the current pushed Git branch, not from local source folders. Push the feature branch before running deploy.
+
 ```bash
 npm run deploy
+```
+
+Build another branch explicitly with:
+
+```bash
+NDX_GIT_REF=codex/example-feature NDX_GIT_CACHE_BUST=$(git rev-parse HEAD) docker compose build ndx-agent
 ```
 
 ## Local OpenAI-Compatible Model

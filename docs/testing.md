@@ -16,6 +16,7 @@ npm run deploy
 - Provider/model resolution from settings.
 - `keys` and compatibility `env` merge into the shell tool environment.
 - Mock model plus shell tool execution.
+- Docker remote-clone build using the selected Git branch.
 - Docker build, in-container tests, and in-container mock agent execution.
 
 ## Browser Verification

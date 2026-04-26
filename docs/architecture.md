@@ -20,4 +20,4 @@
 
 ## Docker Flow
 
-`npm run deploy` builds locally, removes previous compose containers, builds `ndx-agent`, runs tests in the image, runs a mock agent command in the image, then tears compose down.
+`npm run deploy` builds locally, removes previous compose containers, passes the current Git branch and commit as Docker build args, builds `ndx-agent` by cloning the remote branch, runs tests in the image, runs a mock agent command in the image, then tears compose down.

@@ -22,4 +22,4 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 ## Docker Context
 
-`.dockerignore` excludes Rust, SDK, and vendored upstream directories. The Docker image contains only the TypeScript runtime, project `.ndx/settings.json`, tests, and docs needed for verification.
+Docker build does not copy source folders from the local build context. The Dockerfile installs Git, clones `NDX_GIT_REPO` at `NDX_GIT_REF`, uses `NDX_GIT_CACHE_BUST` to avoid stale branch-cache builds, then installs dependencies and builds inside the cloned checkout.
