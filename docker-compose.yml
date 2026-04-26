@@ -3,13 +3,6 @@ services:
     build:
       context: .
     image: ndx-agent:local
-    env_file:
-      - .env
-    environment:
-      NDX_HOME: ${NDX_HOME:-/home/ndx/.ndx}
-      NDX_MODEL: ${NDX_MODEL:-qwen3.6-35b-a3b:mm}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://192.168.0.6:12345/v1}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-local}
     working_dir: /workspace
     stdin_open: true
     tty: true

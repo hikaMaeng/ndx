@@ -1,12 +1,20 @@
 # Internals
 
-## Config Cascade
+## Config Loader
 
-`configFiles(cwd)` returns the global config followed by ancestor project configs. `loadConfig(cwd)` reads existing files in that order and merges them into `NdxConfig`.
+`configFiles(cwd)` returns `/home/.ndx/settings.json` followed by the nearest ancestor `.ndx/settings.json` when present. `loadConfig(cwd)` reads those JSON files in order, merges them, then loads `/home/.ndx/search.json` as search rules.
+
+## Settings Merge
+
+Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` are merged by model name.
+
+## Active Provider
+
+`finalizeConfig` resolves `model` to one `models[]` entry, then resolves that entry's `provider` against `providers`. OpenAI-compatible execution reads URL and key from that resolved provider only.
 
 ## Tool Loop
 
-`runAgent` keeps `previous_response_id` when the provider returns one. Tool outputs use Responses API `function_call_output` items with the original `call_id`.
+`runAgent` keeps `previous_response_id` when the provider returns one. Tool outputs use Responses-style `function_call_output` items internally and are converted to chat completions `role = "tool"` messages by the OpenAI-compatible adapter.
 
 ## Mock Client
 
@@ -14,4 +22,4 @@
 
 ## Docker Context
 
-`.dockerignore` excludes Rust, SDK, and vendored upstream directories. The Docker image contains only the TypeScript runtime, tests, and docs needed for verification.
+`.dockerignore` excludes Rust, SDK, and vendored upstream directories. The Docker image contains only the TypeScript runtime, project `.ndx/settings.json`, tests, and docs needed for verification.

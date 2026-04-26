@@ -5,11 +5,13 @@ ndx is being converted from the upstream Rust Codex codebase into a TypeScript-f
 ## Current Contract
 
 - `src/cli.ts` is the active CLI entrypoint.
-- `/home/ndx/.ndx/config.toml` is the default global config path.
-- Project-local config is discovered from `.ndx/config.toml` files from filesystem root to the current working directory.
-- `[env]` entries in config are injected into shell tool executions.
-- `--mock` runs the full agent/tool loop without an OpenAI API key.
-- Real model execution uses the OpenAI Responses API and the local `shell` function tool.
+- `ndx` opens an interactive prompt when run without arguments from a TTY.
+- `/home/.ndx/settings.json` is the fixed global settings path.
+- Project-local settings are discovered from the nearest `.ndx/settings.json` ancestor.
+- `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
+- `keys` entries in settings are injected into shell tool executions.
+- `--mock` runs the full agent/tool loop without a provider key.
+- Real model execution uses an OpenAI-compatible chat completions provider declared in settings.
 
 ## Preserved Baseline
 

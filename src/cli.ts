@@ -156,7 +156,7 @@ function printInteractiveHelp(): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nConfig cascade:\n  /home/ndx/.ndx/config.toml, then every project .ndx/config.toml from root to cwd.\n\nCommon fields:\n  model = \"gpt-5\"\n  instructions = \"...\"\n  max_turns = 8\n  shell_timeout_ms = 120000\n\n  [env]\n  NAME = \"value\"`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 

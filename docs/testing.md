@@ -9,9 +9,12 @@ npm run deploy
 
 ## Coverage
 
-- Config home resolution.
-- Global plus project `.ndx/config.toml` cascade.
-- `[env]` merge precedence.
+- Fixed global `/home/.ndx/settings.json` path.
+- Nearest project `.ndx/settings.json` discovery.
+- Global plus project settings merge precedence.
+- Global `/home/.ndx/search.json` rule loading.
+- Provider/model resolution from settings.
+- `keys` and compatibility `env` merge into the shell tool environment.
 - Mock model plus shell tool execution.
 - Docker build, in-container tests, and in-container mock agent execution.
 

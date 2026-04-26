@@ -23,7 +23,7 @@ npm test
 node dist/src/cli.js --mock "create a file named tmp/verify.txt with text verified"
 ```
 
-Use a real model by setting `OPENAI_API_KEY` and running without `--mock`.
+Use a real model by configuring provider settings in `.ndx/settings.json` or local global `/home/.ndx/settings.json`, then running without `--mock`.
 
 ## Docker Verification
 

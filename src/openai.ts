@@ -45,13 +45,14 @@ export class OpenAiResponsesClient implements ModelClient {
   private readonly config: NdxConfig;
   private readonly messages: ChatMessage[];
 
-  constructor(config: NdxConfig, env: NodeJS.ProcessEnv = process.env) {
-    const apiKey = env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENAI_API_KEY is required unless --mock is used");
+  constructor(config: NdxConfig) {
+    if (config.activeProvider.type !== "openai") {
+      throw new Error(
+        `provider type ${config.activeProvider.type} is not supported by the OpenAI adapter`,
+      );
     }
-    this.apiKey = apiKey;
-    this.baseUrl = env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    this.apiKey = config.activeProvider.key;
+    this.baseUrl = config.activeProvider.url.replace(/\/$/, "");
     this.config = config;
     this.messages = [{ role: "system", content: config.instructions }];
   }
@@ -61,10 +62,7 @@ export class OpenAiResponsesClient implements ModelClient {
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: this.headers(),
       body: JSON.stringify({
         model: this.config.model,
         messages: this.messages,
@@ -86,6 +84,16 @@ export class OpenAiResponsesClient implements ModelClient {
       tool_calls: message.tool_calls,
     });
     return normalizeChatResponse(payload);
+  }
+
+  private headers(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.apiKey.length > 0) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    return headers;
   }
 
   private appendInput(input: unknown): void {

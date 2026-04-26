@@ -11,8 +11,37 @@ const baseConfig: NdxConfig = {
   model: "mock",
   instructions: "test",
   env: {},
+  keys: {},
   maxTurns: 4,
   shellTimeoutMs: 30_000,
+  providers: {
+    mock: {
+      type: "openai",
+      key: "",
+      url: "http://localhost/v1",
+    },
+  },
+  models: [
+    {
+      name: "mock",
+      provider: "mock",
+    },
+  ],
+  activeModel: {
+    name: "mock",
+    provider: "mock",
+  },
+  activeProvider: {
+    type: "openai",
+    key: "",
+    url: "http://localhost/v1",
+  },
+  permissions: {
+    defaultMode: "danger-full-access",
+  },
+  websearch: {},
+  search: {},
+  mcp: {},
 };
 
 test("mock agent exercises shell tool and completes", async () => {
