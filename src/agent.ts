@@ -1,5 +1,5 @@
 import { runShell, type ShellArgs } from "./tools/shell.js";
-import type { ModelClient, NdxConfig } from "./types.js";
+import type { ModelClient, NdxConfig, TokenUsage } from "./types.js";
 
 export interface AgentRunOptions {
   cwd: string;
@@ -12,7 +12,8 @@ export interface AgentRunOptions {
 export type AgentEvent =
   | { type: "model_text"; text: string }
   | { type: "tool_call"; name: string; arguments: string }
-  | { type: "tool_result"; output: string };
+  | { type: "tool_result"; output: string }
+  | { type: "token_count"; usage: TokenUsage };
 
 export async function runAgent(options: AgentRunOptions): Promise<string> {
   let input: unknown = options.prompt;
@@ -25,6 +26,9 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
     if (response.text) {
       finalText = response.text;
       options.onEvent?.({ type: "model_text", text: response.text });
+    }
+    if (response.usage !== undefined) {
+      options.onEvent?.({ type: "token_count", usage: response.usage });
     }
     if (response.toolCalls.length === 0) {
       return finalText;

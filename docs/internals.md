@@ -16,6 +16,14 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 `runAgent` keeps `previous_response_id` when the provider returns one. Tool outputs use Responses-style `function_call_output` items internally and are converted to chat completions `role = "tool"` messages by the OpenAI-compatible adapter.
 
+## Runtime Session
+
+`AgentRuntime` wraps `runAgent` with a session-oriented protocol. It emits `session_configured` once per runtime instance, then emits `turn_started`, model text, tool call/result, optional token usage, and `turn_complete` for every user prompt. Interrupt submissions emit `turn_aborted`.
+
+Runtime errors are classified into `unauthorized`, `bad_request`, `rate_limited`, `server_error`, `connection_failed`, or `unknown` so future retry and approval flows can be implemented without changing event consumers.
+
+The current interrupt support records and emits the abort contract. It does not yet cancel an in-flight process tree; that belongs to the later execution/permissions branches.
+
 ## Mock Client
 
 `MockModelClient` emits one `shell` call on the first turn and final text on the second turn. It is intentionally deterministic so Docker verification does not depend on external APIs.

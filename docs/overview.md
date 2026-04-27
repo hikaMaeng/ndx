@@ -5,6 +5,8 @@ ndx is being converted from the upstream Rust Codex codebase into a TypeScript-f
 ## Current Contract
 
 - `src/cli.ts` is the active CLI entrypoint.
+- CLI one-shot and interactive modes both run through `AgentRuntime`.
+- `AgentRuntime` exposes a session/turn/submission/event protocol that future TUI, app-server, and tool registry work will reuse.
 - `ndx` opens an interactive prompt when run without arguments from a TTY.
 - `/home/.ndx/settings.json` is the fixed global settings path.
 - Project-local settings are discovered from the nearest `.ndx/settings.json` ancestor.

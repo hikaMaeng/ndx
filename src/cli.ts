@@ -3,10 +3,11 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
-import { runAgent } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { MockModelClient } from "./mock-client.js";
 import { OpenAiResponsesClient } from "./openai.js";
+import { AgentRuntime } from "./runtime.js";
+import type { RuntimeEvent } from "./protocol.js";
 import type { ModelClient, NdxConfig } from "./types.js";
 
 interface CliArgs {
@@ -35,20 +36,33 @@ async function main(): Promise<void> {
   }
 
   if (args.interactive) {
-    await runInteractive({ args, config });
+    await runInteractive({ args, config, sources });
     return;
   }
 
   const prompt = args.prompt ?? readStdin();
   const client = createClient(args.mock, config);
-  await runPrompt(args.cwd, config, client, prompt);
+  const runtime = new AgentRuntime({
+    cwd: args.cwd,
+    config,
+    client,
+    sources,
+  });
+  await runPrompt(runtime, prompt);
 }
 
 async function runInteractive(options: {
   args: CliArgs;
   config: NdxConfig;
+  sources: string[];
 }): Promise<void> {
   const client = createClient(options.args.mock, options.config);
+  const runtime = new AgentRuntime({
+    cwd: options.args.cwd,
+    config: options.config,
+    client,
+    sources: options.sources,
+  });
   const rl = createInterface({ input, output });
 
   printWelcome(options.config);
@@ -65,35 +79,27 @@ async function runInteractive(options: {
         printInteractiveHelp();
         continue;
       }
-      await runPrompt(options.args.cwd, options.config, client, prompt);
+      await runPrompt(runtime, prompt);
     }
   } finally {
     rl.close();
   }
 }
 
-async function runPrompt(
-  cwd: string,
-  config: NdxConfig,
-  client: ModelClient,
-  prompt: string,
-): Promise<void> {
-  const text = await runAgent({
-    cwd,
-    config,
-    client,
-    prompt,
-    onEvent(event) {
-      if (event.type === "tool_call") {
-        console.error(`[tool:${event.name}] ${event.arguments}`);
-      }
-      if (event.type === "tool_result") {
-        console.error(`[tool:result] ${event.output}`);
-      }
-    },
-  });
+async function runPrompt(runtime: AgentRuntime, prompt: string): Promise<void> {
+  const text = await runtime.runPrompt(prompt, printRuntimeEvent);
   if (text) {
     console.log(text);
+  }
+}
+
+function printRuntimeEvent(event: RuntimeEvent): void {
+  const msg = event.msg;
+  if (msg.type === "tool_call") {
+    console.error(`[tool:${msg.name}] ${msg.arguments}`);
+  }
+  if (msg.type === "tool_result") {
+    console.error(`[tool:result] ${msg.output}`);
   }
 }
 

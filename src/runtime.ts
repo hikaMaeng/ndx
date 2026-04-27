@@ -1,0 +1,225 @@
+import { randomUUID } from "node:crypto";
+import { runAgent, type AgentEvent } from "./agent.js";
+import { classifyModelError } from "./errors.js";
+import type { RuntimeEvent, RuntimeEventMsg, Submission } from "./protocol.js";
+import type { ModelClient, NdxConfig } from "./types.js";
+
+export interface AgentRuntimeOptions {
+  cwd: string;
+  config: NdxConfig;
+  client: ModelClient;
+  sources?: string[];
+}
+
+export type RuntimeEventHandler = (event: RuntimeEvent) => void;
+
+export class AgentRuntime {
+  readonly sessionId = randomUUID();
+
+  private readonly cwd: string;
+  private readonly config: NdxConfig;
+  private readonly client: ModelClient;
+  private readonly sources: string[];
+  private configured = false;
+  private currentTurnId: string | undefined;
+  private interruptedReason: string | undefined;
+  private readonly abortedTurnIds = new Set<string>();
+
+  constructor(options: AgentRuntimeOptions) {
+    this.cwd = options.cwd;
+    this.config = options.config;
+    this.client = options.client;
+    this.sources = options.sources ?? [];
+  }
+
+  async submit(
+    submission: Submission,
+    onEvent?: RuntimeEventHandler,
+  ): Promise<string | undefined> {
+    this.ensureConfigured(onEvent);
+
+    if (submission.op.type === "interrupt") {
+      const reason = submission.op.reason ?? "interrupted";
+      this.interrupt(reason, onEvent);
+      return undefined;
+    }
+
+    const turnId = submission.id;
+    const cwd = submission.op.cwd ?? this.cwd;
+    this.currentTurnId = turnId;
+    this.interruptedReason = undefined;
+    this.abortedTurnIds.delete(turnId);
+    this.emit(
+      {
+        type: "turn_started",
+        sessionId: this.sessionId,
+        turnId,
+        prompt: submission.op.prompt,
+        cwd,
+      },
+      onEvent,
+    );
+
+    try {
+      const finalText = await runAgent({
+        cwd,
+        config: this.config,
+        client: this.client,
+        prompt: submission.op.prompt,
+        onEvent: (event) => this.forwardAgentEvent(turnId, event, onEvent),
+      });
+
+      if (this.interruptedReason !== undefined) {
+        this.emitTurnAborted(turnId, this.interruptedReason, onEvent);
+        return undefined;
+      }
+
+      this.emit(
+        {
+          type: "turn_complete",
+          sessionId: this.sessionId,
+          turnId,
+          finalText,
+        },
+        onEvent,
+      );
+      return finalText;
+    } catch (error) {
+      const classified = classifyModelError(error);
+      this.emit(
+        {
+          type: "error",
+          sessionId: this.sessionId,
+          turnId,
+          message: classified.message,
+          code: classified.code,
+          recoverable: classified.recoverable,
+        },
+        onEvent,
+      );
+      throw error;
+    } finally {
+      if (this.currentTurnId === turnId) {
+        this.currentTurnId = undefined;
+      }
+    }
+  }
+
+  async runPrompt(
+    prompt: string,
+    onEvent?: RuntimeEventHandler,
+  ): Promise<string> {
+    return (
+      (await this.submit(
+        {
+          id: randomUUID(),
+          op: { type: "user_turn", prompt, cwd: this.cwd },
+        },
+        onEvent,
+      )) ?? ""
+    );
+  }
+
+  interrupt(reason = "interrupted", onEvent?: RuntimeEventHandler): void {
+    this.interruptedReason = reason;
+    this.emitTurnAborted(this.currentTurnId, reason, onEvent);
+  }
+
+  private ensureConfigured(onEvent?: RuntimeEventHandler): void {
+    if (this.configured) {
+      return;
+    }
+    this.configured = true;
+    this.emit(
+      {
+        type: "session_configured",
+        sessionId: this.sessionId,
+        model: this.config.model,
+        cwd: this.cwd,
+        approvalPolicy: "never",
+        sandboxMode: this.config.permissions.defaultMode,
+        sources: this.sources,
+      },
+      onEvent,
+    );
+  }
+
+  private forwardAgentEvent(
+    turnId: string,
+    event: AgentEvent,
+    onEvent?: RuntimeEventHandler,
+  ): void {
+    if (event.type === "model_text") {
+      this.emit(
+        {
+          type: "agent_message",
+          sessionId: this.sessionId,
+          turnId,
+          text: event.text,
+        },
+        onEvent,
+      );
+      return;
+    }
+    if (event.type === "tool_call") {
+      this.emit(
+        {
+          type: "tool_call",
+          sessionId: this.sessionId,
+          turnId,
+          name: event.name,
+          arguments: event.arguments,
+        },
+        onEvent,
+      );
+      return;
+    }
+    if (event.type === "tool_result") {
+      this.emit(
+        {
+          type: "tool_result",
+          sessionId: this.sessionId,
+          turnId,
+          output: event.output,
+        },
+        onEvent,
+      );
+      return;
+    }
+    this.emit(
+      {
+        type: "token_count",
+        sessionId: this.sessionId,
+        turnId,
+        usage: event.usage,
+      },
+      onEvent,
+    );
+  }
+
+  private emitTurnAborted(
+    turnId: string | undefined,
+    reason: string,
+    onEvent?: RuntimeEventHandler,
+  ): void {
+    if (turnId !== undefined) {
+      if (this.abortedTurnIds.has(turnId)) {
+        return;
+      }
+      this.abortedTurnIds.add(turnId);
+    }
+    this.emit(
+      {
+        type: "turn_aborted",
+        sessionId: this.sessionId,
+        turnId,
+        reason,
+      },
+      onEvent,
+    );
+  }
+
+  private emit(msg: RuntimeEventMsg, onEvent?: RuntimeEventHandler): void {
+    onEvent?.({ id: randomUUID(), msg });
+  }
+}

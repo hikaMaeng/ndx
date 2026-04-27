@@ -72,9 +72,16 @@ export interface ModelResponse {
   id?: string;
   text: string;
   toolCalls: ModelToolCall[];
+  usage?: TokenUsage;
   raw: unknown;
 }
 
 export interface ModelClient {
   create(input: unknown, previousResponseId?: string): Promise<ModelResponse>;
+}
+
+export interface TokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 }

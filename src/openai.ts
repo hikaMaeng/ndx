@@ -24,6 +24,11 @@ interface ChatCompletionsPayload {
   choices?: Array<{
     message?: ChatMessagePayload;
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
 }
 
 interface ChatMessage {
@@ -135,6 +140,14 @@ export function normalizeChatResponse(
   return {
     text: message.content ?? "",
     toolCalls,
+    usage:
+      payload.usage === undefined
+        ? undefined
+        : {
+            inputTokens: payload.usage.prompt_tokens,
+            outputTokens: payload.usage.completion_tokens,
+            totalTokens: payload.usage.total_tokens,
+          },
     raw: payload,
   };
 }
