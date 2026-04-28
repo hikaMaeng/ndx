@@ -31,6 +31,65 @@ export interface SearchRules {
   [key: string]: unknown;
 }
 
+export interface ToolRuntimeSettings {
+  imageGeneration: boolean;
+}
+
+export interface McpToolSettings {
+  name: string;
+  description?: string;
+  inputSchema?: JsonObject;
+  outputSchema?: JsonObject;
+  deferLoading?: boolean;
+}
+
+export interface McpResourceSettings {
+  uri: string;
+  name?: string;
+  description?: string;
+  mimeType?: string;
+  text?: string;
+}
+
+export interface McpResourceTemplateSettings {
+  uriTemplate: string;
+  name?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface McpServerSettings {
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  env?: EnvMap;
+  namespace?: string;
+  description?: string;
+  tools?: McpToolSettings[];
+  resources?: McpResourceSettings[];
+  resourceTemplates?: McpResourceTemplateSettings[];
+}
+
+export type McpSettings = Record<string, McpServerSettings>;
+
+export interface PluginToolSettings {
+  name: string;
+  description?: string;
+  inputSchema?: JsonObject;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  deferLoading?: boolean;
+}
+
+export interface PluginSettings {
+  id: string;
+  name?: string;
+  description?: string;
+  namespace?: string;
+  tools?: PluginToolSettings[];
+}
+
 export interface NdxConfig {
   model: string;
   instructions: string;
@@ -45,7 +104,9 @@ export interface NdxConfig {
   permissions: PermissionSettings;
   websearch: WebSearchSettings;
   search: SearchRules;
-  mcp: JsonObject;
+  mcp: McpSettings;
+  plugins: PluginSettings[];
+  tools: ToolRuntimeSettings;
 }
 
 export interface LoadedConfig {
@@ -77,7 +138,11 @@ export interface ModelResponse {
 }
 
 export interface ModelClient {
-  create(input: unknown, previousResponseId?: string): Promise<ModelResponse>;
+  create(
+    input: unknown,
+    previousResponseId?: string,
+    tools?: unknown[],
+  ): Promise<ModelResponse>;
 }
 
 export interface TokenUsage {

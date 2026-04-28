@@ -1,4 +1,5 @@
-import { runShell, type ShellArgs } from "./tools/shell.js";
+import { createToolRegistry } from "./tools/registry.js";
+import { unknownArgs } from "./tools/schema.js";
 import type { ModelClient, NdxConfig, TokenUsage } from "./types.js";
 
 export interface AgentRunOptions {
@@ -19,9 +20,14 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
   let input: unknown = options.prompt;
   let previousResponseId: string | undefined;
   let finalText = "";
+  const registry = createToolRegistry(options.config);
 
   for (let turn = 0; turn < options.config.maxTurns; turn += 1) {
-    const response = await options.client.create(input, previousResponseId);
+    const response = await options.client.create(
+      input,
+      previousResponseId,
+      registry.schemas(),
+    );
     previousResponseId = response.id ?? previousResponseId;
     if (response.text) {
       finalText = response.text;
@@ -41,21 +47,17 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
         name: call.name,
         arguments: call.arguments,
       });
-      if (call.name !== "shell") {
-        outputs.push({
-          type: "function_call_output",
-          call_id: call.callId,
-          output: `unsupported tool: ${call.name}`,
-        });
-        continue;
-      }
-      const args = parseShellArgs(call.arguments);
-      const result = await runShell(args, {
-        cwd: options.cwd,
-        env: options.config.env,
-        timeoutMs: options.config.shellTimeoutMs,
-      });
-      const output = JSON.stringify(result);
+      const result = await registry.execute(
+        call.name,
+        unknownArgs(call.arguments),
+        {
+          cwd: options.cwd,
+          config: options.config,
+          env: options.config.env,
+          timeoutMs: options.config.shellTimeoutMs,
+        },
+      );
+      const output = result.output;
       options.onEvent?.({ type: "tool_result", output });
       outputs.push({
         type: "function_call_output",
@@ -67,17 +69,4 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
   }
 
   throw new Error(`agent stopped after max_turns=${options.config.maxTurns}`);
-}
-
-function parseShellArgs(raw: string): ShellArgs {
-  const parsed = JSON.parse(raw) as Partial<ShellArgs>;
-  if (!parsed.command || typeof parsed.command !== "string") {
-    throw new Error("shell tool call requires a string command");
-  }
-  return {
-    command: parsed.command,
-    cwd: typeof parsed.cwd === "string" ? parsed.cwd : undefined,
-    timeoutMs:
-      typeof parsed.timeoutMs === "number" ? parsed.timeoutMs : undefined,
-  };
 }

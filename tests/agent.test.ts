@@ -42,6 +42,8 @@ const baseConfig: NdxConfig = {
   websearch: {},
   search: {},
   mcp: {},
+  plugins: [],
+  tools: { imageGeneration: false },
 };
 
 test("mock agent exercises shell tool and completes", async () => {

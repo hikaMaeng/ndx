@@ -4,11 +4,15 @@ import type {
   EnvMap,
   JsonObject,
   LoadedConfig,
+  McpServerSettings,
+  McpSettings,
   ModelSettings,
   NdxConfig,
   PermissionSettings,
+  PluginSettings,
   ProviderSettings,
   SearchRules,
+  ToolRuntimeSettings,
   WebSearchSettings,
 } from "./types.js";
 
@@ -31,7 +35,9 @@ interface PartialSettings {
   permissions?: Partial<PermissionSettings>;
   websearch?: WebSearchSettings;
   search?: SearchRules;
-  mcp?: JsonObject;
+  mcp?: McpSettings;
+  plugins?: PluginSettings[];
+  tools?: Partial<ToolRuntimeSettings>;
   keys?: EnvMap;
   env?: EnvMap;
 }
@@ -112,6 +118,8 @@ function defaultSettings(): PartialSettings {
     websearch: { provider: "tavily", apiKey: "" },
     search: {},
     mcp: {},
+    plugins: [],
+    tools: { imageGeneration: false },
     keys: {},
     env: {},
   };
@@ -142,6 +150,9 @@ function parseSettings(contents: string, file: string): PartialSettings {
   assertOptionalEnvMap(parsed.env, "env", file);
   assertProviders(parsed.providers, file);
   assertModels(parsed.models, file);
+  assertMcp(parsed.mcp, file);
+  assertPlugins(parsed.plugins, file);
+  assertTools(parsed.tools, file);
   return parsed;
 }
 
@@ -190,6 +201,12 @@ function mergeSettings(target: PartialSettings, source: PartialSettings): void {
   }
   if (source.mcp !== undefined) {
     target.mcp = { ...(target.mcp ?? {}), ...source.mcp };
+  }
+  if (source.plugins !== undefined) {
+    target.plugins = [...(target.plugins ?? []), ...source.plugins];
+  }
+  if (source.tools !== undefined) {
+    target.tools = { ...(target.tools ?? {}), ...source.tools };
   }
   if (source.keys !== undefined) {
     target.keys = { ...(target.keys ?? {}), ...source.keys };
@@ -244,7 +261,95 @@ function finalizeConfig(settings: PartialSettings): NdxConfig {
     websearch: settings.websearch ?? {},
     search: settings.search ?? {},
     mcp: settings.mcp ?? {},
+    plugins: settings.plugins ?? [],
+    tools: {
+      imageGeneration: settings.tools?.imageGeneration ?? false,
+    },
   };
+}
+
+function assertMcp(mcp: McpSettings | undefined, file: string): void {
+  if (mcp === undefined) {
+    return;
+  }
+  if (!isObject(mcp)) {
+    throw new Error(`mcp in ${file} must be an object`);
+  }
+  for (const [serverName, server] of Object.entries(mcp)) {
+    if (!isObject(server)) {
+      throw new Error(`mcp.${serverName} in ${file} must be an object`);
+    }
+    const settings = server as McpServerSettings;
+    assertOptionalString(settings.command, `mcp.${serverName}.command`, file);
+    assertOptionalString(settings.cwd, `mcp.${serverName}.cwd`, file);
+    assertOptionalString(
+      settings.namespace,
+      `mcp.${serverName}.namespace`,
+      file,
+    );
+    assertOptionalString(
+      settings.description,
+      `mcp.${serverName}.description`,
+      file,
+    );
+    assertOptionalStringArray(settings.args, `mcp.${serverName}.args`, file);
+    assertOptionalEnvMap(settings.env, `mcp.${serverName}.env`, file);
+    assertOptionalArray(settings.tools, `mcp.${serverName}.tools`, file);
+    assertOptionalArray(
+      settings.resources,
+      `mcp.${serverName}.resources`,
+      file,
+    );
+    assertOptionalArray(
+      settings.resourceTemplates,
+      `mcp.${serverName}.resourceTemplates`,
+      file,
+    );
+  }
+}
+
+function assertPlugins(
+  plugins: PluginSettings[] | undefined,
+  file: string,
+): void {
+  if (plugins === undefined) {
+    return;
+  }
+  if (!Array.isArray(plugins)) {
+    throw new Error(`plugins in ${file} must be an array`);
+  }
+  for (const [index, plugin] of plugins.entries()) {
+    if (!isObject(plugin)) {
+      throw new Error(`plugins[${index}] in ${file} must be an object`);
+    }
+    assertOptionalString(plugin.id, `plugins[${index}].id`, file);
+    assertOptionalString(plugin.name, `plugins[${index}].name`, file);
+    assertOptionalString(
+      plugin.description,
+      `plugins[${index}].description`,
+      file,
+    );
+    assertOptionalString(plugin.namespace, `plugins[${index}].namespace`, file);
+    assertOptionalArray(plugin.tools, `plugins[${index}].tools`, file);
+  }
+}
+
+function assertTools(
+  tools: Partial<ToolRuntimeSettings> | undefined,
+  file: string,
+): void {
+  if (tools === undefined) {
+    return;
+  }
+  if (!isObject(tools)) {
+    throw new Error(`tools in ${file} must be an object`);
+  }
+  if (
+    tools.imageGeneration !== undefined &&
+    typeof tools.imageGeneration !== "boolean"
+  ) {
+    throw new Error(`tools.imageGeneration in ${file} must be a boolean`);
+  }
 }
 
 function assertProviders(
@@ -308,6 +413,29 @@ function assertOptionalInteger(
     (typeof value !== "number" || !Number.isInteger(value) || value < 0)
   ) {
     throw new Error(`${field} in ${file} must be a non-negative integer`);
+  }
+}
+
+function assertOptionalStringArray(
+  value: string[] | undefined,
+  field: string,
+  file: string,
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`${field} in ${file} must be an array of strings`);
+  }
+}
+
+function assertOptionalArray(
+  value: unknown[] | undefined,
+  field: string,
+  file: string,
+): void {
+  if (value !== undefined && !Array.isArray(value)) {
+    throw new Error(`${field} in ${file} must be an array`);
   }
 }
 

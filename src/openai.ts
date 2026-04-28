@@ -1,4 +1,3 @@
-import { shellToolSchema } from "./tools/shell.js";
 import type {
   ModelClient,
   ModelResponse,
@@ -62,7 +61,11 @@ export class OpenAiResponsesClient implements ModelClient {
     this.messages = [{ role: "system", content: config.instructions }];
   }
 
-  async create(input: unknown): Promise<ModelResponse> {
+  async create(
+    input: unknown,
+    _previousResponseId?: string,
+    tools: unknown[] = [],
+  ): Promise<ModelResponse> {
     this.appendInput(input);
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -71,7 +74,7 @@ export class OpenAiResponsesClient implements ModelClient {
       body: JSON.stringify({
         model: this.config.model,
         messages: this.messages,
-        tools: [chatToolSchema()],
+        tools,
         tool_choice: "auto",
       }),
     });
@@ -149,17 +152,5 @@ export function normalizeChatResponse(
             totalTokens: payload.usage.total_tokens,
           },
     raw: payload,
-  };
-}
-
-function chatToolSchema(): Record<string, unknown> {
-  const schema = shellToolSchema();
-  return {
-    type: "function",
-    function: {
-      name: schema.name,
-      description: schema.description,
-      parameters: schema.parameters,
-    },
   };
 }

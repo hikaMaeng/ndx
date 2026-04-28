@@ -70,7 +70,38 @@ The OpenAI-compatible adapter sends `POST {provider.url}/chat/completions` with:
 
 - `model`
 - `messages`
-- `tools` containing the local `shell` function schema
+- `tools` containing the TypeScript tool registry function schemas
 - `tool_choice = "auto"`
 
-If `provider.key` is an empty string, no `Authorization` header is sent. The adapter keeps chat history in memory for the current CLI run and converts shell results into `role = "tool"` messages.
+If `provider.key` is an empty string, no `Authorization` header is sent. The adapter keeps chat history in memory for the current CLI run and converts tool results into `role = "tool"` messages.
+
+## Built-In Tools
+
+The TypeScript registry ports the Rust Codex default local tool surface as function tools:
+
+| Tool                                                                     | Contract                                                                                         |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `shell`                                                                  | Run a local shell command with `command`, optional `cwd`, and optional `timeoutMs`.              |
+| `shell_command`                                                          | Run a shell script with Rust-compatible `command`, `workdir`, `timeout_ms`, and `login` fields.  |
+| `exec_command`                                                           | Run a command and return output or a `session_id` for ongoing interaction.                       |
+| `write_stdin`                                                            | Write to or poll an `exec_command` session.                                                      |
+| `update_plan`                                                            | Record a structured task plan.                                                                   |
+| `request_user_input`                                                     | Exposed for parity; returns unavailable in the non-interactive CLI.                              |
+| `request_permissions`                                                    | Exposed for parity; returns denied because no approval client exists.                            |
+| `apply_patch`                                                            | Invokes the local `apply_patch` command with an `input` patch string.                            |
+| `list_dir`                                                               | List local directory entries with offset, limit, and depth controls.                             |
+| `view_image`                                                             | Return a data URL for a local image path.                                                        |
+| `list_mcp_resources`                                                     | List configured static MCP resources.                                                            |
+| `list_mcp_resource_templates`                                            | List configured static MCP resource templates.                                                   |
+| `read_mcp_resource`                                                      | Read a configured static MCP resource.                                                           |
+| `spawn_agent`, `send_input`, `resume_agent`, `wait_agent`, `close_agent` | Exposed for Rust Codex parity; return unavailable until a TypeScript multi-agent backend exists. |
+| `tool_search`                                                            | Search currently registered tool metadata.                                                       |
+| `tool_suggest`                                                           | Exposed for plugin suggestion parity; returns a non-interactive suggestion result.               |
+
+`web_search` is added when `websearch.provider` is set. It uses Tavily-compatible API settings. `image_generation` is added only when `tools.imageGeneration` is true and currently returns a backend-required error.
+
+## MCP And Plugin Tools
+
+Configured MCP server tools are exposed as `mcp__<server>__<tool>` unless the server entry defines `namespace`. Static schemas come from `mcp.<server>.tools[]`; command-backed stdio calls use the same server entry's `command`, `args`, `cwd`, and `env`.
+
+Configured plugin tools are exposed as `plugin__<id>__<tool>` unless the plugin entry defines `namespace`. Plugin tool commands receive serialized arguments through `NDX_TOOL_ARGS`.

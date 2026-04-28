@@ -14,7 +14,9 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 ## Tool Loop
 
-`runAgent` keeps `previous_response_id` when the provider returns one. Tool outputs use Responses-style `function_call_output` items internally and are converted to chat completions `role = "tool"` messages by the OpenAI-compatible adapter.
+`runAgent` builds a `ToolRegistry` once per run and passes the registry's Chat Completions-compatible schemas to every model call. Tool outputs use Responses-style `function_call_output` items internally and are converted to chat completions `role = "tool"` messages by the OpenAI-compatible adapter.
+
+The registry owns built-in tool definitions and dispatch. MCP and plugin tools are appended from settings, then exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
 
 ## Runtime Session
 

@@ -16,6 +16,8 @@ npm run deploy
 - Provider/model resolution from settings.
 - `keys` and compatibility `env` merge into the shell tool environment.
 - Mock model plus shell tool execution.
+- Tool registry exposure for Rust Codex default tools.
+- Configured MCP and plugin tool schema exposure.
 - Runtime session event order for session, turn, tool, model message, and completion.
 - Runtime interrupt event contract.
 - Provider error classification for non-retryable and retryable failures.

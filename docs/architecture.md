@@ -10,7 +10,12 @@
 - `src/agent.ts`: Responses-style model/tool loop.
 - `src/openai.ts`: OpenAI-compatible chat completions adapter and response normalization.
 - `src/mock-client.ts`: deterministic model client for Docker and unit tests.
-- `src/tools/shell.ts`: shell tool schema and process execution.
+- `src/tools/registry.ts`: Rust Codex-style tool registry for built-in, MCP, and plugin tools.
+- `src/tools/local/`: shell, shell_command, exec_command, and write_stdin execution.
+- `src/tools/filesystem/`: list_dir and view_image tools.
+- `src/tools/mcp/`: configured MCP tool, resource, and stdio call support.
+- `src/tools/plugins/`: configured plugin tool schema and command execution.
+- `src/tools/patch/`, `src/tools/planning/`, `src/tools/input/`, `src/tools/permissions/`: apply_patch, update_plan, request_user_input, and request_permissions parity tools.
 - `src/types.ts`: shared runtime contracts.
 
 ## Runtime Flow
@@ -20,7 +25,7 @@
 3. CLI creates one `AgentRuntime` session for one-shot or interactive execution.
 4. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events.
 5. `runAgent` sends the prompt to the model client through the runtime.
-6. Function calls named `shell` are executed locally.
+6. Function calls are dispatched through `ToolRegistry`.
 7. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls.
 
 ## Runtime Event Contract
@@ -30,7 +35,7 @@ The TypeScript runtime intentionally ports the Rust Codex protocol shape before 
 This contract is the stable boundary for upcoming feature branches:
 
 - `codex/model-streaming-provider` will add streaming deltas behind the same event stream.
-- `codex/tool-registry-exec` will replace the single shell path with a registry without changing CLI orchestration.
+- `codex/tool-registry-exec` is represented by the TypeScript registry and can grow without changing CLI orchestration.
 - `codex/tui-foundation` and `codex/app-server-v2` will consume `AgentRuntime` instead of duplicating agent loop logic.
 
 ## Docker Flow

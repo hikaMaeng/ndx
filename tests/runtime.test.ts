@@ -44,6 +44,8 @@ const baseConfig: NdxConfig = {
   websearch: {},
   search: {},
   mcp: {},
+  plugins: [],
+  tools: { imageGeneration: false },
 };
 
 test("runtime emits session, turn, tool, and completion events", async () => {
