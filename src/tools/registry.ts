@@ -22,7 +22,13 @@ import { requestPermissionsTool } from "./permissions/request-permissions.js";
 import { updatePlanTool } from "./planning/update-plan.js";
 import { pluginToolDefinitions } from "./plugins/plugins.js";
 import { webSearchTool } from "./web/web-search.js";
-import type { ToolContext, ToolDefinition, ToolExecutionResult, ToolSchema } from "./types.js";
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolExecutionResult,
+  ToolSchema,
+} from "./types.js";
+import { agentJobTools } from "./collaboration/agent-jobs.js";
 import { collaborationTools } from "./collaboration/agents.js";
 
 export class ToolRegistry {
@@ -45,6 +51,7 @@ export class ToolRegistry {
       listMcpResourceTemplatesTool(),
       readMcpResourceTool(),
       ...collaborationTools(),
+      ...agentJobTools(),
       ...mcpToolDefinitions(config),
       ...pluginToolDefinitions(config),
     ];
@@ -67,6 +74,10 @@ export class ToolRegistry {
 
   names(): string[] {
     return this.tools.map((tool) => tool.name);
+  }
+
+  supportsParallelToolCalls(name: string): boolean {
+    return this.byName.get(name)?.supportsParallelToolCalls ?? false;
   }
 
   async execute(

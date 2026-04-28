@@ -127,7 +127,7 @@ export function shellCommandTool(): ToolDefinition {
 export function execCommandTool(): ToolDefinition {
   return {
     name: "exec_command",
-    supportsParallelToolCalls: true,
+    supportsParallelToolCalls: false,
     schema: functionTool(
       "exec_command",
       "Runs a command, returning output or a session ID for ongoing interaction.",

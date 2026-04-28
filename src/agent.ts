@@ -1,4 +1,5 @@
 import { createToolRegistry } from "./tools/registry.js";
+import { executeToolInWorker } from "./tools/process-runner.js";
 import { unknownArgs } from "./tools/schema.js";
 import type { ModelClient, NdxConfig, TokenUsage } from "./types.js";
 
@@ -40,33 +41,70 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
       return finalText;
     }
 
-    const outputs = [];
-    for (const call of response.toolCalls) {
-      options.onEvent?.({
-        type: "tool_call",
-        name: call.name,
-        arguments: call.arguments,
-      });
-      const result = await registry.execute(
-        call.name,
-        unknownArgs(call.arguments),
-        {
-          cwd: options.cwd,
-          config: options.config,
-          env: options.config.env,
-          timeoutMs: options.config.shellTimeoutMs,
-        },
-      );
-      const output = result.output;
-      options.onEvent?.({ type: "tool_result", output });
-      outputs.push({
-        type: "function_call_output",
-        call_id: call.callId,
-        output,
-      });
+    const outputs = response.toolCalls.every((call) =>
+      registry.supportsParallelToolCalls(call.name),
+    )
+      ? await Promise.all(
+          response.toolCalls.map((call) =>
+            executeToolCall(call, options, registry, {
+              isolateProcess: true,
+            }),
+          ),
+        )
+      : [];
+    if (outputs.length > 0) {
+      for (const output of outputs) {
+        options.onEvent?.({ type: "tool_result", output: output.output });
+      }
+      input = outputs.map((output) => output.item);
+      continue;
     }
-    input = outputs;
+
+    const sequentialOutputs = [];
+    for (const call of response.toolCalls) {
+      const output = await executeToolCall(call, options, registry, {
+        isolateProcess: false,
+      });
+      options.onEvent?.({ type: "tool_result", output: output.output });
+      sequentialOutputs.push(output.item);
+    }
+    input = sequentialOutputs;
   }
 
   throw new Error(`agent stopped after max_turns=${options.config.maxTurns}`);
+}
+
+async function executeToolCall(
+  call: { callId: string; name: string; arguments: string },
+  options: AgentRunOptions,
+  registry: ReturnType<typeof createToolRegistry>,
+  execution: { isolateProcess: boolean },
+): Promise<{
+  output: string;
+  item: { type: "function_call_output"; call_id: string; output: string };
+}> {
+  options.onEvent?.({
+    type: "tool_call",
+    name: call.name,
+    arguments: call.arguments,
+  });
+  const args = unknownArgs(call.arguments);
+  const context = {
+    cwd: options.cwd,
+    config: options.config,
+    env: options.config.env,
+    timeoutMs: options.config.shellTimeoutMs,
+  };
+  const result = execution.isolateProcess
+    ? await executeToolInWorker(call.name, args, context)
+    : await registry.execute(call.name, args, context);
+  const output = result.output;
+  return {
+    output,
+    item: {
+      type: "function_call_output",
+      call_id: call.callId,
+      output,
+    },
+  };
 }

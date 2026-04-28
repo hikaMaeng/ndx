@@ -18,6 +18,7 @@ npm run deploy
 - Mock model plus shell tool execution.
 - Tool registry exposure for Rust Codex default tools.
 - Configured MCP and plugin tool schema exposure.
+- Parallel-safe tool batches start separate Node worker processes.
 - Runtime session event order for session, turn, tool, model message, and completion.
 - Runtime interrupt event contract.
 - Provider error classification for non-retryable and retryable failures.

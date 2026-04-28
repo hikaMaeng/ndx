@@ -38,6 +38,25 @@ export function collaborationTools(): ToolDefinition[] {
       ),
       interrupt: booleanSchema("When true, stop the agent's current task."),
     }),
+    placeholder(
+      "send_message",
+      "Send a string message to an existing agent without triggering a new turn.",
+      {
+        target: stringSchema("Relative or canonical task name to message."),
+        message: stringSchema("Message text to queue on the target agent."),
+      },
+    ),
+    placeholder(
+      "followup_task",
+      "Send a string message to an existing non-root agent and trigger a turn in the target.",
+      {
+        target: stringSchema("Agent id or canonical task name to message."),
+        message: stringSchema("Message text to send to the target agent."),
+        interrupt: booleanSchema(
+          "When true, stop the agent's current task and handle this immediately.",
+        ),
+      },
+    ),
     placeholder("resume_agent", "Resume a previously closed agent by id.", {
       id: stringSchema("Agent id to resume."),
     }),
@@ -48,6 +67,13 @@ export function collaborationTools(): ToolDefinition[] {
     placeholder("close_agent", "Close an agent and any open descendants.", {
       target: stringSchema("Agent id to close."),
     }),
+    placeholder(
+      "list_agents",
+      "List live agents in the current root thread tree.",
+      {
+        path_prefix: stringSchema("Optional task-path prefix."),
+      },
+    ),
   ];
 }
 

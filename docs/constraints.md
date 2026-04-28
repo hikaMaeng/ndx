@@ -22,12 +22,14 @@
 - Shell environment is `process.env` overlaid with `settings.json` `keys` and compatibility `env` values.
 - The default shell timeout is `120000` ms.
 - `exec_command` and `write_stdin` use pipe-backed Node child processes, not a real PTY.
+- Parallel-safe tool batches execute in separate worker Node processes. `exec_command` and `write_stdin` are intentionally not worker-isolated because their session state lives in the parent process.
 
 ## OpenAI
 
 - Real model execution uses the active model's provider from `settings.json`.
 - The current implementation supports OpenAI-compatible chat completions function tool calls. Native Responses-only `namespace`, freeform, local_shell, and image_generation tool types are represented as function-compatible TypeScript contracts.
 - Multi-agent, interactive permission, and interactive input tools are exposed for Rust Codex schema parity but return unavailable until corresponding TypeScript clients exist.
+- Agent job task tools are exposed for Rust Codex schema parity but return unavailable until a TypeScript batch task backend exists.
 - `apply_patch` requires an `apply_patch` executable on PATH.
 
 ## MCP And Plugins

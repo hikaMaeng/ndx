@@ -15,6 +15,7 @@
 - `src/tools/filesystem/`: list_dir and view_image tools.
 - `src/tools/mcp/`: configured MCP tool, resource, and stdio call support.
 - `src/tools/plugins/`: configured plugin tool schema and command execution.
+- `src/tools/worker.ts` and `src/tools/process-runner.ts`: isolated Node worker process execution for parallel-safe tool batches.
 - `src/tools/patch/`, `src/tools/planning/`, `src/tools/input/`, `src/tools/permissions/`: apply_patch, update_plan, request_user_input, and request_permissions parity tools.
 - `src/types.ts`: shared runtime contracts.
 
@@ -26,7 +27,9 @@
 4. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events.
 5. `runAgent` sends the prompt to the model client through the runtime.
 6. Function calls are dispatched through `ToolRegistry`.
-7. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls.
+7. If all tool calls in the batch are parallel-safe, `runAgent` starts one worker Node process per call.
+8. Mixed or sessionful tool batches run sequentially in the parent process.
+9. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls.
 
 ## Runtime Event Contract
 

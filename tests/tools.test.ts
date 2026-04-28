@@ -1,7 +1,11 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { runAgent } from "../src/agent.js";
 import { createToolRegistry } from "../src/tools/registry.js";
-import type { NdxConfig } from "../src/types.js";
+import type { ModelClient, ModelResponse, NdxConfig } from "../src/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
@@ -67,6 +71,11 @@ test("registry exposes Rust Codex default local tools", () => {
           "resume_agent",
           "wait_agent",
           "close_agent",
+          "send_message",
+          "followup_task",
+          "list_agents",
+          "spawn_agents_on_csv",
+          "report_agent_job_result",
           "tool_suggest",
           "tool_search",
         ].includes(name),
@@ -87,9 +96,14 @@ test("registry exposes Rust Codex default local tools", () => {
       "read_mcp_resource",
       "spawn_agent",
       "send_input",
+      "send_message",
+      "followup_task",
       "resume_agent",
       "wait_agent",
       "close_agent",
+      "list_agents",
+      "spawn_agents_on_csv",
+      "report_agent_job_result",
       "tool_suggest",
       "tool_search",
     ],
@@ -141,3 +155,56 @@ test("registry exposes configured MCP and plugin tools", () => {
     true,
   );
 });
+
+test("parallel shell tool calls run in separate worker node processes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-parallel-tools-"));
+  try {
+    const result = await runAgent({
+      cwd: root,
+      config: baseConfig,
+      client: new ParallelShellClient(),
+      prompt: "run parallel tools",
+    });
+    assert.equal(result, "parallel complete");
+    const firstParent = readFileSync(join(root, "first.ppid"), "utf8").trim();
+    const secondParent = readFileSync(join(root, "second.ppid"), "utf8").trim();
+    assert.notEqual(firstParent, secondParent);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+class ParallelShellClient implements ModelClient {
+  private step = 0;
+
+  async create(): Promise<ModelResponse> {
+    if (this.step === 0) {
+      this.step += 1;
+      return {
+        text: "",
+        toolCalls: [
+          {
+            callId: "first",
+            name: "shell",
+            arguments: JSON.stringify({
+              command: 'printf %s "$PPID" > first.ppid',
+            }),
+          },
+          {
+            callId: "second",
+            name: "shell",
+            arguments: JSON.stringify({
+              command: 'printf %s "$PPID" > second.ppid',
+            }),
+          },
+        ],
+        raw: {},
+      };
+    }
+    return {
+      text: "parallel complete",
+      toolCalls: [],
+      raw: {},
+    };
+  }
+}
