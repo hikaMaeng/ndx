@@ -1,15 +1,13 @@
 # Agent Loop
 
 This document records the TypeScript agent loop contract implemented by
-`src/agent.ts`, `src/runtime.ts`, and `src/tools/process-runner.ts`.
+`src/agent.ts`, `src/runtime.ts`, `src/session-server.ts`, and
+`src/tools/process-runner.ts`.
 
-This is not the full Rust Codex session architecture. The TypeScript runtime
-currently ports the sampling/tool loop and a small session event shell. Rust
-Codex also has live `CodexThread` objects, rollout JSONL persistence, global
-prompt history JSONL, app-server thread subscriptions, and WebSocket/remote
-control delivery. Those are documented in `codex-rs/core/docs/agent-loop.md`;
-the TypeScript implementation does not yet provide equivalent durable or remote
-subscription layers.
+This is not the full Rust Codex session architecture, but the TypeScript port
+now follows the same ownership split: the agent loop executes one model/tool
+turn, `AgentRuntime` converts it into session events, and `SessionServer` owns
+live threads, WebSocket subscriptions, and JSONL persistence.
 
 ## Loop State
 
@@ -26,15 +24,24 @@ The loop runs at most `config.maxTurns` sampling requests. If every sampling
 request returns tool calls, the loop exits with
 `agent stopped after max_turns=<value>`.
 
-`AgentRuntime` owns only a live in-process session shell:
+`AgentRuntime` owns one turn-oriented runtime shell:
 
 - `sessionId`: emitted with every runtime event;
 - `activeTurn`: current turn id plus `AbortController`;
 - `abortedTurnIds`: duplicate-abort guard.
 
-There is no live thread registry, no resumeable thread handle, no mailbox, no
-status watch receiver, and no persisted active-turn state in the TypeScript
-runtime.
+`SessionServer` owns the live session system:
+
+- `threads`: live thread registry keyed by runtime `sessionId`;
+- `subscribers`: WebSocket clients subscribed to each thread;
+- `events`: server-held runtime event history for `thread/read`;
+- `status`: thread status derived from runtime events;
+- `SessionLogStore`: serialized JSONL appends under
+  `<globalDir>/sessions/ts-server`.
+
+The CLI is not the session owner. Normal one-shot and interactive CLI modes
+start an embedded loopback WebSocket server and then act as a client. `ndx
+serve` exposes the same server for other clients.
 
 ## Exit Conditions
 
@@ -79,23 +86,25 @@ assembly layer, not from the current TypeScript loop.
 
 ## Context Management
 
-The loop currently has no separate context compaction or truncation intervention
-point. It preserves `previousResponseId` and submits the next input to the model
-client. Provider-side continuation and any model-client request shaping are
-outside the loop state machine.
+The inner loop currently has no separate context compaction or truncation
+intervention point. It preserves `previousResponseId` and submits the next input
+to the model client. Provider-side continuation and any model-client request
+shaping are outside the loop state machine.
 
 `OpenAiResponsesClient` keeps chat messages in memory for the life of one client
 instance. It starts with `config.instructions` as a `system` message, appends
 string input as a `user` message, and appends function outputs as `tool`
 messages. This volatile message list is the current TypeScript context.
 
-The TypeScript runtime does not write rollout JSONL, does not write
-`history.jsonl`, does not back thread metadata with SQLite, and cannot rebuild
-turns from persisted `RolloutItem` records.
+`SessionServer` writes server-owned JSONL records for thread creation,
+subscription, turn requests, runtime events, and outbound notifications. This is
+not yet Rust Codex rollout recovery: the server does not write `history.jsonl`,
+does not back thread metadata with SQLite, and cannot rebuild turns from
+persisted `RolloutItem` records.
 
-## Hooks And Events
+## Hooks, Events, And Socket Delivery
 
-The hook surface is the `onEvent` callback:
+The inner hook surface is the `onEvent` callback:
 
 - `model_text`: emitted after a response contains text;
 - `token_count`: emitted after usage appears on a response;
@@ -107,6 +116,7 @@ Runtime interruption owns an `AbortController`; the signal is passed through to
 the loop and worker launcher. Interrupts emit `turn_aborted` once per turn and
 prevent `turn_complete`.
 
-The event path is callback-only. There is no app-server listener task, no
-connection/thread subscription map, and no WebSocket or VS Code extension
-delivery path in this TypeScript runtime.
+`SessionServer` is the external hook point. It maps runtime events to
+JSON-RPC-style notifications, persists them, and sends them to subscribed
+WebSocket clients. UI clients such as CLI, TUI, or VS Code should consume this
+socket stream rather than attaching their own durable session writers.

@@ -4,16 +4,57 @@
 
 ```bash
 ndx [--mock] [--cwd PATH] [prompt]
+ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]
+ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]
 ```
 
-`ndx` without a prompt on a TTY opens the interactive `ndx>` prompt.
+`ndx` without a prompt on a TTY opens the interactive `ndx>` prompt. Normal
+one-shot and interactive modes start an embedded loopback session server, then
+send socket requests to it. `ndx serve` keeps the session server open for other
+clients.
 
 ## Options
 
 - `--mock`: use deterministic local model behavior. No network or provider key required.
 - `--cwd PATH`: workspace directory used by project settings discovery and shell commands.
+- `--listen HOST:PORT`: bind address for `ndx serve`. The default is `127.0.0.1:0`.
+- `--connect ws://HOST:PORT`: send the prompt to an existing session server.
 - `--help`: print CLI help.
 - `--version`: print package version.
+
+## Session Server API
+
+The session server is a WebSocket JSON-RPC endpoint. It owns live thread state,
+event fan-out, and JSONL persistence. Clients send requests and receive
+notifications; they are not authoritative session stores.
+
+Requests:
+
+| Method             | Params                  | Result                         |
+| ------------------ | ----------------------- | ------------------------------ |
+| `initialize`       | none                    | server name, protocol, methods |
+| `thread/start`     | `{ cwd? }`              | `{ thread }`                   |
+| `thread/subscribe` | `{ threadId }`          | `{ thread, events }`           |
+| `thread/read`      | `{ threadId }`          | `{ thread, events }`           |
+| `turn/start`       | `{ threadId, prompt }`  | `{ turn }`                     |
+| `turn/interrupt`   | `{ threadId, reason? }` | `{ thread }`                   |
+
+Notifications:
+
+- `thread/started`
+- `thread/sessionConfigured`
+- `turn/started`
+- `item/toolCall`
+- `item/toolResult`
+- `item/agentMessage`
+- `thread/tokenUsage/updated`
+- `turn/completed`
+- `turn/aborted`
+- `warning`
+- `error`
+
+Server JSONL records are written to
+`<globalDir>/sessions/ts-server/<threadId>.jsonl`.
 
 ## Settings
 
@@ -77,7 +118,7 @@ If `provider.key` is an empty string, no `Authorization` header is sent. The ada
 
 ## Tool Layers
 
-At agent startup the registry scans every layer in fixed priority order. First match wins when names collide.
+At turn startup the registry scans every layer in fixed priority order. First match wins when names collide.
 
 | Priority | Layer          | Source path                                                   |
 | -------- | -------------- | ------------------------------------------------------------- |

@@ -22,6 +22,9 @@ npm run deploy
 - Every tool call starts a separate Node worker process.
 - Runtime session event order for session, turn, tool, model message, and completion.
 - Runtime interrupt event contract.
+- WebSocket session server request/notification flow.
+- Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
+- Multiple WebSocket clients subscribed to the same live thread.
 - Provider error classification for non-retryable and retryable failures.
 - Docker remote-clone build using the selected `NDX_GIT_REF` branch.
 - Docker workspace and global settings bind mounts under `./docker/volume`.

@@ -48,6 +48,24 @@ Plugin and capability tools are filesystem packages, not settings entries. Put e
 node dist/src/cli.js --mock "create a file named tmp/verify.txt with text verified"
 ```
 
+The CLI starts an embedded loopback session server for this command and sends
+the prompt over WebSocket. The server owns the live thread and writes session
+JSONL under `/home/.ndx/sessions/ts-server`.
+
+## Session Server
+
+Run a long-lived server:
+
+```bash
+node dist/src/cli.js serve --mock --listen 127.0.0.1:45123
+```
+
+Attach a client to that server:
+
+```bash
+node dist/src/cli.js --connect ws://127.0.0.1:45123 "list files"
+```
+
 ## Real Agent
 
 ```bash

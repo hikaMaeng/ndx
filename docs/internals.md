@@ -28,6 +28,22 @@ Runtime errors are classified into `unauthorized`, `bad_request`, `rate_limited`
 
 The current interrupt support records and emits the abort contract. It does not yet cancel an in-flight process tree; that belongs to the later execution/permissions branches.
 
+## Session Server
+
+`SessionServer` is the live session authority. It accepts WebSocket JSON-RPC,
+creates one `AgentRuntime` per `thread/start`, stores per-thread event history,
+maps runtime events to client notifications, and appends server-owned JSONL
+records under `<globalDir>/sessions/ts-server`.
+
+The CLI is a client of this server. In normal one-shot and interactive modes it
+starts an embedded loopback server and talks to that server over WebSocket. In
+`ndx serve` mode it only hosts the server. In `--connect` mode it attaches to an
+already-running server.
+
+Client programs may render or cache notifications, but durable session writes
+belong to the session server so CLI, TUI, VS Code, and other clients observe the
+same source of truth.
+
 ## Mock Client
 
 `MockModelClient` emits one `shell` call on the first turn and final text on the second turn. It is intentionally deterministic so Docker verification does not depend on external APIs.
