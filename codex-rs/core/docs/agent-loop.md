@@ -25,6 +25,22 @@
 
 task 완료 시 spawned closure가 rollout을 flush하고, 취소되지 않았다면 `on_task_finished`가 `TurnComplete`를 emit한다.
 
+## live thread/session 구조
+
+에이전트 루프는 독립 함수가 아니라 live thread/session 객체 그래프 위에서 돈다.
+
+`ThreadManager`는 live thread map을 유지한다. `ThreadManagerState.threads`는 `ThreadId -> Arc<CodexThread>`이고, `thread_created_tx` broadcast 채널은 새 thread 생성을 외부 관찰자가 감지하는 경로다. `ThreadManager::spawn_thread_inner`는 `Codex::spawn`으로 core session을 만들고, 첫 이벤트가 `SessionConfigured`인지 확인한 뒤 `CodexThread`를 live map에 넣는다.
+
+`CodexThread`는 `Codex`, `rollout_path`, file-watch registration, out-of-band elicitation count를 가진 live thread handle이다. 외부 진입점은 대부분 이 handle을 지난다.
+
+- `submit` / `submit_with_trace`: `Op`를 submission queue에 넣는다.
+- `next_event`: core event queue에서 다음 `Event`를 읽는다.
+- `agent_status` / `subscribe_status`: live status snapshot과 watch receiver를 제공한다.
+- `inject_response_items` / `inject_user_message_without_turn`: 모델-visible history에 out-of-band item을 넣는다.
+- `ensure_rollout_materialized` / `flush_rollout`: durable rollout 경계를 강제한다.
+
+`Session`은 실제 context와 task 상태를 가진다. `Session.state` 안의 `ContextManager`가 모델-visible history를 보유하고, `active_turn`은 현재 turn의 task set, pending input, approval/user-input/dynamic-tool waiters, token baseline을 보유한다. 따라서 “현재 세션에서 일어나는 모든 일”은 단순 prompt 문자열이 아니라 live `Session` history, pending input, active task, mailbox, status watch, rollout writer 상태를 합친 context로 해석해야 한다.
+
 ## regular loop
 
 `RegularTask::run`이 기본 에이전트 루프다.
@@ -169,6 +185,36 @@ Hook runtime은 `src/hook_runtime.rs`와 `src/tools/registry.rs`, `src/session/t
 
 Hook additional context는 `HookAdditionalContext` fragment로 conversation history에 들어가 다음 모델 요청에 영향을 준다.
 
+## 영속 저장소와 JSONL
+
+Rust core는 live session 상태만 믿지 않는다. 대화와 이벤트는 rollout JSONL과 message history JSONL에 규칙적으로 기록된다.
+
+Rollout persistence는 `codex-rs/rollout/src/recorder.rs`의 `RolloutRecorder`가 담당한다. 새 thread는 `~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread_id>.jsonl` 계열 파일을 만들고, 각 line은 `RolloutLine` envelope 안에 `RolloutItem`을 담는다. 주요 item은 다음과 같다.
+
+- `SessionMeta`: thread id, source, base instructions, fork origin, dynamic tools 같은 thread metadata.
+- `TurnContext`: turn별 model/cwd/sandbox/approval/personality/context snapshot.
+- `ResponseItem`: 모델-visible user/assistant/tool/history item.
+- `EventMsg`: `TurnStarted`, `TurnComplete`, `TurnAborted`, tool begin/end, hook, context compaction 등 protocol event.
+- `Compacted`: context compaction 결과.
+
+`Session::record_conversation_items`는 in-memory `ContextManager`에 item을 먼저 기록하고, 같은 item을 rollout에 append한 뒤 raw response item event를 emit한다. `Session::send_event`는 `EventMsg`를 rollout에 persist하고 `tx_event`로 live client에게 전달한다. task 완료 closure는 `flush_rollout`을 호출한 뒤 `TurnComplete`를 emit하므로, turn completion 전까지 이전 rollout writes가 durability barrier를 지난다. interrupt path도 `<turn_aborted>` marker를 rollout에 기록하고 flush한 뒤 `TurnAborted`를 emit한다. 이는 외부 client가 abort event를 받고 즉시 rollout을 다시 읽어도 marker를 볼 수 있게 하기 위한 순서다.
+
+별도 전역 prompt history는 `codex-rs/core/src/message_history.rs`가 `~/.codex/history.jsonl`에 저장한다. schema는 `{session_id, ts, text}`이고, `config.history.persistence == SaveAll`일 때만 append한다. Unix에서는 append mode와 owner-only permission을 사용하고, advisory lock으로 concurrent writer interleaving을 줄이며, `history.max_bytes`가 있으면 오래된 line을 trim한다. 이 파일은 shell-like prompt recall용 text history이고, rollout JSONL은 thread replay/inspection용 full transcript다.
+
+SQLite state DB는 rollout의 대체 원본이 아니라 index/cache 계층이다. `codex-rs/rollout/src/state_db.rs`는 thread metadata, rollout path, dynamic tools, memory mode, updated_at 등을 upsert하고, list/read fast path와 backfill/repair에 사용한다. 실제 turn reconstruction은 필요 시 rollout items를 읽어 수행한다.
+
+## app-server, WebSocket, 외부 구독
+
+외부 UI와 extension은 core `CodexThread`를 직접 폴링하지 않고 app-server protocol/transport를 통한다.
+
+`codex-rs/app-server/src/thread_state.rs`의 `ThreadStateManager`는 connection id와 thread id의 구독 관계를 유지한다. `try_ensure_connection_subscribed(thread_id, connection_id, experimental_raw_events)`가 live connection을 thread에 붙이고, `subscribed_connection_ids(thread_id)`가 현재 구독자 목록을 반환한다. `ThreadState`는 listener cancellation handle, raw-event opt-in, pending interrupts, current-turn `ThreadHistoryBuilder`, last terminal turn id를 갖는다.
+
+`codex-rs/app-server/src/codex_message_processor.rs`의 listener task는 `conversation.next_event()`를 await한다. event를 받으면 먼저 `ThreadState.track_current_turn_event`로 active turn snapshot을 갱신하고, 구독 connection id 목록을 읽어 `ThreadScopedOutgoingMessageSender`로 v2 notification을 보낸다. 이 경로가 app-server transport 위의 WebSocket/remote-control clients, desktop UI, VS Code extension류가 live turn 상태를 수신하는 기반이다.
+
+`thread/read`는 persisted view와 live view를 합친다. `read_thread_view`는 먼저 `ThreadStore`에서 metadata/history를 읽고, `includeTurns`가 true면 rollout items를 `build_turns_from_rollout_items`로 v2 `Turn` 배열로 재구성한다. rollout이 아직 materialized되지 않은 ephemeral live thread는 `includeTurns`를 거부한다. live thread가 running이면 app-server thread watch 상태와 active turn snapshot을 반영해 stale turn을 interrupted 상태로 보정한다.
+
+실시간 notification과 `thread/read` history는 같은 item builder/turn builder 계약을 공유한다. 즉 외부 client는 live WebSocket notification으로 진행 중 UI를 갱신하고, reconnect/resume/read 시 rollout/state DB에서 같은 thread/turn 모델을 재구성한다.
+
 ## 서브에이전트 주변 요소
 
 `AgentControl`은 root session tree 범위의 subagent registry와 thread manager weak handle을 가진다. `spawn_agent`는 새 thread를 만들고 initial op를 submit한다.
@@ -176,4 +222,3 @@ Hook additional context는 `HookAdditionalContext` fragment로 conversation hist
 `Mailbox`는 inter-agent communication을 mpsc queue에 넣고 watch sequence를 증가시킨다. `Session::get_pending_input`은 mailbox delivery phase가 current-turn일 때 mailbox mail을 response input으로 변환해 현재 sampling loop에 합친다.
 
 완료 상태는 event 기반이다. `TurnStarted`, `TurnComplete`, `TurnAborted`, `Error`, `ShutdownComplete`가 `AgentStatus`로 변환되고 watch sender에 반영된다.
-
