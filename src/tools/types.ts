@@ -22,11 +22,28 @@ export interface ToolExecutionResult {
   output: string;
 }
 
+export type ToolKind = "task" | "external";
+
+export interface ExternalToolRuntime {
+  command: string;
+  args: string[];
+  cwd?: string;
+  env: EnvMap;
+  timeoutMs?: number;
+  toolDir: string;
+}
+
 export interface ToolDefinition {
   name: string;
   schema: ToolSchema;
-  supportsParallelToolCalls: boolean;
-  execute(args: ToolArguments, context: ToolContext): Promise<ToolExecutionResult>;
+  kind?: ToolKind;
+  layer?: string;
+  runtime?: ExternalToolRuntime;
+  supportsParallelToolCalls?: boolean;
+  execute?: (
+    args: ToolArguments,
+    context: ToolContext,
+  ) => Promise<ToolExecutionResult>;
 }
 
 export interface ExecSessionResult {

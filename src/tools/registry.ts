@@ -1,71 +1,68 @@
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import type { NdxConfig } from "../types.js";
-import { toolSearchTool } from "./discovery/tool-search.js";
-import { toolSuggestTool } from "./discovery/tool-suggest.js";
-import { listDirTool } from "./filesystem/list-dir.js";
-import { viewImageTool } from "./filesystem/view-image.js";
+import { agentJobTools } from "./collaboration/agent-jobs.js";
+import { collaborationTools } from "./collaboration/agents.js";
 import { requestUserInputTool } from "./input/request-user-input.js";
-import {
-  execCommandTool,
-  shellCommandTool,
-  shellTool,
-  writeStdinTool,
-} from "./local/shell.js";
-import { imageGenerationTool } from "./media/image-generation.js";
-import {
-  listMcpResourceTemplatesTool,
-  listMcpResourcesTool,
-  readMcpResourceTool,
-} from "./mcp/resources.js";
 import { mcpToolDefinitions } from "./mcp/tools.js";
-import { applyPatchTool } from "./patch/apply-patch.js";
-import { requestPermissionsTool } from "./permissions/request-permissions.js";
 import { updatePlanTool } from "./planning/update-plan.js";
-import { pluginToolDefinitions } from "./plugins/plugins.js";
-import { webSearchTool } from "./web/web-search.js";
+import { discoverToolDirectory } from "./external/manifest.js";
+import { runExternalTool } from "./external/runner.js";
 import type {
   ToolContext,
   ToolDefinition,
   ToolExecutionResult,
   ToolSchema,
 } from "./types.js";
-import { agentJobTools } from "./collaboration/agent-jobs.js";
-import { collaborationTools } from "./collaboration/agents.js";
 
 export class ToolRegistry {
   private readonly tools: ToolDefinition[];
   private readonly byName: Map<string, ToolDefinition>;
 
-  constructor(config: NdxConfig) {
-    const tools: ToolDefinition[] = [
-      shellTool(),
-      shellCommandTool(),
-      execCommandTool(),
-      writeStdinTool(),
-      updatePlanTool(),
-      requestUserInputTool(),
-      requestPermissionsTool(),
-      applyPatchTool(),
-      listDirTool(),
-      viewImageTool(),
-      listMcpResourcesTool(),
-      listMcpResourceTemplatesTool(),
-      readMcpResourceTool(),
-      ...collaborationTools(),
-      ...agentJobTools(),
-      ...mcpToolDefinitions(config),
-      ...pluginToolDefinitions(config),
-    ];
-    if (config.websearch.provider !== undefined) {
-      tools.push(webSearchTool());
-    }
-    if (config.tools.imageGeneration === true) {
-      tools.push(imageGenerationTool());
-    }
-    tools.push(toolSuggestTool());
-    tools.push(toolSearchTool(() => this.tools));
-
-    this.tools = dedupeTools(tools);
+  private constructor(tools: ToolDefinition[]) {
+    this.tools = tools;
     this.byName = new Map(this.tools.map((tool) => [tool.name, tool]));
+  }
+
+  static async create(config: NdxConfig): Promise<ToolRegistry> {
+    const ordered: ToolDefinition[] = [];
+    addLayer(ordered, taskTools(), "task");
+    addLayer(
+      ordered,
+      discoverToolDirectory(coreToolsDir(config), "core"),
+      "core",
+    );
+    addLayer(
+      ordered,
+      discoverToolDirectory(projectToolsDir(config), "project"),
+      "project",
+    );
+    addLayer(
+      ordered,
+      discoverToolDirectory(globalToolsDir(config), "global"),
+      "global",
+    );
+    addLayer(
+      ordered,
+      discoverPluginTools(projectPluginsDir(config), "project-plugin"),
+      "project-plugin",
+    );
+    addLayer(
+      ordered,
+      discoverPluginTools(globalPluginsDir(config), "global-plugin"),
+      "global-plugin",
+    );
+    addLayer(
+      ordered,
+      await mcpToolDefinitions(config, config.projectMcp, "project-mcp"),
+      "project-mcp",
+    );
+    addLayer(
+      ordered,
+      await mcpToolDefinitions(config, config.globalMcp, "global-mcp"),
+      "global-mcp",
+    );
+    return new ToolRegistry(ordered);
   }
 
   schemas(): ToolSchema[] {
@@ -76,8 +73,12 @@ export class ToolRegistry {
     return this.tools.map((tool) => tool.name);
   }
 
-  supportsParallelToolCalls(name: string): boolean {
-    return this.byName.get(name)?.supportsParallelToolCalls ?? false;
+  metadata(): Array<{ name: string; layer: string; kind: string }> {
+    return this.tools.map((tool) => ({
+      name: tool.name,
+      layer: tool.layer ?? "unknown",
+      kind: tool.kind ?? "task",
+    }));
   }
 
   async execute(
@@ -89,18 +90,83 @@ export class ToolRegistry {
     if (tool === undefined) {
       return { output: `unsupported tool: ${name}` };
     }
-    return await tool.execute(args, context);
+    if (tool.kind === "external" && tool.runtime !== undefined) {
+      return await runExternalTool(tool.runtime, args, context);
+    }
+    if (tool.execute !== undefined) {
+      return await tool.execute(args, context);
+    }
+    return { output: `tool ${name} has no executable runtime` };
   }
 }
 
-export function createToolRegistry(config: NdxConfig): ToolRegistry {
-  return new ToolRegistry(config);
+export async function createToolRegistry(
+  config: NdxConfig,
+): Promise<ToolRegistry> {
+  return await ToolRegistry.create(config);
 }
 
-function dedupeTools(tools: ToolDefinition[]): ToolDefinition[] {
-  const byName = new Map<string, ToolDefinition>();
+function taskTools(): ToolDefinition[] {
+  return [
+    markTask(updatePlanTool()),
+    markTask(requestUserInputTool()),
+    ...collaborationTools().map(markTask),
+    ...agentJobTools().map(markTask),
+  ];
+}
+
+function markTask(tool: ToolDefinition): ToolDefinition {
+  return { ...tool, kind: "task", layer: "task" };
+}
+
+function addLayer(
+  target: ToolDefinition[],
+  tools: ToolDefinition[],
+  layer: string,
+): void {
+  const existing = new Set(target.map((tool) => tool.name));
   for (const tool of tools) {
-    byName.set(tool.name, tool);
+    if (!existing.has(tool.name)) {
+      target.push({ ...tool, layer: tool.layer ?? layer });
+      existing.add(tool.name);
+    }
   }
-  return [...byName.values()];
+}
+
+function discoverPluginTools(
+  pluginsDir: string | undefined,
+  layer: string,
+): ToolDefinition[] {
+  if (pluginsDir === undefined || !existsSync(pluginsDir)) {
+    return [];
+  }
+  return readdirSync(pluginsDir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? discoverToolDirectory(join(pluginsDir, entry.name, "tools"), layer)
+      : [],
+  );
+}
+
+function coreToolsDir(config: NdxConfig): string {
+  return join(config.paths.globalDir, "core", "tools");
+}
+
+function projectToolsDir(config: NdxConfig): string {
+  return config.paths.projectNdxDir === undefined
+    ? join(config.paths.globalDir, ".missing-project-tools")
+    : join(config.paths.projectNdxDir, "tools");
+}
+
+function globalToolsDir(config: NdxConfig): string {
+  return join(config.paths.globalDir, "tools");
+}
+
+function projectPluginsDir(config: NdxConfig): string | undefined {
+  return config.paths.projectNdxDir === undefined
+    ? undefined
+    : join(config.paths.projectNdxDir, "plugins");
+}
+
+function globalPluginsDir(config: NdxConfig): string {
+  return join(config.paths.globalDir, "plugins");
 }

@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -42,30 +48,24 @@ const baseConfig: NdxConfig = {
   websearch: {},
   search: {},
   mcp: {},
+  globalMcp: {},
+  projectMcp: {},
   plugins: [],
   tools: { imageGeneration: false },
+  paths: {
+    globalDir: "/tmp/ndx-empty-global",
+  },
 };
 
-test("registry exposes Rust Codex default local tools", () => {
-  const registry = createToolRegistry(baseConfig);
+test("registry exposes internal task tools only from the agent body", async () => {
+  const registry = await createToolRegistry(baseConfig);
   assert.deepEqual(
     registry
       .names()
       .filter((name) =>
         [
-          "shell",
-          "shell_command",
-          "exec_command",
-          "write_stdin",
           "update_plan",
           "request_user_input",
-          "request_permissions",
-          "apply_patch",
-          "list_dir",
-          "view_image",
-          "list_mcp_resources",
-          "list_mcp_resource_templates",
-          "read_mcp_resource",
           "spawn_agent",
           "send_input",
           "resume_agent",
@@ -81,19 +81,8 @@ test("registry exposes Rust Codex default local tools", () => {
         ].includes(name),
       ),
     [
-      "shell",
-      "shell_command",
-      "exec_command",
-      "write_stdin",
       "update_plan",
       "request_user_input",
-      "request_permissions",
-      "apply_patch",
-      "list_dir",
-      "view_image",
-      "list_mcp_resources",
-      "list_mcp_resource_templates",
-      "read_mcp_resource",
       "spawn_agent",
       "send_input",
       "send_message",
@@ -104,64 +93,91 @@ test("registry exposes Rust Codex default local tools", () => {
       "list_agents",
       "spawn_agents_on_csv",
       "report_agent_job_result",
-      "tool_suggest",
-      "tool_search",
     ],
   );
 });
 
-test("registry exposes configured MCP and plugin tools", () => {
-  const registry = createToolRegistry({
+test("registry discovers tool.json layers and keeps higher priority names", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-tool-layers-"));
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    const projectNdxDir = join(root, "repo", ".ndx");
+    writeEchoTool(join(globalDir, "core", "tools", "echo"), "core");
+    writeEchoTool(join(projectNdxDir, "tools", "echo"), "project");
+    writeEchoTool(
+      join(projectNdxDir, "plugins", "calendar", "tools", "calendar_event"),
+      "project-plugin",
+    );
+    const registry = await createToolRegistry({
+      ...baseConfig,
+      paths: {
+        globalDir,
+        projectDir: join(root, "repo"),
+        projectNdxDir,
+      },
+    });
+
+    assert.equal(registry.names().includes("echo"), true);
+    assert.equal(registry.names().includes("calendar_event"), true);
+    assert.deepEqual(
+      registry.metadata().filter((tool) => tool.name === "echo"),
+      [{ name: "echo", layer: "core", kind: "external" }],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("registry exposes project MCP before global MCP", async () => {
+  const registry = await createToolRegistry({
     ...baseConfig,
-    mcp: {
+    projectMcp: {
       memory: {
         tools: [
           {
             name: "create_entities",
-            description: "Create memory graph entities.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                entities: { type: "array" },
-              },
-            },
+            description: "Create project memory graph entities.",
           },
         ],
       },
     },
-    plugins: [
-      {
-        id: "calendar",
-        namespace: "plugin__calendar__",
+    globalMcp: {
+      memory: {
         tools: [
           {
-            name: "create_event",
-            description: "Create a calendar event.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-              },
-            },
+            name: "create_entities",
+            description: "Create global memory graph entities.",
           },
         ],
       },
-    ],
+    },
   });
 
-  assert.equal(registry.names().includes("mcp__memory__create_entities"), true);
-  assert.equal(
-    registry.names().includes("plugin__calendar__create_event"),
-    true,
+  assert.deepEqual(
+    registry
+      .metadata()
+      .filter((tool) => tool.name === "mcp__memory__create_entities"),
+    [
+      {
+        name: "mcp__memory__create_entities",
+        layer: "project-mcp",
+        kind: "external",
+      },
+    ],
   );
 });
 
 test("parallel shell tool calls run in separate worker node processes", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-parallel-tools-"));
   try {
+    const globalDir = join(root, "home", ".ndx");
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
     const result = await runAgent({
       cwd: root,
-      config: baseConfig,
+      config: {
+        ...baseConfig,
+        paths: { globalDir },
+      },
       client: new ParallelShellClient(),
       prompt: "run parallel tools",
     });
@@ -173,6 +189,84 @@ test("parallel shell tool calls run in separate worker node processes", async ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+function writeEchoTool(toolDir: string, value: string): void {
+  mkdirSync(toolDir, { recursive: true });
+  writeFileSync(
+    join(toolDir, "tool.json"),
+    `${JSON.stringify(
+      {
+        type: "function",
+        function: {
+          name: toolDir.split("/").at(-1),
+          description: "Echo test tool.",
+          parameters: {
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+        },
+        command: "node",
+        args: ["tool.mjs"],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    join(toolDir, "tool.mjs"),
+    `console.log(${JSON.stringify(value)});\n`,
+  );
+}
+
+function writeShellTool(toolDir: string): void {
+  mkdirSync(toolDir, { recursive: true });
+  writeFileSync(
+    join(toolDir, "tool.json"),
+    `${JSON.stringify(
+      {
+        type: "function",
+        function: {
+          name: "shell",
+          description: "Run a shell command.",
+          parameters: {
+            type: "object",
+            properties: { command: { type: "string" } },
+            required: ["command"],
+            additionalProperties: false,
+          },
+        },
+        command: "node",
+        args: ["tool.mjs"],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    join(toolDir, "tool.mjs"),
+    [
+      'import { spawn } from "node:child_process";',
+      'import { stdin, stdout } from "node:process";',
+      'let body = "";',
+      'stdin.setEncoding("utf8");',
+      'stdin.on("data", (chunk) => { body += chunk; });',
+      'stdin.on("end", async () => {',
+      "  const request = JSON.parse(body);",
+      "  const command = request.arguments.command;",
+      '  const child = spawn("/bin/bash", ["-lc", command], { cwd: request.cwd, stdio: ["ignore", "pipe", "pipe"] });',
+      '  let out = "";',
+      '  let err = "";',
+      '  child.stdout.setEncoding("utf8");',
+      '  child.stderr.setEncoding("utf8");',
+      '  child.stdout.on("data", (chunk) => { out += chunk; });',
+      '  child.stderr.on("data", (chunk) => { err += chunk; });',
+      '  child.on("close", (exitCode) => { stdout.write(JSON.stringify({ exitCode, stdout: out, stderr: err }) + "\\n"); });',
+      "});",
+      "",
+    ].join("\n"),
+  );
+}
 
 class ParallelShellClient implements ModelClient {
   private step = 0;

@@ -1,29 +1,43 @@
-import type { JsonObject, NdxConfig } from "../../types.js";
+import type { JsonObject, McpSettings, NdxConfig } from "../../types.js";
 import { functionTool } from "../schema.js";
 import type { ToolDefinition } from "../types.js";
-import { callMcpTool } from "./client.js";
+import { callMcpTool, listMcpServerTools } from "./client.js";
 
-export function mcpToolDefinitions(config: NdxConfig): ToolDefinition[] {
-  return Object.entries(config.mcp).flatMap(([serverName, server]) => {
+export async function mcpToolDefinitions(
+  config: NdxConfig,
+  settings: McpSettings,
+  layer: string,
+): Promise<ToolDefinition[]> {
+  const definitions: ToolDefinition[] = [];
+  for (const [serverName, server] of Object.entries(settings)) {
     const namespace = server.namespace ?? `mcp__${serverName}__`;
-    return (server.tools ?? []).map((tool) => {
-      const exposedName = `${namespace}${tool.name}`;
-      return {
-        name: exposedName,
-        supportsParallelToolCalls: false,
-        schema: functionTool(
-          exposedName,
-          tool.description ?? `MCP tool ${tool.name} from ${serverName}.`,
-          normalizeSchema(tool.inputSchema),
-        ),
-        execute: async (args, context) => ({
-          output: JSON.stringify(
-            await callMcpTool(context.config, serverName, tool.name, args),
+    const declaredTools = [...(server.tools ?? [])];
+    if (server.command !== undefined) {
+      declaredTools.push(...(await listMcpServerTools(server)));
+    }
+    definitions.push(
+      ...declaredTools.map((tool) => {
+        const exposedName = `${namespace}${tool.name}`;
+        return {
+          name: exposedName,
+          kind: "external",
+          layer,
+          supportsParallelToolCalls: false,
+          schema: functionTool(
+            exposedName,
+            tool.description ?? `MCP tool ${tool.name} from ${serverName}.`,
+            normalizeSchema(tool.inputSchema),
           ),
-        }),
-      } satisfies ToolDefinition;
-    });
-  });
+          execute: async (args, context) => ({
+            output: JSON.stringify(
+              await callMcpTool(context.config, serverName, tool.name, args),
+            ),
+          }),
+        } satisfies ToolDefinition;
+      }),
+    );
+  }
+  return definitions;
 }
 
 function normalizeSchema(schema: JsonObject | undefined): JsonObject {

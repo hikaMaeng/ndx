@@ -20,7 +20,7 @@ Global settings live at `/home/.ndx/settings.json`. Project settings live at `.n
 
 Do not put real provider, Tavily, GitHub, Docker Hub, npm, or GitLab tokens in repository files. Put secrets in `/home/.ndx/settings.json` on the local machine.
 
-Tool settings may include static MCP and plugin tools:
+MCP servers may be declared in settings. Project MCP has priority over global MCP:
 
 ```json
 {
@@ -36,23 +36,11 @@ Tool settings may include static MCP and plugin tools:
         }
       ]
     }
-  },
-  "plugins": [
-    {
-      "id": "calendar",
-      "tools": [
-        {
-          "name": "create_event",
-          "description": "Create a calendar event.",
-          "command": "node",
-          "args": ["./calendar-tool.js"],
-          "inputSchema": { "type": "object", "properties": {} }
-        }
-      ]
-    }
-  ]
+  }
 }
 ```
+
+Plugin and capability tools are filesystem packages, not settings entries. Put each tool in a folder named after the tool and include `tool.json`; for example `/home/.ndx/tools/shell/tool.json` or `<project>/.ndx/plugins/calendar/tools/create_event/tool.json`.
 
 ## Mock Agent
 

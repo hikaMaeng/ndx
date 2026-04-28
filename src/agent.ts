@@ -21,7 +21,7 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
   let input: unknown = options.prompt;
   let previousResponseId: string | undefined;
   let finalText = "";
-  const registry = createToolRegistry(options.config);
+  const registry = await createToolRegistry(options.config);
 
   for (let turn = 0; turn < options.config.maxTurns; turn += 1) {
     const response = await options.client.create(
@@ -41,34 +41,13 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
       return finalText;
     }
 
-    const outputs = response.toolCalls.every((call) =>
-      registry.supportsParallelToolCalls(call.name),
-    )
-      ? await Promise.all(
-          response.toolCalls.map((call) =>
-            executeToolCall(call, options, registry, {
-              isolateProcess: true,
-            }),
-          ),
-        )
-      : [];
-    if (outputs.length > 0) {
-      for (const output of outputs) {
-        options.onEvent?.({ type: "tool_result", output: output.output });
-      }
-      input = outputs.map((output) => output.item);
-      continue;
-    }
-
-    const sequentialOutputs = [];
-    for (const call of response.toolCalls) {
-      const output = await executeToolCall(call, options, registry, {
-        isolateProcess: false,
-      });
+    const outputs = await Promise.all(
+      response.toolCalls.map((call) => executeToolCall(call, options)),
+    );
+    for (const output of outputs) {
       options.onEvent?.({ type: "tool_result", output: output.output });
-      sequentialOutputs.push(output.item);
     }
-    input = sequentialOutputs;
+    input = outputs.map((output) => output.item);
   }
 
   throw new Error(`agent stopped after max_turns=${options.config.maxTurns}`);
@@ -77,8 +56,6 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
 async function executeToolCall(
   call: { callId: string; name: string; arguments: string },
   options: AgentRunOptions,
-  registry: ReturnType<typeof createToolRegistry>,
-  execution: { isolateProcess: boolean },
 ): Promise<{
   output: string;
   item: { type: "function_call_output"; call_id: string; output: string };
@@ -95,9 +72,7 @@ async function executeToolCall(
     env: options.config.env,
     timeoutMs: options.config.shellTimeoutMs,
   };
-  const result = execution.isolateProcess
-    ? await executeToolInWorker(call.name, args, context)
-    : await registry.execute(call.name, args, context);
+  const result = await executeToolInWorker(call.name, args, context);
   const output = result.output;
   return {
     output,

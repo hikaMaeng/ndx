@@ -35,6 +35,12 @@ export interface ToolRuntimeSettings {
   imageGeneration: boolean;
 }
 
+export interface NdxPaths {
+  globalDir: string;
+  projectDir?: string;
+  projectNdxDir?: string;
+}
+
 export interface McpToolSettings {
   name: string;
   description?: string;
@@ -105,8 +111,11 @@ export interface NdxConfig {
   websearch: WebSearchSettings;
   search: SearchRules;
   mcp: McpSettings;
+  globalMcp: McpSettings;
+  projectMcp: McpSettings;
   plugins: PluginSettings[];
   tools: ToolRuntimeSettings;
+  paths: NdxPaths;
 }
 
 export interface LoadedConfig {

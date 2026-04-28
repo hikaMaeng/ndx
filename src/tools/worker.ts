@@ -12,7 +12,9 @@ interface WorkerRequest {
 
 async function main(): Promise<void> {
   const request = await readRequest();
-  const registry = createToolRegistry(request.context.config as NdxConfig);
+  const registry = await createToolRegistry(
+    request.context.config as NdxConfig,
+  );
   const result = await registry.execute(
     request.name,
     request.args,

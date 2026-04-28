@@ -37,6 +37,51 @@ export async function callMcpTool(
   });
 }
 
+export async function listMcpServerTools(server: McpServerSettings): Promise<
+  Array<{
+    name: string;
+    description?: string;
+    inputSchema?: Record<string, unknown>;
+  }>
+> {
+  const result = await callJsonRpc(server, "tools/list", {});
+  if (
+    typeof result === "object" &&
+    result !== null &&
+    Array.isArray((result as { tools?: unknown }).tools)
+  ) {
+    return (result as { tools: unknown[] }).tools.flatMap((tool) => {
+      if (typeof tool !== "object" || tool === null) {
+        return [];
+      }
+      const entry = tool as {
+        name?: unknown;
+        description?: unknown;
+        inputSchema?: unknown;
+      };
+      if (typeof entry.name !== "string") {
+        return [];
+      }
+      return [
+        {
+          name: entry.name,
+          description:
+            typeof entry.description === "string"
+              ? entry.description
+              : undefined,
+          inputSchema:
+            typeof entry.inputSchema === "object" &&
+            entry.inputSchema !== null &&
+            !Array.isArray(entry.inputSchema)
+              ? (entry.inputSchema as Record<string, unknown>)
+              : undefined,
+        },
+      ];
+    });
+  }
+  return [];
+}
+
 export function listStaticMcpResources(
   config: NdxConfig,
   serverName?: string,

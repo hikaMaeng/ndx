@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -42,17 +49,24 @@ const baseConfig: NdxConfig = {
   websearch: {},
   search: {},
   mcp: {},
+  globalMcp: {},
+  projectMcp: {},
   plugins: [],
   tools: { imageGeneration: false },
+  paths: {
+    globalDir: "/home/.ndx",
+  },
 };
 
 test("mock agent exercises shell tool and completes", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-agent-"));
   try {
+    const globalDir = join(root, "home", ".ndx");
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
     const target = join(root, "tmp", "verify.txt");
     const result = await runAgent({
       cwd: root,
-      config: baseConfig,
+      config: { ...baseConfig, paths: { globalDir } },
       client: new MockModelClient(),
       prompt: `create a file named ${target} with text verified`,
     });
@@ -63,3 +77,47 @@ test("mock agent exercises shell tool and completes", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+function writeShellTool(toolDir: string): void {
+  mkdirSync(toolDir, { recursive: true });
+  writeFileSync(
+    join(toolDir, "tool.json"),
+    JSON.stringify({
+      type: "function",
+      function: {
+        name: "shell",
+        description: "Run a shell command.",
+        parameters: {
+          type: "object",
+          properties: { command: { type: "string" } },
+          required: ["command"],
+          additionalProperties: false,
+        },
+      },
+      command: "node",
+      args: ["tool.mjs"],
+    }),
+  );
+  writeFileSync(
+    join(toolDir, "tool.mjs"),
+    [
+      'import { spawn } from "node:child_process";',
+      'import { stdin, stdout } from "node:process";',
+      'let body = "";',
+      'stdin.setEncoding("utf8");',
+      'stdin.on("data", (chunk) => { body += chunk; });',
+      'stdin.on("end", () => {',
+      "  const request = JSON.parse(body);",
+      '  const child = spawn("/bin/bash", ["-lc", request.arguments.command], { cwd: request.cwd, stdio: ["ignore", "pipe", "pipe"] });',
+      '  let out = "";',
+      '  let err = "";',
+      '  child.stdout.setEncoding("utf8");',
+      '  child.stderr.setEncoding("utf8");',
+      '  child.stdout.on("data", (chunk) => { out += chunk; });',
+      '  child.stderr.on("data", (chunk) => { err += chunk; });',
+      '  child.on("close", (exitCode) => stdout.write(JSON.stringify({ exitCode, stdout: out, stderr: err }) + "\\n"));',
+      "});",
+      "",
+    ].join("\n"),
+  );
+}

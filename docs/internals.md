@@ -14,9 +14,11 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 ## Tool Loop
 
-`runAgent` builds a `ToolRegistry` once per run and passes the registry's Chat Completions-compatible schemas to every model call. Tool outputs use Responses-style `function_call_output` items internally and are converted to chat completions `role = "tool"` messages by the OpenAI-compatible adapter.
+`runAgent` builds a `ToolRegistry` once per run and passes the registry's Chat Completions-compatible schemas to every model call. Registry construction scans task, core, project, global, plugin, and MCP layers in priority order. Tool outputs use Responses-style `function_call_output` items internally and are converted to chat completions `role = "tool"` messages by the OpenAI-compatible adapter.
 
-The registry owns built-in tool definitions and dispatch. MCP and plugin tools are appended from settings, then exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
+The registry owns only task orchestration tool definitions. Capability tools come from filesystem `tool.json` packages. MCP tools come from project or global settings and are exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
+
+Every model tool call is sent to `src/tools/worker.ts` as a separate Node process. Filesystem tools then execute their manifest command as another process. Task tools execute inside the worker, never inside the agent process.
 
 ## Runtime Session
 

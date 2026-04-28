@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -44,17 +44,24 @@ const baseConfig: NdxConfig = {
   websearch: {},
   search: {},
   mcp: {},
+  globalMcp: {},
+  projectMcp: {},
   plugins: [],
   tools: { imageGeneration: false },
+  paths: {
+    globalDir: "/home/.ndx",
+  },
 };
 
 test("runtime emits session, turn, tool, and completion events", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-runtime-"));
   const events: RuntimeEvent[] = [];
   try {
+    const globalDir = join(root, "home", ".ndx");
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
     const runtime = new AgentRuntime({
       cwd: root,
-      config: baseConfig,
+      config: { ...baseConfig, paths: { globalDir } },
       client: new MockModelClient(),
       sources: ["/home/.ndx/settings.json"],
     });
@@ -84,6 +91,32 @@ test("runtime emits session, turn, tool, and completion events", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+function writeShellTool(toolDir: string): void {
+  mkdirSync(toolDir, { recursive: true });
+  writeFileSync(
+    join(toolDir, "tool.json"),
+    JSON.stringify({
+      type: "function",
+      function: {
+        name: "shell",
+        description: "Run a shell command.",
+        parameters: {
+          type: "object",
+          properties: { command: { type: "string" } },
+          required: ["command"],
+          additionalProperties: false,
+        },
+      },
+      command: "node",
+      args: ["tool.mjs"],
+    }),
+  );
+  writeFileSync(
+    join(toolDir, "tool.mjs"),
+    'import { stdout } from "node:process"; stdout.write(JSON.stringify({ exitCode: 0, stdout: "", stderr: "" }) + "\\n");\n',
+  );
+}
 
 test("runtime interrupt emits turn_aborted", async () => {
   const events: RuntimeEvent[] = [];

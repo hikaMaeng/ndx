@@ -6,7 +6,7 @@
 - Project settings path is `.ndx/settings.json` under the nearest ancestor project directory.
 - No runtime environment variable is used to select model, provider URL, provider key, or ndx home.
 - Settings are JSON only; `config.toml`, `.codex`, `NDX_HOME`, `NDX_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are not part of the ndx TypeScript loader contract.
-- `keys` values must be strings because they are injected into shell tool environment variables.
+- `keys` values must be strings because they are injected into external tool process environments.
 - Provider `key` may be an empty string.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
 
@@ -14,29 +14,30 @@
 
 - Web-search credentials live in `settings.json` under `websearch`.
 - Web-search parsing and interpretation rules live in global `/home/.ndx/search.json`.
-- The runtime exposes `web_search` when `websearch.provider` is set. The implemented backend is Tavily-compatible and requires `websearch.apiKey`.
+- Web-search is not agent-built-in. Provide it as an external `tool.json` package when needed.
 
-## Shell Tool
+## Tool System
 
-- Shell commands run through `/bin/bash -lc` on Unix and `cmd.exe` on Windows.
-- Shell environment is `process.env` overlaid with `settings.json` `keys` and compatibility `env` values.
-- The default shell timeout is `120000` ms.
-- `exec_command` and `write_stdin` use pipe-backed Node child processes, not a real PTY.
-- Parallel-safe tool batches execute in separate worker Node processes. `exec_command` and `write_stdin` are intentionally not worker-isolated because their session state lives in the parent process.
+- The agent body owns only task orchestration tools. Capability tools such as shell, patch, filesystem, web, image, and plugin tools must be external packages.
+- Filesystem tools must live under one of the documented layer directories and must include `tool.json`.
+- Tool folder name must equal the OpenAI function `name`.
+- Tool manifests must include an OpenAI function schema plus command execution fields.
+- The command execution field set is `command`, optional `args`, optional `cwd`, optional `env`, and optional `timeoutMs`.
+- Every model tool call runs in a separate worker Node process. No capability tool executes inside the agent process.
+- Multiple tool calls in one model response are launched in parallel. Sequential behavior is achieved by model turns queuing later asynchronous calls.
+- The default tool timeout is `shellTimeoutMs` from settings unless a tool manifest declares `timeoutMs`.
 
 ## OpenAI
 
 - Real model execution uses the active model's provider from `settings.json`.
 - The current implementation supports OpenAI-compatible chat completions function tool calls. Native Responses-only `namespace`, freeform, local_shell, and image_generation tool types are represented as function-compatible TypeScript contracts.
-- Multi-agent, interactive permission, and interactive input tools are exposed for Rust Codex schema parity but return unavailable until corresponding TypeScript clients exist.
-- Agent job task tools are exposed for Rust Codex schema parity but return unavailable until a TypeScript batch task backend exists.
-- `apply_patch` requires an `apply_patch` executable on PATH.
+- Multi-agent and agent-job task tools are exposed for Rust Codex schema parity but return unavailable until corresponding TypeScript task backends exist.
 
 ## MCP And Plugins
 
-- MCP tools are configured statically in JSON settings. Runtime discovery from arbitrary MCP servers is not yet automatic.
-- MCP stdio calls are best-effort JSON-RPC calls against configured `command` entries.
-- Plugin tools are configured in JSON settings and run commands with arguments in `NDX_TOOL_ARGS`.
+- Project MCP settings have higher priority than global MCP settings.
+- MCP command servers are queried with `tools/list` at startup. Static `tools[]` entries remain supported for servers that cannot be queried during tests or offline runs.
+- Plugin tools are discovered from filesystem plugin layer directories, not from `settings.json` plugin entries.
 
 ## Browser Markup
 

@@ -67,12 +67,23 @@ export function loadConfig(
 ): LoadedConfig {
   const sources: string[] = [];
   const merged = defaultSettings();
+  const globalDir = resolveGlobalNdxDir(options);
+  let globalMcp: McpSettings = {};
+  let projectMcp: McpSettings = {};
+  let projectDir: string | undefined;
 
   for (const file of configFiles(cwd, options)) {
     if (!existsSync(file)) {
       continue;
     }
-    mergeSettings(merged, parseSettings(readFileSync(file, "utf8"), file));
+    const parsed = parseSettings(readFileSync(file, "utf8"), file);
+    if (file === join(globalDir, SETTINGS_FILE)) {
+      globalMcp = parsed.mcp ?? {};
+    } else {
+      projectMcp = parsed.mcp ?? {};
+      projectDir = dirname(dirname(file));
+    }
+    mergeSettings(merged, parsed);
     sources.push(file);
   }
 
@@ -85,7 +96,17 @@ export function loadConfig(
     sources.push(searchFile);
   }
 
-  return { config: finalizeConfig(merged), sources };
+  return {
+    config: finalizeConfig(merged, {
+      globalDir,
+      projectDir,
+      projectNdxDir:
+        projectDir === undefined ? undefined : join(projectDir, CONFIG_DIR),
+      globalMcp,
+      projectMcp,
+    }),
+    sources,
+  };
 }
 
 /** Return the global search rule file path. */
@@ -227,7 +248,16 @@ function mergeModels(
   return [...byName.values()];
 }
 
-function finalizeConfig(settings: PartialSettings): NdxConfig {
+function finalizeConfig(
+  settings: PartialSettings,
+  runtime: {
+    globalDir: string;
+    projectDir?: string;
+    projectNdxDir?: string;
+    globalMcp: McpSettings;
+    projectMcp: McpSettings;
+  },
+): NdxConfig {
   const model = expectString(settings.model, "model");
   const providers = settings.providers ?? {};
   const models = settings.models ?? [];
@@ -261,9 +291,16 @@ function finalizeConfig(settings: PartialSettings): NdxConfig {
     websearch: settings.websearch ?? {},
     search: settings.search ?? {},
     mcp: settings.mcp ?? {},
+    globalMcp: runtime.globalMcp,
+    projectMcp: runtime.projectMcp,
     plugins: settings.plugins ?? [],
     tools: {
       imageGeneration: settings.tools?.imageGeneration ?? false,
+    },
+    paths: {
+      globalDir: runtime.globalDir,
+      projectDir: runtime.projectDir,
+      projectNdxDir: runtime.projectNdxDir,
     },
   };
 }
