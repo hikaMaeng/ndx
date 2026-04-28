@@ -1,12 +1,15 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { AgentAbortError, abortReason, throwIfAborted } from "../abort.js";
 import type { ToolContext, ToolExecutionResult } from "./types.js";
 
 export async function executeToolInWorker(
   name: string,
   args: Record<string, unknown>,
   context: ToolContext,
+  signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
+  throwIfAborted(signal);
   const workerPath = fileURLToPath(new URL("./worker.js", import.meta.url));
   return await new Promise<ToolExecutionResult>((resolve, reject) => {
     const child = spawn(process.execPath, [workerPath], {
@@ -14,6 +17,35 @@ export async function executeToolInWorker(
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const activeSignal = signal;
+    const cleanup = (): void => {
+      activeSignal?.removeEventListener("abort", onAbort);
+    };
+    const rejectOnce = (error: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const resolveOnce = (result: ToolExecutionResult): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+    const onAbort = (): void => {
+      if (activeSignal === undefined) {
+        return;
+      }
+      child.kill("SIGTERM");
+      rejectOnce(new AgentAbortError(abortReason(activeSignal)));
+    };
+    activeSignal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
@@ -22,11 +54,11 @@ export async function executeToolInWorker(
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
-    child.on("error", (error) => reject(error));
+    child.on("error", (error) => rejectOnce(error));
     child.on("close", (exitCode) => {
       const response = parseWorkerResponse(stdout);
       if (exitCode !== 0 || response?.error !== undefined) {
-        reject(
+        rejectOnce(
           new Error(
             response?.error ||
               stderr.trim() ||
@@ -35,7 +67,7 @@ export async function executeToolInWorker(
         );
         return;
       }
-      resolve({ output: response?.output ?? "" });
+      resolveOnce({ output: response?.output ?? "" });
     });
     child.stdin.end(JSON.stringify({ name, args, context }));
   });

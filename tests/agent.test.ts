@@ -10,9 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { isAgentAbortError } from "../src/abort.js";
 import { runAgent } from "../src/agent.js";
 import { MockModelClient } from "../src/mock-client.js";
-import type { NdxConfig } from "../src/types.js";
+import type { ModelClient, ModelResponse, NdxConfig } from "../src/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
@@ -78,6 +79,24 @@ test("mock agent exercises shell tool and completes", async () => {
   }
 });
 
+test("agent abort signal stops before starting a model request", async () => {
+  const client = new CountingModelClient();
+  const controller = new AbortController();
+  controller.abort("user requested stop");
+
+  await assert.rejects(
+    runAgent({
+      cwd: process.cwd(),
+      config: baseConfig,
+      client,
+      prompt: "do not start",
+      signal: controller.signal,
+    }),
+    isAgentAbortError,
+  );
+  assert.equal(client.requests, 0);
+});
+
 function writeShellTool(toolDir: string): void {
   mkdirSync(toolDir, { recursive: true });
   writeFileSync(
@@ -120,4 +139,17 @@ function writeShellTool(toolDir: string): void {
       "",
     ].join("\n"),
   );
+}
+
+class CountingModelClient implements ModelClient {
+  requests = 0;
+
+  async create(): Promise<ModelResponse> {
+    this.requests += 1;
+    return {
+      text: "unused",
+      toolCalls: [],
+      raw: {},
+    };
+  }
 }

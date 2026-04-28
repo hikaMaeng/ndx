@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isAgentAbortError } from "./abort.js";
 import { runAgent, type AgentEvent } from "./agent.js";
 import { classifyModelError } from "./errors.js";
 import type { RuntimeEvent, RuntimeEventMsg, Submission } from "./protocol.js";
@@ -21,8 +22,7 @@ export class AgentRuntime {
   private readonly client: ModelClient;
   private readonly sources: string[];
   private configured = false;
-  private currentTurnId: string | undefined;
-  private interruptedReason: string | undefined;
+  private activeTurn: ActiveTurn | undefined;
   private readonly abortedTurnIds = new Set<string>();
 
   constructor(options: AgentRuntimeOptions) {
@@ -46,8 +46,14 @@ export class AgentRuntime {
 
     const turnId = submission.id;
     const cwd = submission.op.cwd ?? this.cwd;
-    this.currentTurnId = turnId;
-    this.interruptedReason = undefined;
+    if (this.activeTurn !== undefined) {
+      this.interrupt("replaced by a new user turn", onEvent);
+    }
+    const activeTurn = {
+      turnId,
+      controller: new AbortController(),
+    };
+    this.activeTurn = activeTurn;
     this.abortedTurnIds.delete(turnId);
     this.emit(
       {
@@ -66,11 +72,16 @@ export class AgentRuntime {
         config: this.config,
         client: this.client,
         prompt: submission.op.prompt,
+        signal: activeTurn.controller.signal,
         onEvent: (event) => this.forwardAgentEvent(turnId, event, onEvent),
       });
 
-      if (this.interruptedReason !== undefined) {
-        this.emitTurnAborted(turnId, this.interruptedReason, onEvent);
+      if (activeTurn.controller.signal.aborted) {
+        this.emitTurnAborted(
+          turnId,
+          String(activeTurn.controller.signal.reason ?? "interrupted"),
+          onEvent,
+        );
         return undefined;
       }
 
@@ -85,6 +96,10 @@ export class AgentRuntime {
       );
       return finalText;
     } catch (error) {
+      if (isAgentAbortError(error)) {
+        this.emitTurnAborted(turnId, error.message, onEvent);
+        return undefined;
+      }
       const classified = classifyModelError(error);
       this.emit(
         {
@@ -99,8 +114,8 @@ export class AgentRuntime {
       );
       throw error;
     } finally {
-      if (this.currentTurnId === turnId) {
-        this.currentTurnId = undefined;
+      if (this.activeTurn?.turnId === turnId) {
+        this.activeTurn = undefined;
       }
     }
   }
@@ -121,8 +136,8 @@ export class AgentRuntime {
   }
 
   interrupt(reason = "interrupted", onEvent?: RuntimeEventHandler): void {
-    this.interruptedReason = reason;
-    this.emitTurnAborted(this.currentTurnId, reason, onEvent);
+    this.activeTurn?.controller.abort(reason);
+    this.emitTurnAborted(this.activeTurn?.turnId, reason, onEvent);
   }
 
   private ensureConfigured(onEvent?: RuntimeEventHandler): void {
@@ -222,4 +237,9 @@ export class AgentRuntime {
   private emit(msg: RuntimeEventMsg, onEvent?: RuntimeEventHandler): void {
     onEvent?.({ id: randomUUID(), msg });
   }
+}
+
+interface ActiveTurn {
+  turnId: string;
+  controller: AbortController;
 }
