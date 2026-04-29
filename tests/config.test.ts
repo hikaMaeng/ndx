@@ -135,7 +135,7 @@ test("configFiles returns only global and nearest project settings", () => {
   }
 });
 
-test("ensureGlobalNdxHome installs missing settings and core shell tool", () => {
+test("ensureGlobalNdxHome installs missing settings and core tool packages", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
@@ -152,6 +152,25 @@ test("ensureGlobalNdxHome installs missing settings and core shell tool", () => 
       existsSync(join(globalDir, "core", "tools", "shell", "tool.mjs")),
       true,
     );
+    for (const tool of [
+      "apply_patch",
+      "list_dir",
+      "view_image",
+      "web_search",
+      "image_generation",
+      "tool_suggest",
+      "tool_search",
+      "request_permissions",
+    ]) {
+      assert.equal(
+        existsSync(join(globalDir, "core", "tools", tool, "tool.json")),
+        true,
+      );
+      assert.equal(
+        existsSync(join(globalDir, "core", "tools", tool, "tool.mjs")),
+        true,
+      );
+    }
     assert.equal(report.globalDir, globalDir);
     assert.equal(
       report.elements.some(
@@ -163,7 +182,8 @@ test("ensureGlobalNdxHome installs missing settings and core shell tool", () => 
     assert.equal(
       report.elements.some(
         (element) =>
-          element.name === "skills" && element.status === "installed",
+          element.name === "core list_dir manifest" &&
+          element.status === "installed",
       ),
       true,
     );

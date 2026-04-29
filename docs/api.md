@@ -181,6 +181,8 @@ At turn startup the registry scans every layer in fixed priority order. First ma
 
 Only task orchestration tools are agent-owned: `update_plan`, `request_user_input`, multi-agent task tools, and agent-job task tools. Shell, filesystem, patch, web, media, plugin, and other capability tools must be external `tool.json` packages.
 
+Startup bootstraps the built-in core capability packages under `/home/.ndx/core/tools`: `shell`, `apply_patch`, `list_dir`, `view_image`, `web_search`, `image_generation`, `tool_suggest`, `tool_search`, and `request_permissions`.
+
 ## `tool.json`
 
 Every filesystem tool is a directory whose folder name equals `function.name` and contains `tool.json`.

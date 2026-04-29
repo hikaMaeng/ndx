@@ -17,66 +17,12 @@ import type {
   ToolRuntimeSettings,
   WebSearchSettings,
 } from "../shared/types.js";
+import { CORE_TOOL_PACKAGES, type CoreToolPackage } from "./core-tools.js";
 
 const DEFAULT_GLOBAL_NDX_DIR = "/home/.ndx";
 const CONFIG_DIR = ".ndx";
 const SETTINGS_FILE = "settings.json";
 const SEARCH_FILE = "search.json";
-const CORE_SHELL_TOOL = `import { spawn } from "node:child_process";
-import { resolve } from "node:path";
-import { stdin, stdout } from "node:process";
-
-const request = JSON.parse(await readStdin());
-const args = request.arguments ?? {};
-const command = String(args.command ?? "");
-const cwd = resolve(String(args.cwd ?? request.cwd ?? process.env.NDX_TOOL_CWD ?? process.cwd()));
-const timeoutMs = Number.isInteger(args.timeoutMs) ? args.timeoutMs : 120000;
-const shell = process.platform === "win32" ? "cmd.exe" : "/bin/bash";
-const shellArgs =
-  process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-lc", command];
-
-const result = await new Promise((resolveResult, reject) => {
-  const child = spawn(shell, shellArgs, {
-    cwd,
-    env: process.env,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  let out = "";
-  let err = "";
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGTERM");
-  }, timeoutMs);
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    out += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    err += chunk;
-  });
-  child.on("error", reject);
-  child.on("close", (exitCode) => {
-    clearTimeout(timer);
-    resolveResult({ command, cwd, exitCode, stdout: out, stderr: err, timedOut });
-  });
-});
-
-stdout.write(\`\${JSON.stringify(result)}\\n\`);
-
-function readStdin() {
-  return new Promise((resolveRead) => {
-    let body = "";
-    stdin.setEncoding("utf8");
-    stdin.on("data", (chunk) => {
-      body += chunk;
-    });
-    stdin.on("end", () => {
-      resolveRead(body);
-    });
-  });
-}`;
 
 export interface ConfigLoadOptions {
   globalDir?: string;
@@ -202,7 +148,7 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
     path: settingsFile,
     status: settingsStatus,
   });
-  elements.push(...ensureCoreShellTool(globalDir));
+  elements.push(...ensureCoreToolPackages(globalDir));
   return {
     globalDir,
     checkedAt: Date.now(),
@@ -242,15 +188,24 @@ function defaultSettings(): PartialSettings {
   };
 }
 
-function ensureCoreShellTool(globalDir: string): NdxBootstrapElement[] {
+function ensureCoreToolPackages(globalDir: string): NdxBootstrapElement[] {
+  return CORE_TOOL_PACKAGES.flatMap((tool) =>
+    ensureCoreToolPackage(globalDir, tool),
+  );
+}
+
+function ensureCoreToolPackage(
+  globalDir: string,
+  tool: CoreToolPackage,
+): NdxBootstrapElement[] {
   const elements: NdxBootstrapElement[] = [];
-  const toolDir = join(globalDir, "core", "tools", "shell");
+  const toolDir = join(globalDir, "core", "tools", tool.name);
   const manifestFile = join(toolDir, "tool.json");
   const runtimeFile = join(toolDir, "tool.mjs");
   const toolDirStatus = existsSync(toolDir) ? "existing" : "installed";
   mkdirSync(toolDir, { recursive: true });
   elements.push({
-    name: "core shell tool",
+    name: `core ${tool.name} tool`,
     path: toolDir,
     status: toolDirStatus,
   });
@@ -259,45 +214,25 @@ function ensureCoreShellTool(globalDir: string): NdxBootstrapElement[] {
     writeJsonFile(manifestFile, {
       type: "function",
       function: {
-        name: "shell",
-        description:
-          "Run a shell command in the local workspace and return stdout, stderr, and exit status.",
-        parameters: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            command: {
-              type: "string",
-              description: "Command line to run through the platform shell.",
-            },
-            cwd: {
-              type: "string",
-              description:
-                "Optional working directory. Defaults to the agent cwd.",
-            },
-            timeoutMs: {
-              type: "integer",
-              description: "Optional timeout in milliseconds.",
-            },
-          },
-          required: ["command"],
-        },
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
       },
       command: "node",
       args: ["tool.mjs"],
     });
   }
   elements.push({
-    name: "core shell manifest",
+    name: `core ${tool.name} manifest`,
     path: manifestFile,
     status: manifestStatus,
   });
   const runtimeStatus = existsSync(runtimeFile) ? "existing" : "installed";
   if (!existsSync(runtimeFile)) {
-    writeFileSync(runtimeFile, `${CORE_SHELL_TOOL}\n`);
+    writeFileSync(runtimeFile, `${tool.runtime}\n`);
   }
   elements.push({
-    name: "core shell runtime",
+    name: `core ${tool.name} runtime`,
     path: runtimeFile,
     status: runtimeStatus,
   });
