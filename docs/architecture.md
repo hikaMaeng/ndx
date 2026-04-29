@@ -6,8 +6,10 @@
 - `src/config.ts`: JSON settings loader for fixed global settings, nearest project settings, and global search rules.
 - `src/protocol.ts`: session, submission, operation, and runtime event contracts shared by CLI, future TUI, and future app-server.
 - `src/runtime.ts`: `AgentRuntime` turn coordinator. It emits Rust Codex-style session/turn/tool/error events and delegates model/tool execution to the agent loop.
-- `src/session-server.ts`: WebSocket JSON-RPC session core. It owns live threads, client subscriptions, runtime event broadcast, and server-side JSONL persistence.
+- `src/session-server.ts`: WebSocket JSON-RPC session core. It owns live threads, client subscriptions, runtime event broadcast, and server-side persistence scheduling.
 - `src/session-client.ts`: JSON-RPC WebSocket client used by the CLI and tests. It does not persist session state.
+- `src/session-log-store.ts`: in-memory persistence queue that sends one JSONL write job at a time to a child writer process.
+- `src/session-log-writer.ts`: child process entrypoint that performs JSONL filesystem IO and reports success or failure over IPC.
 - `src/errors.ts`: provider error classification used by runtime error events.
 - `src/agent.ts`: Responses-style model/tool loop.
 - `src/openai.ts`: OpenAI-compatible chat completions adapter and response normalization.
@@ -26,7 +28,7 @@
 3. The CLI acts as a client: it sends `thread/start` and `turn/start` requests, receives notifications, and prints selected tool/final events.
 4. The session server chooses `MockModelClient` for `--mock`, otherwise `OpenAiResponsesClient`, and creates one `AgentRuntime` per live thread.
 5. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-6. The session server appends thread, request, runtime-event, and notification records to JSONL under `<globalDir>/sessions/ts-server`.
+6. The session server enqueues thread, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
 7. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
 8. `runAgent` sends the prompt to the model client through the runtime.
 9. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
@@ -54,6 +56,21 @@ The server translates runtime events into JSON-RPC notifications:
 - `error`
 
 Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live thread state and durable JSONL.
+
+## Persistence Queue
+
+The session server never performs JSONL filesystem IO on the request path. It
+pushes records into `SessionLogStore`. When the queue transitions from idle to
+non-empty, the store starts `session-log-writer` as a child process, sends one
+job over IPC, waits for a result event, then sends the next job. Failed jobs are
+retried up to three attempts, then dropped with a server-side error log so the
+main session process stays alive.
+
+When a WebSocket connection closes without an explicit session shutdown, the
+server removes that connection from thread subscriber sets. If a thread has no
+remaining subscribers, the server enqueues a `thread_detached` record and
+triggers a queue drain. In-flight turns can still finish and enqueue their final
+runtime events because the live thread remains in server memory.
 
 ## Docker Flow
 

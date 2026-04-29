@@ -36,8 +36,9 @@ request returns tool calls, the loop exits with
 - `subscribers`: WebSocket clients subscribed to each thread;
 - `events`: server-held runtime event history for `thread/read`;
 - `status`: thread status derived from runtime events;
-- `SessionLogStore`: serialized JSONL appends under
-  `<globalDir>/sessions/ts-server`.
+- `SessionLogStore`: FIFO persistence queue under
+  `<globalDir>/sessions/ts-server`;
+- `session-log-writer`: child process that performs JSONL filesystem writes.
 
 The CLI is not the session owner. Normal one-shot and interactive CLI modes
 start an embedded loopback WebSocket server and then act as a client. `ndx
@@ -96,11 +97,13 @@ instance. It starts with `config.instructions` as a `system` message, appends
 string input as a `user` message, and appends function outputs as `tool`
 messages. This volatile message list is the current TypeScript context.
 
-`SessionServer` writes server-owned JSONL records for thread creation,
-subscription, turn requests, runtime events, and outbound notifications. This is
-not yet Rust Codex rollout recovery: the server does not write `history.jsonl`,
-does not back thread metadata with SQLite, and cannot rebuild turns from
-persisted `RolloutItem` records.
+`SessionServer` queues server-owned JSONL records for thread creation,
+subscription, turn requests, runtime events, outbound notifications, and
+connection detach. A child writer process performs the actual file IO and
+reports result events to the parent. This is not yet Rust Codex rollout
+recovery: the server does not write `history.jsonl`, does not back thread
+metadata with SQLite, and cannot rebuild turns from persisted `RolloutItem`
+records.
 
 ## Hooks, Events, And Socket Delivery
 
@@ -120,3 +123,8 @@ prevent `turn_complete`.
 JSON-RPC-style notifications, persists them, and sends them to subscribed
 WebSocket clients. UI clients such as CLI, TUI, or VS Code should consume this
 socket stream rather than attaching their own durable session writers.
+
+Persistence is event driven. Queue insertion is synchronous and cheap; the
+worker process performs `mkdir` and `appendFile`. Success advances the queue,
+failure retries the job, and repeated failure drops only that persistence job
+with an error log.

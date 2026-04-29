@@ -135,12 +135,7 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
 
     const logFile = join(persistenceDir, `${threadId}.jsonl`);
     assert.equal(existsSync(logFile), true);
-    const records = readFileSync(logFile, "utf8")
-      .trim()
-      .split("\n")
-      .map(
-        (line) => JSON.parse(line) as { type: string; notification?: unknown },
-      );
+    let records = readJsonl(logFile);
     assert.equal(
       records.some((record) => record.type === "thread_started"),
       true,
@@ -151,6 +146,25 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
     );
     assert.equal(
       records.some((record) => record.type === "notification"),
+      true,
+    );
+    assert.equal(
+      records.every(
+        (record) =>
+          typeof record.writerPid === "number" &&
+          record.writerPid !== process.pid,
+      ),
+      true,
+    );
+
+    client.close();
+    subscriber.close();
+    records = await waitForLogRecord(
+      logFile,
+      (record) => record.type === "thread_detached",
+    );
+    assert.equal(
+      records.some((record) => record.type === "thread_detached"),
       true,
     );
   } finally {
@@ -173,6 +187,31 @@ function waitForMethod(
       }
     });
   });
+}
+
+async function waitForLogRecord(
+  file: string,
+  predicate: (record: Record<string, unknown>) => boolean,
+): Promise<Array<Record<string, unknown>>> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    if (existsSync(file)) {
+      const records = readJsonl(file);
+      if (records.some(predicate)) {
+        return records;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`timed out waiting for log record in ${file}`);
+}
+
+function readJsonl(file: string): Array<Record<string, unknown>> {
+  return readFileSync(file, "utf8")
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 function writeShellTool(toolDir: string): void {

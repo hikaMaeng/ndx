@@ -53,8 +53,10 @@ Notifications:
 - `warning`
 - `error`
 
-Server JSONL records are written to
-`<globalDir>/sessions/ts-server/<threadId>.jsonl`.
+Server JSONL records are queued by the session server and written by a child
+writer process to `<globalDir>/sessions/ts-server/<threadId>.jsonl`. Records
+include `persistedAt` and `writerPid`. If every client disconnects from a
+thread, the server queues `thread_detached` and drains pending persistence work.
 
 ## Settings
 

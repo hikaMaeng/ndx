@@ -24,6 +24,8 @@ npm run deploy
 - Runtime interrupt event contract.
 - WebSocket session server request/notification flow.
 - Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
+- Session JSONL writes performed by a child writer process, not the main process.
+- Queue drain after clients disconnect without an explicit session close command.
 - Multiple WebSocket clients subscribed to the same live thread.
 - Provider error classification for non-retryable and retryable failures.
 - Docker remote-clone build using the selected `NDX_GIT_REF` branch.

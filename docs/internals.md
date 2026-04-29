@@ -32,7 +32,7 @@ The current interrupt support records and emits the abort contract. It does not 
 
 `SessionServer` is the live session authority. It accepts WebSocket JSON-RPC,
 creates one `AgentRuntime` per `thread/start`, stores per-thread event history,
-maps runtime events to client notifications, and appends server-owned JSONL
+maps runtime events to client notifications, and enqueues server-owned JSONL
 records under `<globalDir>/sessions/ts-server`.
 
 The CLI is a client of this server. In normal one-shot and interactive modes it
@@ -43,6 +43,17 @@ already-running server.
 Client programs may render or cache notifications, but durable session writes
 belong to the session server so CLI, TUI, VS Code, and other clients observe the
 same source of truth.
+
+`SessionLogStore` keeps persistence work off the session request path. It owns
+an in-memory FIFO queue, one in-flight job, and an IPC child process. The child
+process writes JSONL, adds `persistedAt` and `writerPid`, and reports result
+events. The parent retries failed writes three times and logs drops instead of
+crashing the server.
+
+Socket close is also a persistence boundary. When a connection disappears and a
+thread has no subscribers left, the server records `thread_detached` and drains
+the queue. This protects embedded CLI and external clients that exit without
+sending an explicit session close command.
 
 ## Mock Client
 

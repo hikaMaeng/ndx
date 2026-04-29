@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { join } from "node:path";
 import { AgentRuntime } from "./runtime.js";
+import { SessionLogStore } from "./session-log-store.js";
 import type { RuntimeEvent, RuntimeEventMsg } from "./protocol.js";
 import type { ModelClient, NdxConfig } from "./types.js";
 
@@ -105,7 +105,7 @@ export class SessionServer {
         resolve();
       });
     });
-    await this.flushPersistence();
+    await this.store.close();
   }
 
   async flushPersistence(): Promise<void> {
@@ -137,10 +137,7 @@ export class SessionServer {
     });
     this.clients.add(connection);
     socket.on("close", () => {
-      this.clients.delete(connection);
-      for (const thread of this.threads.values()) {
-        thread.subscribers.delete(connection);
-      }
+      this.handleConnectionClose(connection);
     });
   }
 
@@ -234,7 +231,7 @@ export class SessionServer {
       updatedAt: now,
     };
     this.threads.set(thread.id, thread);
-    await this.store.append(thread.id, {
+    this.store.append(thread.id, {
       type: "thread_started",
       threadId: thread.id,
       cwd,
@@ -253,7 +250,7 @@ export class SessionServer {
   ): Promise<unknown> {
     const thread = this.requiredThread(params);
     thread.subscribers.add(connection);
-    await this.store.append(thread.id, {
+    this.store.append(thread.id, {
       type: "thread_subscribed",
       threadId: thread.id,
       subscribedAt: Date.now(),
@@ -277,7 +274,7 @@ export class SessionServer {
     thread.subscribers.add(connection);
     thread.status = "running";
     thread.updatedAt = Date.now();
-    void this.store.append(thread.id, {
+    this.store.append(thread.id, {
       type: "turn_start_requested",
       threadId: thread.id,
       turnId,
@@ -328,7 +325,7 @@ export class SessionServer {
     } else if (msg.type === "error") {
       thread.status = "failed";
     }
-    void this.store.append(thread.id, {
+    this.store.append(thread.id, {
       type: "runtime_event",
       threadId: thread.id,
       event,
@@ -341,7 +338,7 @@ export class SessionServer {
     thread: ServerThread,
     notification: JsonRpcNotification,
   ): void {
-    void this.store.append(thread.id, {
+    this.store.append(thread.id, {
       type: "notification",
       threadId: thread.id,
       notification,
@@ -349,6 +346,26 @@ export class SessionServer {
     });
     for (const subscriber of thread.subscribers) {
       subscriber.sendJson(notification);
+    }
+  }
+
+  private handleConnectionClose(connection: WebSocketConnection): void {
+    this.clients.delete(connection);
+    for (const thread of this.threads.values()) {
+      if (!thread.subscribers.delete(connection)) {
+        continue;
+      }
+      if (thread.subscribers.size > 0) {
+        continue;
+      }
+      thread.updatedAt = Date.now();
+      this.store.append(thread.id, {
+        type: "thread_detached",
+        threadId: thread.id,
+        status: thread.status,
+        disconnectedAt: thread.updatedAt,
+      });
+      void this.store.flush();
     }
   }
 
@@ -370,38 +387,6 @@ export class SessionServer {
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
     };
-  }
-}
-
-class SessionLogStore {
-  private queue = Promise.resolve();
-  private disabledReason: string | undefined;
-
-  constructor(private readonly dir: string) {}
-
-  append(threadId: string, record: Record<string, unknown>): Promise<void> {
-    this.queue = this.queue.then(async () => {
-      if (this.disabledReason !== undefined) {
-        return;
-      }
-      try {
-        await mkdir(this.dir, { recursive: true });
-        await appendFile(
-          join(this.dir, `${threadId}.jsonl`),
-          `${JSON.stringify({ ...record, persistedAt: Date.now() })}\n`,
-        );
-      } catch (error) {
-        this.disabledReason = errorMessage(error);
-        console.error(
-          `[session-server] persistence disabled for ${this.dir}: ${this.disabledReason}`,
-        );
-      }
-    });
-    return this.queue;
-  }
-
-  async flush(): Promise<void> {
-    await this.queue;
   }
 }
 
