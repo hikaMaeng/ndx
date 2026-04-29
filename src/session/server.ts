@@ -159,6 +159,7 @@ export class SessionServer {
     this.closing = true;
     for (const client of this.clients) {
       client.close();
+      client.destroy();
     }
     await new Promise<void>((resolve, reject) => {
       this.server.close((error) => {
@@ -1297,6 +1298,10 @@ class WebSocketConnection {
     if (!this.socket.destroyed && !this.socket.writableEnded) {
       this.socket.end(encodeFrame(0x8, Buffer.alloc(0)));
     }
+  }
+
+  destroy(): void {
+    this.socket.destroy();
   }
 
   private handleData(chunk: Buffer): void {
