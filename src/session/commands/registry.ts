@@ -23,6 +23,11 @@ export type SlashCommandResult =
       output: string;
       session: unknown;
     }
+  | {
+      handled: true;
+      action: "deleteSession";
+      output: string;
+    }
   | { handled: true; action: "exit"; output?: string }
   | { handled: false; output: string };
 
@@ -110,8 +115,14 @@ const NDX_SESSION_COMMANDS: SlashCommandDefinition[] = [
     implemented: true,
   },
   {
-    name: "restore",
+    name: "restoreSession",
     description: "restore a saved session by id or workspace session number",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "deleteSession",
+    description: "delete a saved session for the current workspace",
     placement: "session-builtin",
     implemented: true,
   },

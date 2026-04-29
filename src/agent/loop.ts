@@ -9,6 +9,7 @@ import type {
   NdxConfig,
   TokenUsage,
 } from "../shared/types.js";
+import type { ModelConversationItem } from "../model/types.js";
 import type { ToolRegistry } from "../session/tools/registry.js";
 
 export interface AgentRunOptions {
@@ -16,14 +17,15 @@ export interface AgentRunOptions {
   config: NdxConfig;
   client: ModelClient;
   prompt: string;
+  history?: ModelConversationItem[];
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void;
 }
 
 export type AgentEvent =
   | { type: "model_text"; text: string }
-  | { type: "tool_call"; name: string; arguments: string }
-  | { type: "tool_result"; output: string }
+  | { type: "tool_call"; callId: string; name: string; arguments: string }
+  | { type: "tool_result"; callId: string; output: string }
   | { type: "token_count"; usage: TokenUsage };
 
 export async function runAgent(options: AgentRunOptions): Promise<string> {
@@ -53,7 +55,7 @@ type SamplingResult =
 
 function createInitialState(prompt: string): AgentLoopState {
   return {
-    input: prompt,
+    input: undefined,
     finalText: "",
   };
 }
@@ -64,6 +66,9 @@ async function runSamplingRequest(
   options: AgentRunOptions,
 ): Promise<SamplingResult> {
   throwIfAborted(options.signal);
+  if (state.input === undefined) {
+    state.input = initialModelInput(options.prompt, options.history ?? []);
+  }
   const response = await options.client.create(
     state.input,
     state.previousResponseId,
@@ -78,6 +83,16 @@ async function runSamplingRequest(
     needsFollowUp: true,
     nextInput: await executeToolCalls(response.toolCalls, options),
   };
+}
+
+function initialModelInput(
+  prompt: string,
+  history: ModelConversationItem[],
+): unknown {
+  if (history.length === 0) {
+    return prompt;
+  }
+  return [...history, { type: "message", role: "user", content: prompt }];
 }
 
 function updateStateFromModelResponse(
@@ -109,7 +124,11 @@ async function executeToolCalls(
   );
   throwIfAborted(options.signal);
   for (const output of outputs) {
-    options.onEvent?.({ type: "tool_result", output: output.output });
+    options.onEvent?.({
+      type: "tool_result",
+      callId: output.item.call_id,
+      output: output.output,
+    });
   }
   return outputs.map((output) => output.item);
 }
@@ -123,6 +142,7 @@ async function executeToolCall(
 }> {
   options.onEvent?.({
     type: "tool_call",
+    callId: call.callId,
     name: call.name,
     arguments: call.arguments,
   });

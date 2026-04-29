@@ -4,7 +4,11 @@ import type {
   TokenUsage,
 } from "../shared/types.js";
 import { errorText, postJson, providerHeaders } from "./http.js";
-import type { ModelInput, ProviderRequestOptions } from "./types.js";
+import type {
+  ModelConversationItem,
+  ModelInput,
+  ProviderRequestOptions,
+} from "./types.js";
 
 interface ChatToolCallPayload {
   id?: string;
@@ -83,12 +87,33 @@ export class OpenAiChatCompletionsAdapter {
     }
 
     if (Array.isArray(input)) {
+      if (input.some((item) => isMessage(item) || isAssistantToolCalls(item))) {
+        this.messages.length = 1;
+      }
       for (const item of input) {
         if (isFunctionCallOutput(item)) {
           this.messages.push({
             role: "tool",
             tool_call_id: item.call_id,
             content: item.output,
+          });
+        } else if (isMessage(item)) {
+          this.messages.push({
+            role: item.role,
+            content: item.content,
+          });
+        } else if (isAssistantToolCalls(item)) {
+          this.messages.push({
+            role: "assistant",
+            content: null,
+            tool_calls: item.toolCalls.map((call) => ({
+              id: call.callId,
+              type: "function",
+              function: {
+                name: call.name,
+                arguments: call.arguments,
+              },
+            })),
           });
         }
       }
@@ -97,6 +122,30 @@ export class OpenAiChatCompletionsAdapter {
 
     this.messages.push({ role: "user", content: JSON.stringify(input) });
   }
+}
+
+function isMessage(
+  input: unknown,
+): input is Extract<ModelConversationItem, { type: "message" }> {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    (input as { type?: unknown }).type === "message" &&
+    ((input as { role?: unknown }).role === "user" ||
+      (input as { role?: unknown }).role === "assistant") &&
+    typeof (input as { content?: unknown }).content === "string"
+  );
+}
+
+function isAssistantToolCalls(
+  input: unknown,
+): input is Extract<ModelConversationItem, { type: "assistant_tool_calls" }> {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    (input as { type?: unknown }).type === "assistant_tool_calls" &&
+    Array.isArray((input as { toolCalls?: unknown }).toolCalls)
+  );
 }
 
 export function normalizeChatResponse(

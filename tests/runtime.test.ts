@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { classifyModelError } from "../src/runtime/errors.js";
+import { conversationHistoryFromRuntimeEvents } from "../src/runtime/history.js";
 import { MockModelClient } from "../src/model/mock-client.js";
 import type { RuntimeEvent } from "../src/shared/protocol.js";
 import { AgentRuntime } from "../src/runtime/runtime.js";
@@ -147,6 +148,69 @@ test("runtime interrupt emits turn_aborted", async () => {
   if (abort?.type === "turn_aborted") {
     assert.equal(abort.reason, "user requested stop");
   }
+});
+
+test("runtime events rebuild model conversation history", () => {
+  const history = conversationHistoryFromRuntimeEvents([
+    {
+      id: "event-1",
+      msg: {
+        type: "turn_started",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        prompt: "make test1",
+        cwd: "/workspace",
+      },
+    },
+    {
+      id: "event-2",
+      msg: {
+        type: "tool_call",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        name: "shell",
+        arguments: '{"command":"mkdir test1"}',
+      },
+    },
+    {
+      id: "event-3",
+      msg: {
+        type: "tool_result",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        output: '{"exitCode":0}',
+      },
+    },
+    {
+      id: "event-4",
+      msg: {
+        type: "turn_complete",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        finalText: "created test1",
+      },
+    },
+  ]);
+
+  assert.deepEqual(history, [
+    { type: "message", role: "user", content: "make test1" },
+    {
+      type: "assistant_tool_calls",
+      toolCalls: [
+        {
+          callId: "restored-turn-1-1",
+          name: "shell",
+          arguments: '{"command":"mkdir test1"}',
+        },
+      ],
+    },
+    {
+      type: "function_call_output",
+      call_id: "restored-turn-1-1",
+      output: '{"exitCode":0}',
+    },
+    { type: "message", role: "assistant", content: "created test1" },
+  ]);
 });
 
 function bootstrapReport(globalDir: string): NdxBootstrapReport {

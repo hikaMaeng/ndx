@@ -14,6 +14,7 @@ import type { Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
 import { ensureGlobalNdxHome } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
+import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import { SessionLogStore } from "./log-store.js";
 import {
   BUILT_IN_SLASH_COMMANDS,
@@ -117,6 +118,7 @@ export class SessionServer {
   private readonly store: SessionLogStore;
   private readonly bootstrap: NdxBootstrapReport;
   private readonly serverId = randomUUID();
+  private closing = false;
 
   constructor(options: SessionServerOptions) {
     this.options = options;
@@ -151,6 +153,10 @@ export class SessionServer {
   }
 
   async close(): Promise<void> {
+    if (this.closing) {
+      return;
+    }
+    this.closing = true;
     for (const client of this.clients) {
       client.close();
     }
@@ -250,6 +256,8 @@ export class SessionServer {
             "session/start",
             "session/list",
             "session/restore",
+            "session/deleteCandidates",
+            "session/delete",
             "session/subscribe",
             "session/read",
             "turn/start",
@@ -266,6 +274,10 @@ export class SessionServer {
         return this.listSessions(request.params);
       case "session/restore":
         return this.restoreSession(connection, request.params);
+      case "session/deleteCandidates":
+        return this.deleteSessionCandidates(request.params);
+      case "session/delete":
+        return this.deleteSession(request.params);
       case "session/subscribe":
         return this.subscribeSession(connection, request.params);
       case "session/read":
@@ -346,6 +358,29 @@ export class SessionServer {
     return { sessions: this.numberedSessionsForCwd(cwd) };
   }
 
+  private deleteSessionCandidates(params: unknown): unknown {
+    const cwd = stringParam(params, "cwd") ?? this.options.cwd;
+    const currentSessionId = stringParam(params, "currentSessionId");
+    return {
+      sessions: this.deletableSessionsForCwd(cwd, currentSessionId),
+    };
+  }
+
+  private deleteSession(params: unknown): unknown {
+    const cwd = stringParam(params, "cwd") ?? this.options.cwd;
+    const selector = requiredStringParam(params, "selector");
+    const currentSessionId = stringParam(params, "currentSessionId");
+    const deleted = this.deleteSessionBySelector(
+      cwd,
+      selector,
+      currentSessionId,
+    );
+    return {
+      session: deleted,
+      message: `deleted session ${deleted.number}: ${deleted.title}`,
+    };
+  }
+
   private restoreSession(
     connection: WebSocketConnection,
     params: unknown,
@@ -408,12 +443,12 @@ export class SessionServer {
           action: "print",
           output: this.formatSessions(execution.cwd ?? this.options.cwd),
         };
-      case "restore": {
+      case "restoreSession": {
         if (execution.args === undefined) {
           return {
             handled: true,
             action: "print",
-            output: "usage: /restore <session-id|session-number>",
+            output: "usage: /restoreSession <session-id|session-number>",
           };
         }
         const session = this.restoreSessionBySelector(
@@ -426,6 +461,28 @@ export class SessionServer {
           action: "restore",
           output: `restored session ${session.sequence}: ${session.title}\nid: ${session.id}\nstatus: ${session.status}`,
           session: this.sessionSummary(session),
+        };
+      }
+      case "deleteSession": {
+        if (execution.args === undefined) {
+          return {
+            handled: true,
+            action: "deleteSession",
+            output: this.formatDeleteSessions(
+              execution.cwd ?? this.options.cwd,
+              execution.sessionId,
+            ),
+          };
+        }
+        const deleted = this.deleteSessionBySelector(
+          execution.cwd ?? this.options.cwd,
+          execution.args.trim(),
+          execution.sessionId,
+        );
+        return {
+          handled: true,
+          action: "deleteSession",
+          output: `deleted session ${deleted.number}: ${deleted.title}\nid: ${deleted.id}`,
         };
       }
       case "interrupt":
@@ -455,7 +512,13 @@ export class SessionServer {
   ): Promise<unknown> {
     let session = this.requiredSession(params);
     const prompt = requiredStringParam(params, "prompt");
+    if (this.terminateIfDeleted(session, "session was deleted")) {
+      return Promise.resolve({ turn: { status: "deleted" } });
+    }
     session = this.ensureOwnedSession(session, connection);
+    if (this.terminateIfDeleted(session, "session was deleted")) {
+      return Promise.resolve({ turn: { status: "deleted" } });
+    }
     const cwd = stringParam(params, "cwd") ?? session.cwd;
     const turnId = randomUUID();
     session.subscribers.add(connection);
@@ -507,6 +570,15 @@ export class SessionServer {
   private handleRuntimeEvent(session: LiveSession, event: RuntimeEvent): void {
     const turnId = eventTurnId(event);
     if (turnId !== undefined && session.discardedTurnIds.has(turnId)) {
+      return;
+    }
+    if (
+      isTerminalEvent(event) &&
+      this.terminateIfDeleted(
+        session,
+        "session was deleted before the response completed",
+      )
+    ) {
       return;
     }
     if (session.persisted && this.currentOwner(session.id) !== this.serverId) {
@@ -655,6 +727,7 @@ export class SessionServer {
       config: this.options.config,
       client: this.options.createClient(),
       sessionId: persisted.id,
+      history: conversationHistoryFromRuntimeEvents(persisted.events),
       sources: this.options.sources,
       bootstrap: this.bootstrap,
     });
@@ -704,6 +777,41 @@ export class SessionServer {
       throw new Error(`unknown session for ${resolve(cwd)}: ${selector}`);
     }
     return selected;
+  }
+
+  private deleteSessionBySelector(
+    cwd: string,
+    selector: string,
+    currentSessionId: string | undefined,
+  ): SessionListEntry {
+    const session = this.resolveSessionSelector(cwd, selector);
+    if (session.id === currentSessionId) {
+      throw new Error("cannot delete the current session");
+    }
+    const live = this.sessions.get(session.id);
+    if (live !== undefined && live.subscribers.size > 0) {
+      this.publishEphemeral(live, deletedSessionNotification(live.id));
+      for (const subscriber of live.subscribers) {
+        subscriber.close();
+      }
+    }
+    this.sessions.delete(session.id);
+    rmSync(this.sessionFile(session.id), { force: true });
+    rmSync(this.ownerFile(session.id), { force: true });
+    rmSync(`${this.ownerFile(session.id)}.lock`, {
+      recursive: true,
+      force: true,
+    });
+    return session;
+  }
+
+  private deletableSessionsForCwd(
+    cwd: string,
+    currentSessionId: string | undefined,
+  ): SessionListEntry[] {
+    return this.numberedSessionsForCwd(cwd).filter(
+      (session) => session.id !== currentSessionId,
+    );
   }
 
   private numberedSessionsForCwd(cwd: string): SessionListEntry[] {
@@ -829,6 +937,33 @@ export class SessionServer {
     ].join("\n");
   }
 
+  private formatDeleteSessions(
+    cwd: string,
+    currentSessionId: string | undefined,
+  ): string {
+    const sessions = this.deletableSessionsForCwd(cwd, currentSessionId);
+    if (sessions.length === 0) {
+      return [
+        `delete sessions for ${resolve(cwd)}`,
+        "no deletable sessions",
+      ].join("\n");
+    }
+    return [
+      `delete sessions for ${resolve(cwd)}`,
+      ...sessions.map((session) =>
+        [
+          `${session.number}. ${session.title}`,
+          `id: ${session.id}`,
+          `updated: ${new Date(session.updatedAt).toISOString()}`,
+          `status: ${session.status}`,
+          `events: ${session.eventCount}`,
+          session.live ? "live" : "saved",
+        ].join(" | "),
+      ),
+      "Press Enter without a number to cancel.",
+    ].join("\n");
+  }
+
   private readPersistedSessions(): PersistedSessionState[] {
     const dir = this.persistenceDir();
     if (!existsSync(dir)) {
@@ -845,7 +980,7 @@ export class SessionServer {
   private readPersistedSession(
     sessionId: string,
   ): PersistedSessionState | undefined {
-    const file = join(this.persistenceDir(), `${sessionId}.jsonl`);
+    const file = this.sessionFile(sessionId);
     if (!existsSync(file)) {
       return undefined;
     }
@@ -939,6 +1074,10 @@ export class SessionServer {
     if (!session.persisted) {
       return session;
     }
+    if (!this.sessionFileExists(session.id)) {
+      this.terminateDeletedSession(session, "session was deleted");
+      return session;
+    }
     const owner = this.currentOwner(session.id);
     if (owner === undefined || owner === this.serverId) {
       this.acquireOwnership(session);
@@ -971,6 +1110,7 @@ export class SessionServer {
         config: this.options.config,
         client: this.options.createClient(),
         sessionId: persisted.id,
+        history: conversationHistoryFromRuntimeEvents(persisted.events),
         sources: this.options.sources,
         bootstrap: this.bootstrap,
       }),
@@ -1082,6 +1222,36 @@ export class SessionServer {
     );
   }
 
+  private sessionFile(sessionId: string): string {
+    return join(this.persistenceDir(), `${sessionId}.jsonl`);
+  }
+
+  private sessionFileExists(sessionId: string): boolean {
+    return existsSync(this.sessionFile(sessionId));
+  }
+
+  private terminateIfDeleted(session: LiveSession, message: string): boolean {
+    if (!session.persisted || this.sessionFileExists(session.id)) {
+      return false;
+    }
+    this.terminateDeletedSession(session, message);
+    return true;
+  }
+
+  private terminateDeletedSession(session: LiveSession, message: string): void {
+    this.publishEphemeral(
+      session,
+      deletedSessionNotification(session.id, message),
+    );
+    for (const subscriber of session.subscribers) {
+      subscriber.close();
+    }
+    this.sessions.delete(session.id);
+    setImmediate(() => {
+      void this.close().catch(() => undefined);
+    });
+  }
+
   private ownerDir(): string {
     return join(this.persistenceDir(), "owners");
   }
@@ -1115,6 +1285,9 @@ class WebSocketConnection {
   }
 
   sendJson(payload: unknown): void {
+    if (this.socket.destroyed || this.socket.writableEnded) {
+      return;
+    }
     this.socket.write(encodeFrame(0x1, Buffer.from(JSON.stringify(payload))));
   }
 
@@ -1244,6 +1417,19 @@ function runtimeNotification(
     case "error":
       return { method: "error", params };
   }
+}
+
+function deletedSessionNotification(
+  sessionId: string,
+  message = "session was deleted",
+): JsonRpcNotification {
+  return {
+    method: "session/deleted",
+    params: {
+      sessionId,
+      message,
+    },
+  };
 }
 
 function requiredStringParam(params: unknown, name: string): string {

@@ -10,6 +10,7 @@ export interface CliSessionRuntime {
   cwd: string;
   print?: (message: string) => void;
   printError?: (message: string) => void;
+  question?: (prompt: string) => Promise<string>;
 }
 
 export interface CliSessionTransport {
@@ -64,6 +65,7 @@ type ServerCommandResult =
       session: SessionSummary;
       thread?: SessionSummary;
     }
+  | { handled: true; action: "deleteSession"; output: string }
   | { handled: true; action: "exit"; output?: string }
   | { handled: false; output: string };
 
@@ -73,15 +75,37 @@ export class CliSessionController {
   private readonly cwd: string;
   private readonly print: (message: string) => void;
   private readonly printError: (message: string) => void;
+  private readonly question: ((prompt: string) => Promise<string>) | undefined;
   private initializeResult: InitializeResult | undefined;
   private session: SessionSummary | undefined;
   private sessionConfigured: SessionConfiguredEvent | undefined;
+  private deletedSessionMessage: string | undefined;
 
   constructor(options: CliSessionRuntime) {
     this.client = options.client;
     this.cwd = options.cwd;
     this.print = options.print ?? console.log;
     this.printError = options.printError ?? console.error;
+    this.question = options.question;
+    this.client.onNotification((notification) => {
+      if (notification.method !== "session/deleted") {
+        return;
+      }
+      const params = notification.params as
+        | { sessionId?: unknown; message?: unknown }
+        | undefined;
+      const sessionId =
+        typeof params?.sessionId === "string" ? params.sessionId : undefined;
+      if (this.session !== undefined && sessionId !== this.session.id) {
+        return;
+      }
+      const message =
+        typeof params?.message === "string"
+          ? params.message
+          : "session was deleted";
+      this.deletedSessionMessage = message;
+      this.printError(`[session] ${message}`);
+    });
   }
 
   async initialize(): Promise<void> {
@@ -127,6 +151,13 @@ export class CliSessionController {
     const sessionId = this.requireSessionId();
     const completion = new Promise<string>((resolve, reject) => {
       const off = this.client.onNotification((notification) => {
+        if (notification.method === "session/deleted") {
+          off();
+          reject(
+            new Error(this.deletedSessionMessage ?? "session was deleted"),
+          );
+          return;
+        }
         const msg = runtimeEvent(notification);
         if (msg === undefined) {
           return;
@@ -176,6 +207,13 @@ export class CliSessionController {
     if (parsed === undefined) {
       return { handled: false };
     }
+    if (parsed.name === "deleteSession") {
+      await this.handleDeleteSession(parsed.args);
+      return {
+        handled: true,
+        shouldExit: this.deletedSessionMessage !== undefined,
+      };
+    }
     const result = await this.client.request<ServerCommandResult>(
       "command/execute",
       {
@@ -199,6 +237,61 @@ export class CliSessionController {
       handled: true,
       shouldExit: result.action === "exit",
     };
+  }
+
+  shouldExit(): boolean {
+    return this.deletedSessionMessage !== undefined;
+  }
+
+  private async handleDeleteSession(
+    selector: string | undefined,
+  ): Promise<void> {
+    if (selector !== undefined) {
+      const response = await this.client.request<{
+        message: string;
+      }>("session/delete", {
+        cwd: this.cwd,
+        selector,
+        currentSessionId: this.session?.id,
+      });
+      this.print(response.message);
+      return;
+    }
+    const response = await this.client.request<{
+      sessions: SessionListEntry[];
+    }>("session/deleteCandidates", {
+      cwd: this.cwd,
+      currentSessionId: this.session?.id,
+    });
+    if (response.sessions.length === 0) {
+      this.print(`delete sessions for ${this.cwd}\nno deletable sessions`);
+      return;
+    }
+    this.print(formatDeleteSessionChoices(this.cwd, response.sessions));
+    if (this.question === undefined) {
+      this.print("run /deleteSession <number> to delete a listed session");
+      return;
+    }
+    const answer = (await this.question("deleteSession> ")).trim();
+    if (answer.length === 0) {
+      this.print("delete cancelled");
+      return;
+    }
+    if (
+      !response.sessions.some((session) => String(session.number) === answer)
+    ) {
+      this.print("choose a listed session number or press Enter to cancel");
+      return;
+    }
+    const deleted = await this.client.request<{ message: string }>(
+      "session/delete",
+      {
+        cwd: this.cwd,
+        selector: answer,
+        currentSessionId: this.session?.id,
+      },
+    );
+    this.print(deleted.message);
   }
 
   private requireSessionId(): string {
@@ -256,11 +349,30 @@ export function interactiveHelp(): string {
     "  /init       Show latest session initialization details",
     "  /events     Show recent runtime event types",
     "  /session    List sessions for this workspace",
-    "  /restore    Restore a session by id or list number",
+    "  /restoreSession Restore a session by id or list number",
+    "  /deleteSession  Delete a saved session for this workspace",
     "  /interrupt  Ask the session server to interrupt the active turn",
     "  /exit       Leave ndx",
     "",
     "Everything else is sent to the session server as a user turn.",
+  ].join("\n");
+}
+
+function formatDeleteSessionChoices(
+  cwd: string,
+  sessions: SessionListEntry[],
+): string {
+  return [
+    `delete sessions for ${cwd}`,
+    ...sessions.map((session) =>
+      [
+        `${session.number}. ${session.title}`,
+        `id: ${session.id}`,
+        `updated: ${new Date(session.updatedAt).toISOString()}`,
+        session.live ? "live" : "saved",
+      ].join(" | "),
+    ),
+    "Press Enter without a number to cancel.",
   ].join("\n");
 }
 

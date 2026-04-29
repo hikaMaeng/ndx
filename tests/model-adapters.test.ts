@@ -6,6 +6,7 @@ import { normalizeAnthropicResponse } from "../src/model/anthropic.js";
 import { normalizeChatResponse } from "../src/model/openai-chat.js";
 import {
   normalizeResponsesPayload,
+  responsesInput,
   responsesTools,
 } from "../src/model/openai-responses.js";
 import type { NdxConfig } from "../src/shared/types.js";
@@ -90,6 +91,47 @@ test("converts chat-compatible function tools for OpenAI responses", () => {
           required: ["command"],
         },
       },
+    ],
+  );
+});
+
+test("converts restored conversation history for OpenAI responses", () => {
+  assert.deepEqual(
+    responsesInput([
+      { type: "message", role: "user", content: "make test1" },
+      {
+        type: "assistant_tool_calls",
+        toolCalls: [
+          {
+            callId: "restored-call-1",
+            name: "shell",
+            arguments: '{"command":"mkdir test1"}',
+          },
+        ],
+      },
+      {
+        type: "function_call_output",
+        call_id: "restored-call-1",
+        output: '{"exitCode":0}',
+      },
+      { type: "message", role: "assistant", content: "done" },
+      { type: "message", role: "user", content: "make test2" },
+    ]),
+    [
+      { role: "user", content: "make test1" },
+      {
+        type: "function_call",
+        call_id: "restored-call-1",
+        name: "shell",
+        arguments: '{"command":"mkdir test1"}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "restored-call-1",
+        output: '{"exitCode":0}',
+      },
+      { role: "assistant", content: "done" },
+      { role: "user", content: "make test2" },
     ],
   );
 });

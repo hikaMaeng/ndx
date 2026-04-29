@@ -73,12 +73,13 @@ async function runInteractive(options: {
   sources: string[];
 }): Promise<void> {
   await withEmbeddedServer(options, async (client) => {
+    const rl = createInterface({ input, output });
     const session = new CliSessionController({
       client,
       cwd: options.args.cwd,
+      question: (prompt) => rl.question(prompt),
     });
     await session.initialize();
-    const rl = createInterface({ input, output });
 
     printInteractiveHeader(options.config);
     try {
@@ -86,6 +87,9 @@ async function runInteractive(options: {
       while (true) {
         const prompt = (await rl.question("ndx> ")).trim();
         if (prompt.length === 0) {
+          if (session.shouldExit()) {
+            break;
+          }
           continue;
         }
         const command = await session.handleCommand(prompt);
@@ -96,6 +100,9 @@ async function runInteractive(options: {
           continue;
         }
         await session.runPrompt(prompt);
+        if (session.shouldExit()) {
+          break;
+        }
       }
     } finally {
       rl.close();
@@ -281,7 +288,7 @@ function printInteractiveHeader(config: NdxConfig): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restore, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and JSONL persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and JSONL persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 

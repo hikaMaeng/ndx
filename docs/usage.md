@@ -87,7 +87,8 @@ persistence.
 /init       Show the latest session initialization detail received from server events.
 /events     Show recent runtime event types recorded on the current session.
 /session    List live and saved sessions for the current workspace.
-/restore N  Switch to a session by UUID or by the number shown in /session.
+/restoreSession N  Switch to a session by UUID or by the number shown in /session.
+/deleteSession  List other sessions for this workspace and delete the selected number.
 /interrupt  Ask the session server to interrupt the active turn.
 /exit       Leave ndx.
 ```
@@ -99,6 +100,8 @@ slash command text or initialization detail to the model prompt.
 `/session` is scoped to the `cwd` passed when `ndx` started or connected. The
 number column is the session creation sequence for that workspace. Empty
 sessions are not listed until the first prompt assigns a number and title.
+`/deleteSession` uses the same scope, excludes the current session, and cancels
+when Enter is submitted without a number.
 
 ## Real Agent
 

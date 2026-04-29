@@ -228,7 +228,7 @@ test("session server owns session events, subscribers, and JSONL persistence", a
       handled: true;
       action: "restore";
       session: { id: string };
-    }>("command/execute", { name: "restore", args: "1", cwd: root });
+    }>("command/execute", { name: "restoreSession", args: "1", cwd: root });
     assert.equal(restoredByNumber.session.id, sessionId);
 
     const logFile = join(persistenceDir, `${sessionId}.jsonl`);
@@ -277,6 +277,7 @@ test("session server restores a saved workspace session by id or number", async 
   const root = mkdtempSync(join(tmpdir(), "ndx-session-restore-"));
   const globalDir = join(root, "home", ".ndx");
   const persistenceDir = join(root, "server-sessions");
+  const restoredModel = new CapturingModelClient("restored context ok");
   let firstServer: SessionServer | undefined;
   let secondServer: SessionServer | undefined;
   let firstClient: SessionClient | undefined;
@@ -312,7 +313,7 @@ test("session server restores a saved workspace session by id or number", async 
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
       sources: [join(globalDir, "settings.json")],
-      createClient: () => new MockModelClient(),
+      createClient: () => restoredModel,
       persistenceDir,
     });
     const secondAddress = await secondServer.listen(0, "127.0.0.1");
@@ -351,6 +352,14 @@ test("session server restores a saved workspace session by id or number", async 
     await completedAgain;
     await secondServer.flushPersistence();
 
+    assert.ok(Array.isArray(restoredModel.inputs[0]));
+    assert.deepEqual(
+      (restoredModel.inputs[0] as Array<{ content?: string }>)
+        .map((item) => item.content)
+        .filter((content): content is string => content !== undefined),
+      ["first turn", "mock agent completed", "second turn"],
+    );
+
     const records = readJsonl(
       join(persistenceDir, `${originalSessionId}.jsonl`),
     );
@@ -367,6 +376,89 @@ test("session server restores a saved workspace session by id or number", async 
     secondClient?.close();
     await firstServer?.close().catch(() => undefined);
     await secondServer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session server deletes non-current workspace sessions and ends stale owners", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-delete-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  let firstServer: SessionServer | undefined;
+  let secondServer: SessionServer | undefined;
+  let firstClient: SessionClient | undefined;
+  let secondClient: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    firstServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    secondServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    firstClient = await SessionClient.connect(
+      (await firstServer.listen(0, "127.0.0.1")).url,
+    );
+    secondClient = await SessionClient.connect(
+      (await secondServer.listen(0, "127.0.0.1")).url,
+    );
+    await firstClient.request("initialize");
+    await secondClient.request("initialize");
+
+    const startResponse = await firstClient.request<{
+      session: { id: string };
+    }>("session/start", { cwd: root });
+    const sessionId = startResponse.session.id;
+    const completed = waitForMethod(firstClient, "turn/completed");
+    await firstClient.request("turn/start", {
+      sessionId,
+      prompt: "delete me later",
+    });
+    await completed;
+    await firstServer.flushPersistence();
+
+    const candidates = await secondClient.request<{
+      sessions: Array<{ number: number; id: string }>;
+    }>("session/deleteCandidates", { cwd: root });
+    assert.deepEqual(
+      candidates.sessions.map((session) => session.id),
+      [sessionId],
+    );
+
+    const deleteResponse = await secondClient.request<{
+      message: string;
+    }>("session/delete", { cwd: root, selector: "1" });
+    assert.equal(deleteResponse.message, "deleted session 1: delete me later");
+    assert.equal(existsSync(join(persistenceDir, `${sessionId}.jsonl`)), false);
+
+    const deleted = waitForMethod(firstClient, "session/deleted");
+    await firstClient
+      .request("turn/start", {
+        sessionId,
+        prompt: "prompt after delete",
+      })
+      .catch((error: unknown) => {
+        assert.equal(
+          error instanceof Error && error.message.includes("closed"),
+          true,
+        );
+      });
+    const notification = await deleted;
+    assert.equal(notification.method, "session/deleted");
+  } finally {
+    firstClient?.close();
+    secondClient?.close();
+    await firstServer?.close().catch(() => undefined);
+    await secondServer?.close().catch(() => undefined);
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -500,6 +592,7 @@ test("session ownership discards in-flight output from a previous socket server"
       prompt: "stale in flight prompt",
     });
     await blockedTurnStarted;
+    await firstModel.waitForBlockedTurn();
 
     await secondClient.request("session/restore", { cwd: root, selector: "1" });
     await secondServer.flushPersistence();
@@ -735,12 +828,19 @@ class BlockingModelClient implements ModelClient {
   private releaseBlocked:
     | ((response: ModelResponse | PromiseLike<ModelResponse>) => void)
     | undefined;
+  private blockedTurn:
+    | {
+        promise: Promise<void>;
+        resolve: () => void;
+      }
+    | undefined;
 
   async create(input: unknown): Promise<ModelResponse> {
-    const prompt = String(input);
+    const prompt = JSON.stringify(input);
     if (prompt.includes("stale in flight prompt")) {
       return new Promise<ModelResponse>((resolve) => {
         this.releaseBlocked = resolve;
+        this.blockedTurn?.resolve();
       });
     }
     return {
@@ -759,5 +859,39 @@ class BlockingModelClient implements ModelClient {
       raw: { blocked: true },
     });
     this.releaseBlocked = undefined;
+  }
+
+  waitForBlockedTurn(): Promise<void> {
+    if (this.releaseBlocked !== undefined) {
+      return Promise.resolve();
+    }
+    if (this.blockedTurn === undefined) {
+      this.blockedTurn = createDeferred<void>();
+    }
+    return this.blockedTurn.promise;
+  }
+}
+
+function createDeferred<T>(): { promise: Promise<T>; resolve: () => void } {
+  let resolveDeferred: () => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = () => resolve(undefined as T);
+  });
+  return { promise, resolve: resolveDeferred };
+}
+
+class CapturingModelClient implements ModelClient {
+  readonly inputs: unknown[] = [];
+
+  constructor(private readonly text: string) {}
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.inputs.push(input);
+    return {
+      id: `captured-${this.inputs.length}`,
+      text: this.text,
+      toolCalls: [],
+      raw: { input },
+    };
   }
 }

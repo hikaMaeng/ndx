@@ -65,7 +65,8 @@ Client programs must not maintain authoritative live session or persistence stat
 
 - robot plus uppercase `NDX` startup logo and socket initialization display
 - session start status display
-- `/status`, `/init`, `/events`, `/session`, `/restore`, and `/interrupt`
+- `/status`, `/init`, `/events`, `/session`, `/restoreSession`,
+  `/deleteSession`, and `/interrupt`
 - runtime notification formatting for human output
 
 The CLI does not inspect `.ndx` directly after config loading and does not persist live session state. Future server-side initialization detail should arrive through notifications or initialize responses and be rendered by this controller without changing the model prompt.
@@ -88,11 +89,15 @@ runtime events because the live session remains in server memory.
 `session/list` and `/session` build a workspace-scoped view from live memory
 plus the server JSONL directory. The server filters by exact resolved `cwd` and
 uses the persisted workspace sequence assigned on first prompt. Empty sessions
-have title `empty`, no sequence number, and no JSONL file. `session/restore` and
-`/restore` accept either a listed number or the full session id, create a new
-`AgentRuntime` with the original id when needed, load persisted runtime events
-back into server memory, claim ownership, and continue appending to the same
-JSONL file.
+have title `empty`, no sequence number, and no JSONL file. `session/restore`
+and `/restoreSession` accept either a listed number or the full session id,
+create a new `AgentRuntime` with the original id when needed, load persisted
+runtime events back into server memory, rebuild the provider-facing model
+conversation history, claim ownership, and continue appending to the same JSONL
+file. `/deleteSession` deletes a non-current listed session's
+JSONL and owner files; any server still holding that session detects the missing
+JSONL on the next prompt or turn completion, emits `session/deleted`, closes its
+socket clients, and terminates.
 
 ## Docker Flow
 
