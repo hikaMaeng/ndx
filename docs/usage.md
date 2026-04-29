@@ -144,7 +144,7 @@ ndx "원하는 작업"
 
 The default compose service stays alive with `sleep infinity` so interactive exec sessions can start `ndx` on demand. Files created by the agent persist in `./docker/volume/workspace`, and global settings persist in `./docker/volume/home-ndx`.
 
-Container startup logs include image provenance lines prefixed with
-`[ndx-image]`. Those lines record the package version, GitHub remote,
-`NDX_GIT_REF`, cloned commit SHA, branch, commit date, commit subject, Node
-version, and pnpm version.
+Compose uses the image default command. Container startup logs include image
+provenance lines prefixed with `[ndx-image]`. Those lines record the package
+version, GitHub remote, `NDX_GIT_REF`, cloned commit SHA, branch, commit date,
+commit subject, Node version, and pnpm version.
