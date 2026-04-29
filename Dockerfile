@@ -28,6 +28,6 @@ CMD set -eu; \
     echo "[ndx-image] git_ref=${NDX_GIT_REF}"; \
     echo "[ndx-image] git_commit=$(git rev-parse HEAD)"; \
     echo "[ndx-image] git_branch=$(git branch --show-current)"; \
-    git log -1 --format='[ndx-image] git_commit_date=%cI%n[ndx-image] git_subject=%s'; \
+    git --no-pager log -1 --format='[ndx-image] git_commit_date=%cI%n[ndx-image] git_subject=%s'; \
     echo "[ndx-image] node=$(node --version) pnpm=$(pnpm --version)"; \
     exec sleep infinity
