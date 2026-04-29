@@ -25,6 +25,7 @@ Verify that interrupting an agent turn cancels the worker process and the immedi
 - All Node tests pass.
 - The abort propagation test observes a ready marker from the external tool and an abort marker after the turn signal is aborted.
 - Deploy completes without leaving the compose stack running.
+- Deploy `docker compose run` verification containers exit without requiring an interactive TTY.
 
 ## Logs To Capture
 - `npm test` TAP summary.
