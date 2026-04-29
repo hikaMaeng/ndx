@@ -183,7 +183,14 @@ Adapters:
 | `openai`      | `POST {provider.url}/responses` | `POST {provider.url}/chat/completions` on `404` or `405` |
 | `anthropic`   | `POST {provider.url}/messages`  | none                                                     |
 
-OpenAI Responses sends `model`, `instructions`, `input`, `previous_response_id`, `tools`, and `tool_choice = "auto"`. Chat Completions keeps volatile messages in memory and converts tool outputs into `role = "tool"` messages. Anthropic Messages keeps volatile messages in memory, sends `system`, `messages`, `max_tokens`, and tools converted to Anthropic `input_schema`.
+OpenAI Responses sends `model`, `instructions`, `input`,
+`previous_response_id`, provider-specific `tools`, and `tool_choice = "auto"`.
+The agent registry stores Chat Completions-compatible function schemas, so the
+Responses adapter converts `{ type: "function", function: ... }` into the flat
+Responses function tool shape before sending. Chat Completions keeps volatile
+messages in memory and converts tool outputs into `role = "tool"` messages.
+Anthropic Messages keeps volatile messages in memory, sends `system`,
+`messages`, `max_tokens`, and tools converted to Anthropic `input_schema`.
 
 If `provider.key` is an empty string, OpenAI-compatible requests omit `Authorization`; Anthropic requests omit `x-api-key`.
 

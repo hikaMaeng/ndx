@@ -17,6 +17,7 @@ npm run deploy
 - Provider type validation for `openai` and `anthropic`.
 - Global `.ndx` bootstrap for missing `settings.json`, core directories, built-in core tool package files, and skills directory.
 - OpenAI Responses normalization.
+- OpenAI Responses function tool schema conversion.
 - OpenAI Chat Completions normalization.
 - OpenAI Responses-to-Chat fallback on missing `/responses`.
 - Anthropic Messages normalization.
