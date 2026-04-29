@@ -213,6 +213,9 @@ function processCleanup(
     child.kill("SIGTERM");
   };
   signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) {
+    queueMicrotask(abort);
+  }
   return () => {
     signal.removeEventListener("abort", abort);
   };

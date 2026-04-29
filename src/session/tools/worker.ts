@@ -12,15 +12,27 @@ interface WorkerRequest {
 
 async function main(): Promise<void> {
   const request = await readRequest();
+  const controller = new AbortController();
+  const abort = (): void => {
+    controller.abort("worker interrupted");
+  };
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
   const registry = await createToolRegistry(
     request.context.config as NdxConfig,
   );
-  const result = await registry.execute(
-    request.name,
-    request.args,
-    request.context,
-  );
-  writeResponse({ output: result.output });
+  try {
+    const result = await registry.execute(
+      request.name,
+      request.args,
+      request.context,
+      controller.signal,
+    );
+    writeResponse({ output: result.output });
+  } finally {
+    process.off("SIGINT", abort);
+    process.off("SIGTERM", abort);
+  }
 }
 
 async function readRequest(): Promise<WorkerRequest> {

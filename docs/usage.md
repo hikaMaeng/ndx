@@ -48,10 +48,10 @@ Plugin and capability tools are filesystem packages, not settings entries. Put e
 node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text verified"
 ```
 
-The CLI prints the ndx startup logo to stderr, starts an embedded loopback
-session server, connects over WebSocket, sends `initialize`, starts a thread,
-and sends the prompt as a user turn. The server owns the live thread and writes
-session JSONL under `/home/.ndx/sessions/ts-server`.
+The CLI prints the robot plus uppercase `NDX` startup logo to stderr, starts an
+embedded loopback session server, connects over WebSocket, sends `initialize`,
+starts a thread, and sends the prompt as a user turn. The server owns the live
+thread and writes session JSONL under `/home/.ndx/sessions/ts-server`.
 
 On startup, config loading and the session server both enforce required global
 `.ndx` elements. Missing `settings.json`, `core/`, `core/tools/`, the built-in
@@ -143,3 +143,8 @@ ndx "원하는 작업"
 ```
 
 The default compose service stays alive with `sleep infinity` so interactive exec sessions can start `ndx` on demand. Files created by the agent persist in `./docker/volume/workspace`, and global settings persist in `./docker/volume/home-ndx`.
+
+Compose uses the image default command. Container startup logs include image
+provenance lines prefixed with `[ndx-image]`. Those lines record the package
+version, GitHub remote, `NDX_GIT_REF`, cloned commit SHA, branch, commit date,
+commit subject, Node version, and pnpm version.

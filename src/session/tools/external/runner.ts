@@ -10,6 +10,7 @@ export async function runExternalTool(
   runtime: ExternalToolRuntime,
   args: Record<string, unknown>,
   context: ToolContext,
+  signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
   const timeoutMs = runtime.timeoutMs ?? context.timeoutMs;
   const cwd = runtime.cwd ?? runtime.toolDir;
@@ -29,6 +30,7 @@ export async function runExternalTool(
       cwd: context.cwd,
     })}\n`,
     timeoutMs,
+    signal,
   });
   return {
     output: JSON.stringify({
@@ -36,6 +38,7 @@ export async function runExternalTool(
       stdout: result.stdout,
       stderr: result.stderr,
       timedOut: result.timedOut,
+      cancelled: result.cancelled,
     }),
   };
 }

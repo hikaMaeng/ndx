@@ -21,4 +21,13 @@ RUN corepack enable \
 
 WORKDIR /workspace
 
-CMD ["sleep", "infinity"]
+CMD set -eu; \
+    cd /opt/ndx; \
+    echo "[ndx-image] package=$(node -p "const p=require('./package.json'); p.name + '@' + p.version")"; \
+    echo "[ndx-image] git_remote=https://github.com/hikaMaeng/ndx.git"; \
+    echo "[ndx-image] git_ref=${NDX_GIT_REF}"; \
+    echo "[ndx-image] git_commit=$(git rev-parse HEAD)"; \
+    echo "[ndx-image] git_branch=$(git branch --show-current)"; \
+    git --no-pager log -1 --format='[ndx-image] git_commit_date=%cI%n[ndx-image] git_subject=%s'; \
+    echo "[ndx-image] node=$(node --version) pnpm=$(pnpm --version)"; \
+    exec sleep infinity

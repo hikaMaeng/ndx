@@ -48,6 +48,7 @@ export interface ToolDefinition {
   execute?: (
     args: ToolArguments,
     context: ToolContext,
+    signal?: AbortSignal,
   ) => Promise<ToolExecutionResult>;
 }
 

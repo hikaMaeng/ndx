@@ -11,4 +11,3 @@ services:
       - ./docker/volume/home-ndx:/home/.ndx
     stdin_open: true
     tty: true
-    command: ["sleep", "infinity"]

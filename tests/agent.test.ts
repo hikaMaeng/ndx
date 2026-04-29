@@ -101,6 +101,43 @@ test("agent abort signal stops before starting a model request", async () => {
   assert.equal(client.requests, 0);
 });
 
+test("agent abort signal propagates to external tool processes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-agent-abort-tool-"));
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    const abortedPath = join(root, "tool-aborted.txt");
+    const readyPath = join(root, "tool-ready.txt");
+    writeAbortAwareTool(
+      join(globalDir, "core", "tools", "slow_tool"),
+      readyPath,
+      abortedPath,
+    );
+    const controller = new AbortController();
+
+    await assert.rejects(
+      runAgent({
+        cwd: root,
+        config: { ...baseConfig, paths: { globalDir } },
+        client: new SlowToolClient(),
+        prompt: "start slow tool",
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.type === "tool_call") {
+            void waitForFile(readyPath).then(() => {
+              controller.abort("stop slow tool");
+            });
+          }
+        },
+      }),
+      isAgentAbortError,
+    );
+
+    assert.equal(await waitForFile(abortedPath), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function writeShellTool(toolDir: string): void {
   mkdirSync(toolDir, { recursive: true });
   writeFileSync(
@@ -145,11 +182,88 @@ function writeShellTool(toolDir: string): void {
   );
 }
 
+function writeAbortAwareTool(
+  toolDir: string,
+  readyPath: string,
+  abortedPath: string,
+): void {
+  mkdirSync(toolDir, { recursive: true });
+  writeFileSync(
+    join(toolDir, "tool.json"),
+    JSON.stringify({
+      type: "function",
+      function: {
+        name: "slow_tool",
+        description: "Wait until aborted.",
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+      command: "node",
+      args: ["tool.mjs"],
+    }),
+  );
+  writeFileSync(
+    join(toolDir, "tool.mjs"),
+    [
+      'import { writeFileSync } from "node:fs";',
+      `const readyPath = ${JSON.stringify(readyPath)};`,
+      `const abortedPath = ${JSON.stringify(abortedPath)};`,
+      "writeFileSync(readyPath, 'ready');",
+      "process.once('SIGTERM', () => {",
+      "  writeFileSync(abortedPath, 'aborted');",
+      "  process.exit(0);",
+      "});",
+      "setInterval(() => {}, 1_000);",
+      "",
+    ].join("\n"),
+  );
+}
+
+async function waitForFile(path: string): Promise<boolean> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
+}
+
 class CountingModelClient implements ModelClient {
   requests = 0;
 
   async create(): Promise<ModelResponse> {
     this.requests += 1;
+    return {
+      text: "unused",
+      toolCalls: [],
+      raw: {},
+    };
+  }
+}
+
+class SlowToolClient implements ModelClient {
+  private requests = 0;
+
+  async create(): Promise<ModelResponse> {
+    this.requests += 1;
+    if (this.requests === 1) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            callId: "slow-tool",
+            name: "slow_tool",
+            arguments: "{}",
+          },
+        ],
+        raw: {},
+      };
+    }
     return {
       text: "unused",
       toolCalls: [],
