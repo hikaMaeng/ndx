@@ -38,9 +38,12 @@ npm run deploy
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
 - Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
-- Workspace-scoped session listing and restore by session id or list number.
+- Workspace-scoped session listing, restore by session id or list number, and
+  non-current session deletion.
 - Empty sessions stay unnumbered and unpersisted until the first prompt.
 - Session ownership is reclaimed by the last socket server that attempts a prompt.
+- Deleted sessions notify stale socket owners and close the stale server on the
+  next prompt attempt or completed response.
 - Session owner file contention waits and retries before restore claims
   ownership.
 - Session JSONL writes performed by a child writer process, not the main process.

@@ -228,7 +228,7 @@ test("session server owns session events, subscribers, and JSONL persistence", a
       handled: true;
       action: "restore";
       session: { id: string };
-    }>("command/execute", { name: "restore", args: "1", cwd: root });
+    }>("command/execute", { name: "restoreSession", args: "1", cwd: root });
     assert.equal(restoredByNumber.session.id, sessionId);
 
     const logFile = join(persistenceDir, `${sessionId}.jsonl`);
@@ -367,6 +367,89 @@ test("session server restores a saved workspace session by id or number", async 
     secondClient?.close();
     await firstServer?.close().catch(() => undefined);
     await secondServer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session server deletes non-current workspace sessions and ends stale owners", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-delete-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  let firstServer: SessionServer | undefined;
+  let secondServer: SessionServer | undefined;
+  let firstClient: SessionClient | undefined;
+  let secondClient: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    firstServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    secondServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    firstClient = await SessionClient.connect(
+      (await firstServer.listen(0, "127.0.0.1")).url,
+    );
+    secondClient = await SessionClient.connect(
+      (await secondServer.listen(0, "127.0.0.1")).url,
+    );
+    await firstClient.request("initialize");
+    await secondClient.request("initialize");
+
+    const startResponse = await firstClient.request<{
+      session: { id: string };
+    }>("session/start", { cwd: root });
+    const sessionId = startResponse.session.id;
+    const completed = waitForMethod(firstClient, "turn/completed");
+    await firstClient.request("turn/start", {
+      sessionId,
+      prompt: "delete me later",
+    });
+    await completed;
+    await firstServer.flushPersistence();
+
+    const candidates = await secondClient.request<{
+      sessions: Array<{ number: number; id: string }>;
+    }>("session/deleteCandidates", { cwd: root });
+    assert.deepEqual(
+      candidates.sessions.map((session) => session.id),
+      [sessionId],
+    );
+
+    const deleteResponse = await secondClient.request<{
+      message: string;
+    }>("session/delete", { cwd: root, selector: "1" });
+    assert.equal(deleteResponse.message, "deleted session 1: delete me later");
+    assert.equal(existsSync(join(persistenceDir, `${sessionId}.jsonl`)), false);
+
+    const deleted = waitForMethod(firstClient, "session/deleted");
+    await firstClient
+      .request("turn/start", {
+        sessionId,
+        prompt: "prompt after delete",
+      })
+      .catch((error: unknown) => {
+        assert.equal(
+          error instanceof Error && error.message.includes("closed"),
+          true,
+        );
+      });
+    const notification = await deleted;
+    assert.equal(notification.method, "session/deleted");
+  } finally {
+    firstClient?.close();
+    secondClient?.close();
+    await firstServer?.close().catch(() => undefined);
+    await secondServer?.close().catch(() => undefined);
     rmSync(root, { recursive: true, force: true });
   }
 });

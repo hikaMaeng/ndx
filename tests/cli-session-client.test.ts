@@ -109,7 +109,8 @@ test("interactive help advertises session client commands", () => {
   assert.equal(interactiveHelp().includes("/interrupt"), true);
   assert.equal(interactiveHelp().includes("/events"), true);
   assert.equal(interactiveHelp().includes("/session"), true);
-  assert.equal(interactiveHelp().includes("/restore"), true);
+  assert.equal(interactiveHelp().includes("/restoreSession"), true);
+  assert.equal(interactiveHelp().includes("/deleteSession"), true);
 });
 
 test("welcome logo combines robot art with uppercase NDX", () => {
@@ -142,7 +143,7 @@ test("CLI session controller does not send registered unsupported slash commands
   );
 });
 
-test("CLI session controller switches active session after restore command", async () => {
+test("CLI session controller switches active session after restoreSession command", async () => {
   const transport = new FakeTransport();
   const stdout: string[] = [];
   const controller = new CliSessionController({
@@ -153,14 +154,14 @@ test("CLI session controller switches active session after restore command", asy
 
   await controller.initialize();
   await controller.startSession();
-  const result = await controller.handleCommand("/restore 2");
+  const result = await controller.handleCommand("/restoreSession 2");
 
   assert.deepEqual(result, { handled: true, shouldExit: false });
   assert.equal(stdout.at(-1), "restored session 2: restored title");
   assert.deepEqual(transport.requests.at(-1), {
     method: "command/execute",
     params: {
-      name: "restore",
+      name: "restoreSession",
       args: "2",
       sessionId: "session-1",
       cwd: "/workspace",
@@ -189,6 +190,41 @@ test("CLI session controller switches active session after restore command", asy
     ),
     true,
   );
+});
+
+test("CLI session controller prompts before deleting another workspace session", async () => {
+  const transport = new FakeTransport();
+  const stdout: string[] = [];
+  const questions: string[] = [];
+  const controller = new CliSessionController({
+    client: transport,
+    cwd: "/workspace",
+    print: (message) => stdout.push(message),
+    question: async (prompt) => {
+      questions.push(prompt);
+      return "2";
+    },
+  });
+
+  await controller.initialize();
+  await controller.startSession();
+  const result = await controller.handleCommand("/deleteSession");
+
+  assert.deepEqual(result, { handled: true, shouldExit: false });
+  assert.deepEqual(questions, ["deleteSession> "]);
+  assert.equal(stdout.at(-1), "deleted session 2: restored title");
+  assert.deepEqual(
+    transport.requests.map((request) => request.method).slice(-2),
+    ["session/deleteCandidates", "session/delete"],
+  );
+  assert.deepEqual(transport.requests.at(-1), {
+    method: "session/delete",
+    params: {
+      cwd: "/workspace",
+      selector: "2",
+      currentSessionId: "session-1",
+    },
+  });
 });
 
 class FakeTransport implements CliSessionTransport {
@@ -232,6 +268,26 @@ class FakeTransport implements CliSessionTransport {
     if (method === "turn/interrupt") {
       return { session: { id: "session-1" } } as T;
     }
+    if (method === "session/deleteCandidates") {
+      return {
+        sessions: [
+          {
+            number: 2,
+            id: "session-2",
+            cwd: "/workspace",
+            status: "idle",
+            createdAt: 1,
+            updatedAt: 2,
+            eventCount: 4,
+            live: false,
+            title: "restored title",
+          },
+        ],
+      } as T;
+    }
+    if (method === "session/delete") {
+      return { message: "deleted session 2: restored title" } as T;
+    }
     if (method === "command/execute") {
       const command = params as { name: string };
       if (command.name === "status") {
@@ -268,7 +324,7 @@ class FakeTransport implements CliSessionTransport {
           output: " 1. session_configured\n 2. turn_complete",
         } as T;
       }
-      if (command.name === "restore") {
+      if (command.name === "restoreSession") {
         return {
           handled: true,
           action: "restore",
@@ -283,6 +339,13 @@ class FakeTransport implements CliSessionTransport {
             number: 2,
             title: "restored title",
           },
+        } as T;
+      }
+      if (command.name === "deleteSession") {
+        return {
+          handled: true,
+          action: "deleteSession",
+          output: "delete sessions for /workspace\nno deletable sessions",
         } as T;
       }
       if (command.name === "diff") {

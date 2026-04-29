@@ -2,9 +2,9 @@
 
 ## Goal
 
-Verify workspace-scoped session listing, first-prompt numbering, restore, and
-ownership reclaim through the TypeScript session server and CLI command
-controller.
+Verify workspace-scoped session listing, first-prompt numbering, restore,
+deletion, and ownership reclaim through the TypeScript session server and CLI
+command controller.
 
 ## Environment
 
@@ -27,26 +27,33 @@ controller.
    prompt-derived title.
 3. Flush JSONL persistence and verify `/session` lists `0. new session` plus
    session number `1`.
-4. Execute `/restore 1` and verify the command returns a restore action with
-   the same session id.
-5. Stop the first server, start a second server with the same persistence
+4. Execute `/restoreSession 1` and verify the command returns a restore action
+   with the same session id.
+5. Execute `/deleteSession`, verify the current session is omitted from the
+   list, choose another listed number, and verify its JSONL and owner files are
+   removed. Press Enter with no number in a separate run and verify deletion is
+   cancelled.
+6. Stop the first server, start a second server with the same persistence
    directory, and call `session/list` for the same workspace.
-6. Restore by number on the second server and verify persisted runtime events
+7. Restore by number on the second server and verify persisted runtime events
    are returned.
-7. Run another turn on the restored session and verify records continue
+8. Run another turn on the restored session and verify records continue
    appending to the original JSONL file.
-8. Verify a second socket server can claim ownership and the first server
+9. Verify a second socket server can claim ownership and the first server
    reloads/reclaims on its next prompt attempt.
-9. Start a turn on the first socket server, hold model completion, restore the
-   same session from a second socket server, then release the first server's
-   model completion.
-10. Verify the stale in-flight model text and `turn_complete` are not appended
-   to JSONL and do not appear in `session/read`.
-11. Hold the owner file lock from a separate process, request restore from a
-   second socket server, and verify restore waits for lock release before
-   claiming the session.
-12. Verify the CLI controller updates its active session after a `/restore`
-   command before sending the next `turn/start`.
+10. Start a turn on the first socket server, hold model completion, restore the
+    same session from a second socket server, then release the first server's
+    model completion.
+11. Verify the stale in-flight model text and `turn_complete` are not appended
+    to JSONL and do not appear in `session/read`.
+12. Delete a persisted session from one socket server, then verify another
+    socket server holding that session emits `session/deleted`, closes clients,
+    and terminates when a prompt starts or a held response completes.
+13. Hold the owner file lock from a separate process, request restore from a
+    second socket server, and verify restore waits for lock release before
+    claiming the session.
+14. Verify the CLI controller updates its active session after a
+    `/restoreSession` command before sending the next `turn/start`.
 
 ## Expected Results
 
@@ -54,13 +61,17 @@ controller.
 - Empty sessions are not listed or persisted.
 - Restored sessions reuse the original session id.
 - `session_restored` is persisted.
+- `/deleteSession` deletes only non-current workspace sessions and can be
+  cancelled by empty input.
+- Deleted held sessions emit `session/deleted` before sockets close.
 - The restored session accepts subsequent turns.
 - Last prompt attempt wins ownership after a persisted reload.
 - Owner file claims are serialized; contention waits and retries before
   restore proceeds.
 - In-flight output from a server that lost ownership is discarded from durable
   context.
-- CLI commands do not send `/session` or `/restore` text to the model prompt.
+- CLI commands do not send `/session`, `/restoreSession`, or `/deleteSession`
+  text to the model prompt.
 
 ## Logs To Capture
 
