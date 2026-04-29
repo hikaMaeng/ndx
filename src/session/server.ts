@@ -507,7 +507,7 @@ export class SessionServer {
     }
   }
 
-  private startTurn(
+  private async startTurn(
     connection: WebSocketConnection,
     params: unknown,
   ): Promise<unknown> {
@@ -534,6 +534,7 @@ export class SessionServer {
       cwd,
       requestedAt: session.updatedAt,
     });
+    await this.store.flush();
     setImmediate(() => {
       void session.runtime
         .submit(
