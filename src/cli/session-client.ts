@@ -163,8 +163,29 @@ export class CliSessionController {
 export function printWelcomeLogo(
   printError: (message: string) => void = console.error,
 ): void {
-  printError("ndx\nsession client");
+  printError(WELCOME_LOGO);
 }
+
+export const WELCOME_LOGO = [
+  "      .-.        .-.        .-.        N   N  DDDD   X   X",
+  "     (   )      (   )      (   )       NN  N  D   D   X X ",
+  "      '-'        '-'        '-'        N N N  D   D    X  ",
+  "        \\         |         /          N  NN  D   D   X X ",
+  "         \\        |        /           N   N  DDDD   X   X",
+  "     .-----------------------.",
+  "    /                         \\",
+  "   |     .-.           .-.     |",
+  "   |    (   )         (   )    |",
+  "   |     '-'    ___    '-'     |",
+  "   |           |___|           |",
+  "    \\                         /",
+  "     '-----------------------'",
+  "          |             |",
+  "     .-----------------------.",
+  "    /                         \\",
+  "   '---------------------------'",
+  "session client",
+].join("\n");
 
 export function interactiveHelp(): string {
   return [

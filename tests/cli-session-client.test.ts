@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CliSessionController,
+  WELCOME_LOGO,
   interactiveHelp,
+  printWelcomeLogo,
   type CliSessionTransport,
 } from "../src/cli/session-client.js";
 import type { SessionNotification } from "../src/session/client.js";
@@ -101,6 +103,15 @@ test("CLI session controller records initialization events outside prompt contex
 test("interactive help advertises session client commands", () => {
   assert.equal(interactiveHelp().includes("/interrupt"), true);
   assert.equal(interactiveHelp().includes("/events"), true);
+});
+
+test("welcome logo combines robot art with uppercase NDX", () => {
+  const stderr: string[] = [];
+  printWelcomeLogo((message) => stderr.push(message));
+
+  assert.equal(stderr[0], WELCOME_LOGO);
+  assert.equal(WELCOME_LOGO.includes("N   N  DDDD   X   X"), true);
+  assert.equal(WELCOME_LOGO.includes("session client"), true);
 });
 
 test("CLI session controller does not send registered unsupported slash commands as prompts", async () => {
