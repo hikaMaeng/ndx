@@ -85,6 +85,8 @@ persistence.
 /status     Show socket, server, and current thread status.
 /init       Show the latest session initialization detail received from server events.
 /events     Show recent runtime event types recorded on the session server thread.
+/session    List live and saved sessions for the current workspace.
+/restore N  Restore a session by UUID or by the number shown in /session.
 /interrupt  Ask the session server to interrupt the active turn.
 /exit       Leave ndx.
 ```
@@ -92,6 +94,11 @@ persistence.
 Slash commands are sent to the session server with `command/execute`.
 Initialization detail is for operator visibility only. The CLI does not append
 slash command text or initialization detail to the model prompt.
+
+`/session` is scoped to the `cwd` passed when `ndx` started or connected. The
+number column is recalculated from sessions sorted by last interaction time, so
+use it immediately with `/restore <number>` or use the full session id for a
+stable reference.
 
 ## Real Agent
 

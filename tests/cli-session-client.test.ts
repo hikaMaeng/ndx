@@ -96,13 +96,20 @@ test("CLI session controller records initialization events outside prompt contex
   );
   assert.deepEqual(transport.requests.at(-1), {
     method: "command/execute",
-    params: { name: "events", args: undefined, threadId: "thread-1" },
+    params: {
+      name: "events",
+      args: undefined,
+      threadId: "thread-1",
+      cwd: "/workspace",
+    },
   });
 });
 
 test("interactive help advertises session client commands", () => {
   assert.equal(interactiveHelp().includes("/interrupt"), true);
   assert.equal(interactiveHelp().includes("/events"), true);
+  assert.equal(interactiveHelp().includes("/session"), true);
+  assert.equal(interactiveHelp().includes("/restore"), true);
 });
 
 test("welcome logo combines robot art with uppercase NDX", () => {
@@ -132,6 +139,55 @@ test("CLI session controller does not send registered unsupported slash commands
   assert.equal(
     transport.requests.some((request) => request.method === "turn/start"),
     false,
+  );
+});
+
+test("CLI session controller switches active thread after restore command", async () => {
+  const transport = new FakeTransport();
+  const stdout: string[] = [];
+  const controller = new CliSessionController({
+    client: transport,
+    cwd: "/workspace",
+    print: (message) => stdout.push(message),
+  });
+
+  await controller.initialize();
+  await controller.startThread();
+  const result = await controller.handleCommand("/restore 2");
+
+  assert.deepEqual(result, { handled: true, shouldExit: false });
+  assert.equal(stdout.at(-1), "restored session thread-2");
+  assert.deepEqual(transport.requests.at(-1), {
+    method: "command/execute",
+    params: {
+      name: "restore",
+      args: "2",
+      threadId: "thread-1",
+      cwd: "/workspace",
+    },
+  });
+
+  const run = controller.runPrompt("continue");
+  transport.emit({
+    method: "turn/completed",
+    params: {
+      threadId: "thread-2",
+      event: {
+        type: "turn_complete",
+        sessionId: "thread-2",
+        turnId: "turn-2",
+        finalText: "continued",
+      },
+    },
+  });
+  await run;
+  assert.equal(
+    transport.requests.some(
+      (request) =>
+        request.method === "turn/start" &&
+        (request.params as { threadId?: string }).threadId === "thread-2",
+    ),
+    true,
   );
 });
 
@@ -208,6 +264,21 @@ class FakeTransport implements CliSessionTransport {
           handled: true,
           action: "print",
           output: " 1. session_configured\n 2. turn_complete",
+        } as T;
+      }
+      if (command.name === "restore") {
+        return {
+          handled: true,
+          action: "restore",
+          output: "restored session thread-2",
+          thread: {
+            id: "thread-2",
+            cwd: "/workspace",
+            status: "idle",
+            model: "mock",
+            createdAt: 1,
+            updatedAt: 2,
+          },
         } as T;
       }
       if (command.name === "diff") {

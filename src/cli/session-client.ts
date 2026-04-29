@@ -42,6 +42,7 @@ type CommandResult =
 
 type ServerCommandResult =
   | { handled: true; action: "print"; output: string }
+  | { handled: true; action: "restore"; output: string; thread: ThreadSummary }
   | { handled: true; action: "exit"; output?: string }
   | { handled: false; output: string };
 
@@ -137,6 +138,7 @@ export class CliSessionController {
         name: parsed.name,
         args: parsed.args,
         threadId: this.thread?.id,
+        cwd: this.cwd,
       },
     );
     if (!result.handled) {
@@ -145,6 +147,9 @@ export class CliSessionController {
     }
     if (result.output !== undefined && result.output.length > 0) {
       this.print(result.output);
+    }
+    if (result.action === "restore") {
+      this.thread = result.thread;
     }
     return {
       handled: true,
@@ -194,6 +199,8 @@ export function interactiveHelp(): string {
     "  /status     Show socket, server, and thread status",
     "  /init       Show latest session initialization details",
     "  /events     Show recent runtime event types",
+    "  /session    List sessions for this workspace",
+    "  /restore    Restore a session by id or list number",
     "  /interrupt  Ask the session server to interrupt the active turn",
     "  /exit       Leave ndx",
     "",

@@ -78,6 +78,13 @@ JSON-RPC, creates one `AgentRuntime` per `thread/start`, stores per-thread event
 history, maps runtime events to client notifications, and enqueues server-owned
 JSONL records under `<globalDir>/sessions/ts-server`.
 
+`thread/list` scans the same JSONL directory and merges matching live threads
+with saved records for a requested resolved `cwd`. Each response assigns
+temporary list numbers by descending `updatedAt`; these numbers are only a
+convenience for `/restore` in the same workspace view. `thread/restore` reloads
+the saved runtime events and creates an `AgentRuntime` with the original
+session id, but it does not reconstruct prior model context.
+
 The CLI is a client of this server. In normal one-shot and interactive modes it
 starts an embedded loopback server and talks to that server over WebSocket. In
 `ndx serve` mode it only hosts the server. In `--connect` mode it attaches to an

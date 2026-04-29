@@ -12,10 +12,17 @@ export interface SlashCommandExecution {
   name: string;
   args?: string;
   threadId?: string;
+  cwd?: string;
 }
 
 export type SlashCommandResult =
   | { handled: true; action: "print"; output: string }
+  | {
+      handled: true;
+      action: "restore";
+      output: string;
+      thread: unknown;
+    }
   | { handled: true; action: "exit"; output?: string }
   | { handled: false; output: string };
 
@@ -93,6 +100,18 @@ const NDX_SESSION_COMMANDS: SlashCommandDefinition[] = [
   {
     name: "events",
     description: "show recent runtime event types for the current thread",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "session",
+    description: "list sessions for the current workspace",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "restore",
+    description: "restore a saved session by id or workspace session number",
     placement: "session-builtin",
     implemented: true,
   },

@@ -23,6 +23,8 @@ context.
 | `/status`    | Print initialized server and current thread status. |
 | `/init`      | Print the latest session initialization event.      |
 | `/events`    | Print recent runtime event types for the thread.    |
+| `/session`   | List saved and live sessions for the current `cwd`. |
+| `/restore`   | Restore a session by UUID or `/session` number.     |
 | `/interrupt` | Ask the server to interrupt the current thread.     |
 | `/exit`      | Close the CLI client.                               |
 
@@ -49,6 +51,8 @@ Requests:
 | `command/list`     | none                         | `{ commands }`                            |
 | `command/execute`  | `{ name, args?, threadId? }` | command result                            |
 | `thread/start`     | `{ cwd? }`                   | `{ thread }`                              |
+| `thread/list`      | `{ cwd? }`                   | `{ sessions }`                            |
+| `thread/restore`   | `{ cwd?, selector }`         | `{ thread, events }`                      |
 | `thread/subscribe` | `{ threadId }`               | `{ thread, events }`                      |
 | `thread/read`      | `{ threadId }`               | `{ thread, events }`                      |
 | `turn/start`       | `{ threadId, prompt }`       | `{ turn }`                                |
@@ -57,6 +61,7 @@ Requests:
 Notifications:
 
 - `thread/started`
+- `thread/restored`
 - `thread/sessionConfigured`
 - `turn/started`
 - `item/toolCall`
@@ -72,6 +77,17 @@ Server JSONL records are queued by the session server and written by a child
 writer process to `<globalDir>/sessions/ts-server/<threadId>.jsonl`. Records
 include `persistedAt` and `writerPid`. If every client disconnects from a
 thread, the server queues `thread_detached` and drains pending persistence work.
+
+`thread/list` scans persisted JSONL files plus live server memory, filters by
+the requested `cwd`, sorts by last interaction time descending, and assigns
+1-based numbers for that response. `/session` prints the same numbered view.
+`thread/restore` and `/restore` accept either the full session id or the current
+workspace list number. Restored sessions reuse the original thread id and append
+new records to the original JSONL file.
+
+Restore does not yet replay prior turns into model context. The current agent
+loop samples each submitted prompt independently, so restore currently means
+server identity, event history, and persistence continuation.
 
 `initialize` returns `bootstrap`, and `thread/sessionConfigured` includes the
 same shape on `event.bootstrap`:

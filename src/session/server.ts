@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { ensureGlobalNdxHome } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { SessionLogStore } from "./log-store.js";
@@ -63,6 +64,26 @@ interface ServerThread {
   status: "idle" | "running" | "aborted" | "failed";
   createdAt: number;
   updatedAt: number;
+}
+
+interface SessionListEntry {
+  number: number;
+  id: string;
+  cwd: string;
+  status: ServerThread["status"];
+  createdAt: number;
+  updatedAt: number;
+  eventCount: number;
+  live: boolean;
+}
+
+interface PersistedThreadState {
+  id: string;
+  cwd: string;
+  status: ServerThread["status"];
+  createdAt: number;
+  updatedAt: number;
+  events: RuntimeEvent[];
 }
 
 /** WebSocket JSON-RPC authority for live threads, event fan-out, and JSONL. */
@@ -204,6 +225,8 @@ export class SessionServer {
             "command/list",
             "command/execute",
             "thread/start",
+            "thread/list",
+            "thread/restore",
             "thread/subscribe",
             "thread/read",
             "turn/start",
@@ -216,6 +239,10 @@ export class SessionServer {
         return this.executeCommand(request.params);
       case "thread/start":
         return this.startThread(connection, request.params);
+      case "thread/list":
+        return this.listThreads(request.params);
+      case "thread/restore":
+        return this.restoreThread(connection, request.params);
       case "thread/subscribe":
         return this.subscribeThread(connection, request.params);
       case "thread/read":
@@ -285,6 +312,21 @@ export class SessionServer {
     return { thread: this.threadSummary(thread), events: thread.events };
   }
 
+  private listThreads(params: unknown): unknown {
+    const cwd = stringParam(params, "cwd") ?? this.options.cwd;
+    return { sessions: this.numberedSessionsForCwd(cwd) };
+  }
+
+  private restoreThread(
+    connection: WebSocketConnection,
+    params: unknown,
+  ): unknown {
+    const cwd = stringParam(params, "cwd") ?? this.options.cwd;
+    const selector = requiredStringParam(params, "selector");
+    const thread = this.restoreThreadBySelector(connection, cwd, selector);
+    return { thread: this.threadSummary(thread), events: thread.events };
+  }
+
   private executeCommand(params: unknown): SlashCommandResult {
     const execution = slashCommandExecution(params);
     const definition = resolveSlashCommand(execution.name);
@@ -328,6 +370,32 @@ export class SessionServer {
           action: "print",
           output: this.formatRecentEvents(execution.threadId),
         };
+      case "session":
+        return {
+          handled: true,
+          action: "print",
+          output: this.formatSessions(execution.cwd ?? this.options.cwd),
+        };
+      case "restore": {
+        if (execution.args === undefined) {
+          return {
+            handled: true,
+            action: "print",
+            output: "usage: /restore <session-id|session-number>",
+          };
+        }
+        const thread = this.restoreThreadBySelector(
+          undefined,
+          execution.cwd ?? this.options.cwd,
+          execution.args.trim(),
+        );
+        return {
+          handled: true,
+          action: "restore",
+          output: `restored session ${thread.id}\ncwd: ${thread.cwd}\nstatus: ${thread.status}`,
+          thread: this.threadSummary(thread),
+        };
+      }
       case "interrupt":
         if (execution.threadId === undefined) {
           throw new Error("threadId is required for /interrupt");
@@ -464,6 +532,109 @@ export class SessionServer {
     return thread;
   }
 
+  private restoreThreadBySelector(
+    connection: WebSocketConnection | undefined,
+    cwd: string,
+    selector: string,
+  ): ServerThread {
+    const session = this.resolveSessionSelector(cwd, selector);
+    const live = this.threads.get(session.id);
+    if (live !== undefined) {
+      if (connection !== undefined) {
+        live.subscribers.add(connection);
+      }
+      return live;
+    }
+    const persisted = this.readPersistedThread(session.id);
+    if (persisted === undefined) {
+      throw new Error(`unknown session: ${selector}`);
+    }
+    const runtime = new AgentRuntime({
+      cwd: persisted.cwd,
+      config: this.options.config,
+      client: this.options.createClient(),
+      sessionId: persisted.id,
+      sources: this.options.sources,
+      bootstrap: this.bootstrap,
+    });
+    const thread: ServerThread = {
+      id: persisted.id,
+      cwd: persisted.cwd,
+      runtime,
+      events: persisted.events,
+      subscribers: new Set(connection === undefined ? [] : [connection]),
+      status: persisted.status,
+      createdAt: persisted.createdAt,
+      updatedAt: Date.now(),
+    };
+    this.threads.set(thread.id, thread);
+    this.store.append(thread.id, {
+      type: "thread_restored",
+      threadId: thread.id,
+      cwd: thread.cwd,
+      restoredAt: thread.updatedAt,
+    });
+    if (connection !== undefined) {
+      this.publish(thread, {
+        method: "thread/restored",
+        params: this.threadSummary(thread),
+      });
+    }
+    return thread;
+  }
+
+  private resolveSessionSelector(
+    cwd: string,
+    selector: string,
+  ): SessionListEntry {
+    const sessions = this.numberedSessionsForCwd(cwd);
+    const number = Number.parseInt(selector, 10);
+    const selected =
+      Number.isInteger(number) && String(number) === selector
+        ? sessions.find((session) => session.number === number)
+        : sessions.find((session) => session.id === selector);
+    if (selected === undefined) {
+      throw new Error(`unknown session for ${resolve(cwd)}: ${selector}`);
+    }
+    return selected;
+  }
+
+  private numberedSessionsForCwd(cwd: string): SessionListEntry[] {
+    const normalizedCwd = resolve(cwd);
+    const byId = new Map<string, Omit<SessionListEntry, "number">>();
+    for (const persisted of this.readPersistedThreads()) {
+      if (resolve(persisted.cwd) !== normalizedCwd) {
+        continue;
+      }
+      byId.set(persisted.id, {
+        id: persisted.id,
+        cwd: persisted.cwd,
+        status: persisted.status,
+        createdAt: persisted.createdAt,
+        updatedAt: persisted.updatedAt,
+        eventCount: persisted.events.length,
+        live: false,
+      });
+    }
+    for (const thread of this.threads.values()) {
+      if (resolve(thread.cwd) !== normalizedCwd) {
+        continue;
+      }
+      byId.set(thread.id, {
+        id: thread.id,
+        cwd: thread.cwd,
+        status: thread.status,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt,
+        eventCount: thread.events.length,
+        live: true,
+      });
+    }
+    return [...byId.values()]
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .map((session, index) => ({ number: index + 1, ...session }));
+  }
+
   private threadSummary(thread: ServerThread): unknown {
     return {
       id: thread.id,
@@ -521,6 +692,94 @@ export class SessionServer {
           `${String(index + 1).padStart(2, " ")}. ${event.msg.type}`,
       )
       .join("\n");
+  }
+
+  private formatSessions(cwd: string): string {
+    const sessions = this.numberedSessionsForCwd(cwd);
+    if (sessions.length === 0) {
+      return `no sessions found for ${resolve(cwd)}`;
+    }
+    return [
+      `sessions for ${resolve(cwd)}`,
+      ...sessions.map((session) =>
+        [
+          `${session.number}. ${session.id}`,
+          `updated: ${new Date(session.updatedAt).toISOString()}`,
+          `status: ${session.status}`,
+          `events: ${session.eventCount}`,
+          session.live ? "live" : "saved",
+        ].join(" | "),
+      ),
+    ].join("\n");
+  }
+
+  private readPersistedThreads(): PersistedThreadState[] {
+    const dir = this.persistenceDir();
+    if (!existsSync(dir)) {
+      return [];
+    }
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .map((entry) => this.readPersistedThread(basename(entry.name, ".jsonl")))
+      .filter((thread): thread is PersistedThreadState => thread !== undefined);
+  }
+
+  private readPersistedThread(
+    threadId: string,
+  ): PersistedThreadState | undefined {
+    const file = join(this.persistenceDir(), `${threadId}.jsonl`);
+    if (!existsSync(file)) {
+      return undefined;
+    }
+    const records = readFileSync(file, "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    let cwd: string | undefined;
+    let createdAt: number | undefined;
+    let updatedAt = 0;
+    let status: ServerThread["status"] = "idle";
+    const events: RuntimeEvent[] = [];
+    for (const record of records) {
+      const recordTime = recordTimestamp(record);
+      updatedAt = Math.max(updatedAt, recordTime);
+      if (record.type === "thread_started") {
+        cwd = typeof record.cwd === "string" ? record.cwd : cwd;
+        createdAt =
+          typeof record.createdAt === "number" ? record.createdAt : createdAt;
+      } else if (record.type === "runtime_event") {
+        const event = record.event;
+        if (isRuntimeEvent(event)) {
+          events.push(event);
+          status = statusFromEvent(event, status);
+          if (event.msg.type === "turn_started") {
+            cwd = event.msg.cwd;
+          } else if (event.msg.type === "session_configured") {
+            cwd = event.msg.cwd;
+          }
+        }
+      } else if (record.type === "thread_detached") {
+        status = parseThreadStatus(record.status) ?? status;
+      }
+    }
+    if (cwd === undefined) {
+      return undefined;
+    }
+    return {
+      id: threadId,
+      cwd,
+      status,
+      createdAt: createdAt ?? updatedAt,
+      updatedAt,
+      events,
+    };
+  }
+
+  private persistenceDir(): string {
+    return (
+      this.options.persistenceDir ??
+      join(this.options.config.paths.globalDir, "sessions", "ts-server")
+    );
   }
 }
 
@@ -691,7 +950,65 @@ function slashCommandExecution(params: unknown): SlashCommandExecution {
     name,
     args: stringParam(params, "args"),
     threadId: stringParam(params, "threadId"),
+    cwd: stringParam(params, "cwd"),
   };
+}
+
+function recordTimestamp(record: Record<string, unknown>): number {
+  for (const key of [
+    "recordedAt",
+    "requestedAt",
+    "disconnectedAt",
+    "restoredAt",
+    "subscribedAt",
+    "createdAt",
+    "persistedAt",
+  ]) {
+    const value = record[key];
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function isRuntimeEvent(value: unknown): value is RuntimeEvent {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const event = value as { id?: unknown; msg?: unknown };
+  return (
+    typeof event.id === "string" &&
+    event.msg !== null &&
+    typeof event.msg === "object"
+  );
+}
+
+function statusFromEvent(
+  event: RuntimeEvent,
+  fallback: ServerThread["status"],
+): ServerThread["status"] {
+  switch (event.msg.type) {
+    case "turn_started":
+      return "running";
+    case "turn_complete":
+      return "idle";
+    case "turn_aborted":
+      return "aborted";
+    case "error":
+      return "failed";
+    default:
+      return fallback;
+  }
+}
+
+function parseThreadStatus(value: unknown): ServerThread["status"] | undefined {
+  return value === "idle" ||
+    value === "running" ||
+    value === "aborted" ||
+    value === "failed"
+    ? value
+    : undefined;
 }
 
 function rpcError(code: number, message: string, data?: unknown): JsonRpcError {

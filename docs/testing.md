@@ -37,6 +37,7 @@ npm run deploy
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `thread/sessionConfigured`.
 - Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
+- Workspace-scoped session listing and restore by session id or list number.
 - Session JSONL writes performed by a child writer process, not the main process.
 - Queue drain after clients disconnect without an explicit session close command.
 - Multiple WebSocket clients subscribed to the same live thread.

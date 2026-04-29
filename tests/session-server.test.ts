@@ -210,6 +210,20 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
     assert.equal(unsupported.handled, false);
     assert.equal(unsupported.output.includes("core-candidate"), true);
 
+    const sessionList = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", { name: "session", cwd: root });
+    assert.equal(sessionList.output.includes("sessions for"), true);
+    assert.equal(sessionList.output.includes(`1. ${threadId}`), true);
+
+    const restoredByNumber = await client.request<{
+      handled: true;
+      action: "restore";
+      thread: { id: string };
+    }>("command/execute", { name: "restore", args: "1", cwd: root });
+    assert.equal(restoredByNumber.thread.id, threadId);
+
     const logFile = join(persistenceDir, `${threadId}.jsonl`);
     assert.equal(existsSync(logFile), true);
     let records = readJsonl(logFile);
@@ -248,6 +262,99 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
     client?.close();
     subscriber?.close();
     await server?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session server restores a saved workspace session by id or number", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-restore-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  let firstServer: SessionServer | undefined;
+  let secondServer: SessionServer | undefined;
+  let firstClient: SessionClient | undefined;
+  let secondClient: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    firstServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    const firstAddress = await firstServer.listen(0, "127.0.0.1");
+    firstClient = await SessionClient.connect(firstAddress.url);
+    await firstClient.request("initialize");
+    const startResponse = await firstClient.request<{ thread: { id: string } }>(
+      "thread/start",
+      { cwd: root },
+    );
+    const originalThreadId = startResponse.thread.id;
+    const completed = waitForMethod(firstClient, "turn/completed");
+    await firstClient.request("turn/start", {
+      threadId: originalThreadId,
+      prompt: "first turn",
+    });
+    await completed;
+    await firstServer.flushPersistence();
+    firstClient.close();
+    await firstServer.close();
+
+    secondServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    const secondAddress = await secondServer.listen(0, "127.0.0.1");
+    secondClient = await SessionClient.connect(secondAddress.url);
+    await secondClient.request("initialize");
+
+    const listResponse = await secondClient.request<{
+      sessions: Array<{ number: number; id: string; eventCount: number }>;
+    }>("thread/list", { cwd: root });
+    assert.deepEqual(
+      listResponse.sessions.map((session) => session.id),
+      [originalThreadId],
+    );
+    assert.equal(listResponse.sessions[0]?.number, 1);
+    assert.equal(listResponse.sessions[0]?.eventCount >= 6, true);
+
+    const restoreResponse = await secondClient.request<{
+      thread: { id: string; status: string };
+      events: unknown[];
+    }>("thread/restore", { cwd: root, selector: "1" });
+    assert.equal(restoreResponse.thread.id, originalThreadId);
+    assert.equal(restoreResponse.thread.status, "idle");
+    assert.equal(restoreResponse.events.length >= 6, true);
+
+    const completedAgain = waitForMethod(secondClient, "turn/completed");
+    await secondClient.request("turn/start", {
+      threadId: originalThreadId,
+      prompt: "second turn",
+    });
+    await completedAgain;
+    await secondServer.flushPersistence();
+
+    const records = readJsonl(
+      join(persistenceDir, `${originalThreadId}.jsonl`),
+    );
+    assert.equal(
+      records.some((record) => record.type === "thread_restored"),
+      true,
+    );
+    assert.equal(
+      records.filter((record) => record.type === "turn_start_requested").length,
+      2,
+    );
+  } finally {
+    firstClient?.close();
+    secondClient?.close();
+    await firstServer?.close().catch(() => undefined);
+    await secondServer?.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -25,7 +25,7 @@ domain.
 1. CLI resolves `cwd` and reads `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` elements.
 2. CLI prints the robot plus uppercase `NDX` startup logo, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
 3. Session server startup re-checks required global `.ndx` elements and installs any missing settings, core directories, core tool package files, and skills directory before accepting session work.
-4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts one thread, tracks socket/server/thread status, receives notifications, and prints selected initialization, tool, warning, and final events.
+4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts one thread, tracks socket/server/thread status, can switch to a restored thread, receives notifications, and prints selected initialization, tool, warning, and final events.
 5. The session server chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live thread.
 6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
 7. The session server enqueues thread, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
@@ -65,7 +65,7 @@ Client programs must not maintain authoritative live session or persistence stat
 
 - robot plus uppercase `NDX` startup logo and socket initialization display
 - thread start status display
-- `/status`, `/init`, `/events`, and `/interrupt`
+- `/status`, `/init`, `/events`, `/session`, `/restore`, and `/interrupt`
 - runtime notification formatting for human output
 
 The CLI does not inspect `.ndx` directly after config loading and does not persist live session state. Future server-side initialization detail should arrive through notifications or initialize responses and be rendered by this controller without changing the model prompt.
@@ -84,6 +84,13 @@ server removes that connection from thread subscriber sets. If a thread has no
 remaining subscribers, the server enqueues a `thread_detached` record and
 triggers a queue drain. In-flight turns can still finish and enqueue their final
 runtime events because the live thread remains in server memory.
+
+`thread/list` and `/session` build a workspace-scoped view from live memory plus
+the server JSONL directory. The server filters by exact resolved `cwd`, sorts by
+last interaction time, and assigns temporary 1-based numbers. `thread/restore`
+and `/restore` accept either a listed number or the full session id, create a new
+`AgentRuntime` with the original id when needed, load persisted runtime events
+back into server memory, and continue appending to the same JSONL file.
 
 ## Docker Flow
 
