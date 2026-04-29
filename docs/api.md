@@ -13,6 +13,17 @@ one-shot and interactive modes start an embedded loopback session server, then
 send socket requests to it. `ndx serve` keeps the session server open for other
 clients.
 
+Interactive commands are CLI-local session-client controls:
+
+| Command      | Behavior                                             |
+| ------------ | ---------------------------------------------------- |
+| `/help`      | Print available CLI commands.                        |
+| `/status`    | Print initialized server and current thread status.  |
+| `/init`      | Print the latest session initialization event.       |
+| `/events`    | Print recent runtime event types received by socket. |
+| `/interrupt` | Send `turn/interrupt` for the current thread.        |
+| `/exit`      | Close the CLI client.                                |
+
 ## Options
 
 - `--mock`: use deterministic local model behavior. No network or provider key required.

@@ -6,7 +6,7 @@ Top-level `src` contains role folders only.
 
 | Folder         | Role                                                                        |
 | -------------- | --------------------------------------------------------------------------- |
-| `src/cli/`     | CLI entrypoint, argument parsing, session client wiring.                    |
+| `src/cli/`     | CLI entrypoint, argument parsing, session-client controller, command UI.    |
 | `src/config/`  | JSON settings discovery, merge, and active provider resolution.             |
 | `src/model/`   | Model client implementations and test model client.                         |
 | `src/process/` | Dependency-free process runner and instantiable serial/parallel task queue. |
@@ -23,8 +23,8 @@ domain.
 ## Runtime Flow
 
 1. CLI resolves `cwd` and reads `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`.
-2. CLI starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
-3. The CLI acts as a client: it sends `thread/start` and `turn/start` requests, receives notifications, and prints selected tool/final events.
+2. CLI prints the ndx startup logo, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
+3. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts one thread, tracks socket/server/thread status, receives notifications, and prints selected initialization, tool, warning, and final events.
 4. The session server chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live thread.
 5. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
 6. The session server enqueues thread, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
@@ -54,7 +54,18 @@ The server translates runtime events into JSON-RPC notifications:
 - `warning`
 - `error`
 
-Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live thread state and durable JSONL.
+Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live thread state and durable JSONL. Session initialization detail is displayed by the CLI and kept in client-local status/history only; it is not sent back as prompt context.
+
+## CLI Client Boundary
+
+`src/cli/session-client.ts` owns CLI-only session behavior:
+
+- startup logo and socket initialization display
+- thread start status display
+- `/status`, `/init`, `/events`, and `/interrupt`
+- runtime notification formatting for human output
+
+The CLI does not inspect `.ndx` directly after config loading and does not persist live session state. Future server-side initialization detail should arrive through notifications or initialize responses and be rendered by this controller without changing the model prompt.
 
 ## Persistence Queue
 

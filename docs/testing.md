@@ -30,6 +30,7 @@ npm run deploy
 - Every tool call starts a separate Node worker process.
 - Runtime session event order for session, turn, tool, model message, and completion.
 - Runtime interrupt event contract.
+- CLI session-client controller initialization, thread status, initialization-event display, recent-event display, and interactive command help.
 - WebSocket session server request/notification flow.
 - Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
 - Session JSONL writes performed by a child writer process, not the main process.

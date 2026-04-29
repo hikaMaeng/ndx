@@ -48,9 +48,10 @@ Plugin and capability tools are filesystem packages, not settings entries. Put e
 node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text verified"
 ```
 
-The CLI starts an embedded loopback session server for this command and sends
-the prompt over WebSocket. The server owns the live thread and writes session
-JSONL under `/home/.ndx/sessions/ts-server`.
+The CLI prints the ndx startup logo to stderr, starts an embedded loopback
+session server, connects over WebSocket, sends `initialize`, starts a thread,
+and sends the prompt as a user turn. The server owns the live thread and writes
+session JSONL under `/home/.ndx/sessions/ts-server`.
 
 ## Session Server
 
@@ -65,6 +66,25 @@ Attach a client to that server:
 ```bash
 node dist/src/cli/main.js --connect ws://127.0.0.1:45123 "list files"
 ```
+
+Attached clients use the same session-client controller as embedded mode. They
+display socket initialization and thread status, but the remote server remains
+the authority for live state, initialization detail, event broadcast, and
+persistence.
+
+## Interactive Commands
+
+```text
+/help       Show CLI commands.
+/status     Show socket, server, and current thread status.
+/init       Show the latest session initialization detail received from server events.
+/events     Show recent runtime event types received over the socket.
+/interrupt  Ask the session server to interrupt the active turn.
+/exit       Leave ndx.
+```
+
+Initialization detail is for operator visibility only. The CLI does not append
+that detail to the model prompt.
 
 ## Real Agent
 

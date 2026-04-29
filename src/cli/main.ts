@@ -3,12 +3,16 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
+import {
+  CliSessionController,
+  interactiveHelp,
+  printWelcomeLogo,
+} from "./session-client.js";
 import { loadConfig } from "../config/index.js";
 import { createProviderModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
-import { SessionClient, type SessionNotification } from "../session/client.js";
+import { SessionClient } from "../session/client.js";
 import { SessionServer, type SessionServerAddress } from "../session/server.js";
-import type { RuntimeEventMsg } from "../shared/protocol.js";
 import type { ModelClient, NdxConfig } from "../shared/types.js";
 
 interface CliArgs {
@@ -56,8 +60,10 @@ async function main(): Promise<void> {
 
   const prompt = args.prompt ?? readStdin();
   await withEmbeddedServer({ args, config, sources }, async (client) => {
-    const threadId = await startThread(client, args.cwd);
-    await runRemotePrompt(client, threadId, prompt);
+    const session = new CliSessionController({ client, cwd: args.cwd });
+    await session.initialize();
+    await session.startThread();
+    await session.runPrompt(prompt);
   });
 }
 
@@ -67,24 +73,29 @@ async function runInteractive(options: {
   sources: string[];
 }): Promise<void> {
   await withEmbeddedServer(options, async (client) => {
-    const threadId = await startThread(client, options.args.cwd);
+    const session = new CliSessionController({
+      client,
+      cwd: options.args.cwd,
+    });
+    await session.initialize();
+    await session.startThread();
     const rl = createInterface({ input, output });
 
-    printWelcome(options.config);
+    printInteractiveHeader(options.config);
     try {
       while (true) {
         const prompt = (await rl.question("ndx> ")).trim();
         if (prompt.length === 0) {
           continue;
         }
-        if (prompt === "/exit" || prompt === "/quit") {
+        const command = await session.handleCommand(prompt);
+        if (command.handled && command.shouldExit) {
           break;
         }
-        if (prompt === "/help") {
-          printInteractiveHelp();
+        if (command.handled) {
           continue;
         }
-        await runRemotePrompt(client, threadId, prompt);
+        await session.runPrompt(prompt);
       }
     } finally {
       rl.close();
@@ -114,9 +125,13 @@ async function runConnected(options: {
   }
   const client = await SessionClient.connect(url);
   try {
-    await client.request("initialize");
-    const threadId = await startThread(client, options.args.cwd);
-    await runRemotePrompt(client, threadId, options.prompt);
+    const session = new CliSessionController({
+      client,
+      cwd: options.args.cwd,
+    });
+    await session.initialize();
+    await session.startThread();
+    await session.runPrompt(options.prompt);
   } finally {
     client.close();
   }
@@ -127,10 +142,10 @@ async function withEmbeddedServer(
   fn: (client: SessionClient) => Promise<void>,
 ): Promise<void> {
   const server = createSessionServer(options);
+  printWelcomeLogo();
   const address = await server.listen(0, "127.0.0.1");
   const client = await SessionClient.connect(address.url);
   try {
-    await client.request("initialize");
     await fn(client);
   } finally {
     client.close();
@@ -161,58 +176,6 @@ async function listen(
     throw new Error(`invalid --listen port: ${listenAddress}`);
   }
   return server.listen(port, host);
-}
-
-async function startThread(
-  client: SessionClient,
-  cwd: string,
-): Promise<string> {
-  const response = await client.request<{ thread: { id: string } }>(
-    "thread/start",
-    { cwd },
-  );
-  return response.thread.id;
-}
-
-async function runRemotePrompt(
-  client: SessionClient,
-  threadId: string,
-  prompt: string,
-): Promise<void> {
-  const completion = new Promise<string>((resolve, reject) => {
-    const off = client.onNotification((notification) => {
-      const msg = runtimeEvent(notification);
-      if (msg?.type === "tool_call") {
-        console.error(`[tool:${msg.name}] ${msg.arguments}`);
-      } else if (msg?.type === "tool_result") {
-        console.error(`[tool:result] ${msg.output}`);
-      } else if (msg?.type === "turn_complete") {
-        off();
-        resolve(msg.finalText);
-      } else if (msg?.type === "error") {
-        off();
-        reject(new Error(msg.message));
-      }
-    });
-  });
-  await client.request("turn/start", { threadId, prompt });
-  const text = await completion;
-  if (text) {
-    console.log(text);
-  }
-}
-
-function runtimeEvent(
-  notification: SessionNotification,
-): RuntimeEventMsg | undefined {
-  if (notification.params === null || typeof notification.params !== "object") {
-    return undefined;
-  }
-  const event = (notification.params as { event?: unknown }).event;
-  if (event === null || typeof event !== "object") {
-    return undefined;
-  }
-  return event as RuntimeEventMsg;
 }
 
 async function waitForShutdown(): Promise<void> {
@@ -289,21 +252,15 @@ function readStdin(): string {
   return readFileSync(0, "utf8").trim();
 }
 
-function printWelcome(config: NdxConfig): void {
+function printInteractiveHeader(config: NdxConfig): void {
   console.log(
     `ndx\nmodel: ${config.model}\nType a task and press Enter. Commands: /help, /exit\n`,
   );
 }
 
-function printInteractiveHelp(): void {
-  console.log(
-    "Commands:\n  /help  Show this help\n  /exit  Leave ndx\n\nEverything else is sent to the agent.",
-  );
-}
-
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession server:\n  The CLI sends thread and turn requests over WebSocket. The session server owns live thread state, event broadcast, and JSONL persistence.\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, starts a thread, and exposes server commands such as /status, /init, /events, and /interrupt.\n\nSession server:\n  The session server owns live thread state, event broadcast, initialization detail, and JSONL persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 
