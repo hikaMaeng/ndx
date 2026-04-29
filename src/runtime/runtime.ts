@@ -7,13 +7,18 @@ import type {
   RuntimeEventMsg,
   Submission,
 } from "../shared/protocol.js";
-import type { ModelClient, NdxConfig } from "../shared/types.js";
+import type {
+  ModelClient,
+  NdxBootstrapReport,
+  NdxConfig,
+} from "../shared/types.js";
 
 export interface AgentRuntimeOptions {
   cwd: string;
   config: NdxConfig;
   client: ModelClient;
   sources?: string[];
+  bootstrap: NdxBootstrapReport;
 }
 
 export type RuntimeEventHandler = (event: RuntimeEvent) => void;
@@ -25,6 +30,7 @@ export class AgentRuntime {
   private readonly config: NdxConfig;
   private readonly client: ModelClient;
   private readonly sources: string[];
+  private readonly bootstrap: NdxBootstrapReport;
   private configured = false;
   private activeTurn: ActiveTurn | undefined;
   private readonly abortedTurnIds = new Set<string>();
@@ -34,6 +40,7 @@ export class AgentRuntime {
     this.config = options.config;
     this.client = options.client;
     this.sources = options.sources ?? [];
+    this.bootstrap = options.bootstrap;
   }
 
   async submit(
@@ -158,6 +165,7 @@ export class AgentRuntime {
         approvalPolicy: "never",
         sandboxMode: this.config.permissions.defaultMode,
         sources: this.sources,
+        bootstrap: this.bootstrap,
       },
       onEvent,
     );

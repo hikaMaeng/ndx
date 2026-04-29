@@ -43,6 +43,20 @@ export interface NdxPaths {
   projectNdxDir?: string;
 }
 
+export type NdxBootstrapStatus = "installed" | "existing";
+
+export interface NdxBootstrapElement {
+  name: string;
+  path: string;
+  status: NdxBootstrapStatus;
+}
+
+export interface NdxBootstrapReport {
+  globalDir: string;
+  checkedAt: number;
+  elements: NdxBootstrapElement[];
+}
+
 export interface McpToolSettings {
   name: string;
   description?: string;

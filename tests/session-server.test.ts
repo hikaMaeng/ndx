@@ -16,6 +16,7 @@ import {
   type SessionNotification,
 } from "../src/session/client.js";
 import { SessionServer } from "../src/session/server.js";
+import type { RuntimeEventMsg } from "../src/shared/protocol.js";
 import type { NdxConfig } from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
@@ -89,8 +90,44 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
       subscriberNotifications.push(notification),
     );
 
-    await client.request("initialize");
+    const initialize = await client.request<{
+      bootstrap: {
+        globalDir: string;
+        elements: Array<{ name: string; status: string; path: string }>;
+      };
+    }>("initialize");
     await subscriber.request("initialize");
+    assert.equal(initialize.bootstrap.globalDir, globalDir);
+    assert.equal(existsSync(join(globalDir, "settings.json")), true);
+    assert.equal(existsSync(join(globalDir, "skills")), true);
+    assert.equal(
+      initialize.bootstrap.elements.some(
+        (element) =>
+          element.name === "settings.json" && element.status === "installed",
+      ),
+      true,
+    );
+    const commandList = await client.request<{
+      commands: Array<{
+        name: string;
+        placement: string;
+        implemented: boolean;
+      }>;
+    }>("command/list");
+    assert.equal(
+      commandList.commands.some(
+        (command) =>
+          command.name === "compact" && command.placement === "session-builtin",
+      ),
+      true,
+    );
+    assert.equal(
+      commandList.commands.some(
+        (command) =>
+          command.name === "diff" && command.placement === "core-candidate",
+      ),
+      true,
+    );
     const startResponse = await client.request<{ thread: { id: string } }>(
       "thread/start",
       { cwd: root },
@@ -124,6 +161,20 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
       ),
       true,
     );
+    const configured = notificationEvent(
+      notifications,
+      "thread/sessionConfigured",
+    );
+    assert.equal(configured?.type, "session_configured");
+    if (configured?.type === "session_configured") {
+      assert.equal(configured.bootstrap.globalDir, globalDir);
+      assert.equal(
+        configured.bootstrap.elements.some(
+          (element) => element.name === "skills",
+        ),
+        true,
+      );
+    }
 
     const readResponse = await subscriber.request<{
       thread: { id: string; status: string };
@@ -132,6 +183,32 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
     assert.equal(readResponse.thread.id, threadId);
     assert.equal(readResponse.thread.status, "idle");
     assert.equal(readResponse.events.length >= 6, true);
+
+    const status = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "status", threadId },
+    );
+    assert.equal(
+      status.output,
+      `server: ndx-ts-session-server\nthread: ${threadId} (idle)`,
+    );
+    const events = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "events", threadId },
+    );
+    assert.equal(events.output.includes("session_configured"), true);
+    const init = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "init", threadId },
+    );
+    assert.equal(init.output.includes("[bootstrap]"), true);
+    assert.equal(init.output.includes("skills"), true);
+    const unsupported = await client.request<{
+      handled: false;
+      output: string;
+    }>("command/execute", { name: "diff", threadId });
+    assert.equal(unsupported.handled, false);
+    assert.equal(unsupported.output.includes("core-candidate"), true);
 
     const logFile = join(persistenceDir, `${threadId}.jsonl`);
     assert.equal(existsSync(logFile), true);
@@ -187,6 +264,23 @@ function waitForMethod(
       }
     });
   });
+}
+
+function notificationEvent(
+  notifications: SessionNotification[],
+  method: string,
+): RuntimeEventMsg | undefined {
+  const notification = notifications.find((entry) => entry.method === method);
+  if (
+    notification?.params === null ||
+    typeof notification?.params !== "object"
+  ) {
+    return undefined;
+  }
+  const event = (notification.params as { event?: unknown }).event;
+  return event !== null && typeof event === "object"
+    ? (event as RuntimeEventMsg)
+    : undefined;
 }
 
 async function waitForLogRecord(

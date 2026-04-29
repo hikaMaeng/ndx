@@ -3,6 +3,7 @@ import type {
   RuntimeEventMsg,
   SessionConfiguredEvent,
 } from "../shared/protocol.js";
+import type { NdxBootstrapReport } from "../shared/types.js";
 
 export interface CliSessionRuntime {
   client: CliSessionTransport;
@@ -22,6 +23,7 @@ export interface InitializeResult {
   server?: string;
   protocolVersion?: number;
   methods?: string[];
+  bootstrap?: NdxBootstrapReport;
 }
 
 export interface ThreadSummary {
@@ -38,6 +40,11 @@ type CommandResult =
   | { handled: true; shouldExit: false }
   | { handled: false };
 
+type ServerCommandResult =
+  | { handled: true; action: "print"; output: string }
+  | { handled: true; action: "exit"; output?: string }
+  | { handled: false; output: string };
+
 /** CLI-side session-server client facade. */
 export class CliSessionController {
   private readonly client: CliSessionTransport;
@@ -47,7 +54,6 @@ export class CliSessionController {
   private initializeResult: InitializeResult | undefined;
   private thread: ThreadSummary | undefined;
   private sessionConfigured: SessionConfiguredEvent | undefined;
-  private readonly recentEvents: RuntimeEventMsg[] = [];
 
   constructor(options: CliSessionRuntime) {
     this.client = options.client;
@@ -80,7 +86,6 @@ export class CliSessionController {
         if (msg === undefined) {
           return;
         }
-        this.rememberEvent(msg);
         if (msg.type === "session_configured") {
           this.sessionConfigured = msg;
           this.printError(formatSessionConfigured(msg));
@@ -122,39 +127,29 @@ export class CliSessionController {
   }
 
   async handleCommand(input: string): Promise<CommandResult> {
-    const command = input.trim();
-    if (command === "/exit" || command === "/quit") {
-      return { handled: true, shouldExit: true };
+    const parsed = parseSlashCommand(input);
+    if (parsed === undefined) {
+      return { handled: false };
     }
-    if (command === "/help") {
-      this.print(interactiveHelp());
+    const result = await this.client.request<ServerCommandResult>(
+      "command/execute",
+      {
+        name: parsed.name,
+        args: parsed.args,
+        threadId: this.thread?.id,
+      },
+    );
+    if (!result.handled) {
+      this.print(result.output);
       return { handled: true, shouldExit: false };
     }
-    if (command === "/status") {
-      this.print(formatStatus(this.initializeResult, this.thread));
-      return { handled: true, shouldExit: false };
+    if (result.output !== undefined && result.output.length > 0) {
+      this.print(result.output);
     }
-    if (command === "/init") {
-      this.print(
-        this.sessionConfigured === undefined
-          ? "session initialization details have not arrived yet"
-          : formatSessionConfigured(this.sessionConfigured),
-      );
-      return { handled: true, shouldExit: false };
-    }
-    if (command === "/events") {
-      this.print(formatRecentEvents(this.recentEvents));
-      return { handled: true, shouldExit: false };
-    }
-    if (command === "/interrupt") {
-      await this.client.request("turn/interrupt", {
-        threadId: this.requireThreadId(),
-        reason: "interrupted from CLI",
-      });
-      this.print("interrupt requested");
-      return { handled: true, shouldExit: false };
-    }
-    return { handled: false };
+    return {
+      handled: true,
+      shouldExit: result.action === "exit",
+    };
   }
 
   private requireThreadId(): string {
@@ -162,13 +157,6 @@ export class CliSessionController {
       throw new Error("thread has not been started");
     }
     return this.thread.id;
-  }
-
-  private rememberEvent(msg: RuntimeEventMsg): void {
-    this.recentEvents.push(msg);
-    if (this.recentEvents.length > 20) {
-      this.recentEvents.shift();
-    }
   }
 }
 
@@ -190,6 +178,23 @@ export function interactiveHelp(): string {
     "",
     "Everything else is sent to the session server as a user turn.",
   ].join("\n");
+}
+
+function parseSlashCommand(
+  input: string,
+): { name: string; args: string | undefined } | undefined {
+  const command = input.trim();
+  if (!command.startsWith("/") || command === "/") {
+    return undefined;
+  }
+  const body = command.slice(1);
+  const firstSpace = body.search(/\s/);
+  if (firstSpace === -1) {
+    return { name: body, args: undefined };
+  }
+  const name = body.slice(0, firstSpace);
+  const args = body.slice(firstSpace).trim();
+  return { name, args: args.length > 0 ? args : undefined };
 }
 
 export function runtimeEvent(
@@ -214,6 +219,7 @@ function formatInitializeResult(result: InitializeResult): string {
     `[session-server] ${server}`,
     `[protocol] ${protocol}`,
     `[methods] ${methods}`,
+    formatBootstrap(result.bootstrap),
   ].join("\n");
 }
 
@@ -237,28 +243,25 @@ function formatSessionConfigured(event: SessionConfiguredEvent): string {
     `  approval: ${event.approvalPolicy}`,
     `  sandbox: ${event.sandboxMode}`,
     `  sources: ${sources}`,
+    formatBootstrap(event.bootstrap),
   ].join("\n");
 }
 
-function formatStatus(
-  initializeResult: InitializeResult | undefined,
-  thread: ThreadSummary | undefined,
-): string {
-  const server = initializeResult?.server ?? "not initialized";
-  const threadLine =
-    thread === undefined
-      ? "thread: not started"
-      : `thread: ${thread.id} (${thread.status})`;
-  return [`server: ${server}`, threadLine].join("\n");
-}
-
-function formatRecentEvents(events: RuntimeEventMsg[]): string {
-  if (events.length === 0) {
-    return "no runtime events received";
+function formatBootstrap(bootstrap: NdxBootstrapReport | undefined): string {
+  if (bootstrap === undefined) {
+    return "[bootstrap] unavailable";
   }
-  return events
-    .map(
-      (event, index) => `${String(index + 1).padStart(2, " ")}. ${event.type}`,
-    )
-    .join("\n");
+  const installed = bootstrap.elements.filter(
+    (element) => element.status === "installed",
+  );
+  const existing = bootstrap.elements.length - installed.length;
+  const rows = bootstrap.elements.map(
+    (element) => `  ${element.status}: ${element.name} (${element.path})`,
+  );
+  return [
+    `[bootstrap] ${bootstrap.globalDir}`,
+    `  installed: ${installed.length}`,
+    `  existing: ${existing}`,
+    ...rows,
+  ].join("\n");
 }

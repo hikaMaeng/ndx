@@ -2,10 +2,22 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { join } from "node:path";
+import { ensureGlobalNdxHome } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { SessionLogStore } from "./log-store.js";
+import {
+  BUILT_IN_SLASH_COMMANDS,
+  formatSlashCommandHelp,
+  resolveSlashCommand,
+  type SlashCommandExecution,
+  type SlashCommandResult,
+} from "./commands/registry.js";
 import type { RuntimeEvent, RuntimeEventMsg } from "../shared/protocol.js";
-import type { ModelClient, NdxConfig } from "../shared/types.js";
+import type {
+  ModelClient,
+  NdxBootstrapReport,
+  NdxConfig,
+} from "../shared/types.js";
 
 type JsonRpcId = number | string | null;
 
@@ -60,9 +72,11 @@ export class SessionServer {
   private readonly threads = new Map<string, ServerThread>();
   private readonly clients = new Set<WebSocketConnection>();
   private readonly store: SessionLogStore;
+  private readonly bootstrap: NdxBootstrapReport;
 
   constructor(options: SessionServerOptions) {
     this.options = options;
+    this.bootstrap = ensureGlobalNdxHome(options.config.paths.globalDir);
     this.server = createServer();
     this.store = new SessionLogStore(
       options.persistenceDir ??
@@ -184,8 +198,11 @@ export class SessionServer {
         return {
           server: "ndx-ts-session-server",
           protocolVersion: 1,
+          bootstrap: this.bootstrap,
           methods: [
             "initialize",
+            "command/list",
+            "command/execute",
             "thread/start",
             "thread/subscribe",
             "thread/read",
@@ -193,6 +210,10 @@ export class SessionServer {
             "turn/interrupt",
           ],
         };
+      case "command/list":
+        return { commands: BUILT_IN_SLASH_COMMANDS };
+      case "command/execute":
+        return this.executeCommand(request.params);
       case "thread/start":
         return this.startThread(connection, request.params);
       case "thread/subscribe":
@@ -218,6 +239,7 @@ export class SessionServer {
       config: this.options.config,
       client: this.options.createClient(),
       sources: this.options.sources,
+      bootstrap: this.bootstrap,
     });
     const now = Date.now();
     const thread: ServerThread = {
@@ -261,6 +283,70 @@ export class SessionServer {
   private readThread(params: unknown): unknown {
     const thread = this.requiredThread(params);
     return { thread: this.threadSummary(thread), events: thread.events };
+  }
+
+  private executeCommand(params: unknown): SlashCommandResult {
+    const execution = slashCommandExecution(params);
+    const definition = resolveSlashCommand(execution.name);
+    if (definition === undefined) {
+      return {
+        handled: false,
+        output: `unknown slash command: /${execution.name}`,
+      };
+    }
+    if (!definition.implemented) {
+      return {
+        handled: false,
+        output: `/${execution.name} is registered as ${definition.placement} but is not implemented in the TypeScript session server yet.`,
+      };
+    }
+
+    switch (definition.name) {
+      case "help":
+        return {
+          handled: true,
+          action: "print",
+          output: formatSlashCommandHelp(),
+        };
+      case "quit":
+        return { handled: true, action: "exit" };
+      case "status":
+        return {
+          handled: true,
+          action: "print",
+          output: this.formatCommandStatus(execution.threadId),
+        };
+      case "init":
+        return {
+          handled: true,
+          action: "print",
+          output: this.formatLatestSessionConfigured(execution.threadId),
+        };
+      case "events":
+        return {
+          handled: true,
+          action: "print",
+          output: this.formatRecentEvents(execution.threadId),
+        };
+      case "interrupt":
+        if (execution.threadId === undefined) {
+          throw new Error("threadId is required for /interrupt");
+        }
+        this.interruptTurn({
+          threadId: execution.threadId,
+          reason: execution.args ?? "interrupted from CLI",
+        });
+        return {
+          handled: true,
+          action: "print",
+          output: "interrupt requested",
+        };
+      default:
+        return {
+          handled: false,
+          output: `/${definition.name} is registered but has no command handler.`,
+        };
+    }
   }
 
   private startTurn(
@@ -387,6 +473,54 @@ export class SessionServer {
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
     };
+  }
+
+  private formatCommandStatus(threadId: string | undefined): string {
+    const thread =
+      threadId === undefined ? undefined : this.threads.get(threadId);
+    const threadLine =
+      thread === undefined
+        ? "thread: not started"
+        : `thread: ${thread.id} (${thread.status})`;
+    return ["server: ndx-ts-session-server", threadLine].join("\n");
+  }
+
+  private formatLatestSessionConfigured(threadId: string | undefined): string {
+    const thread =
+      threadId === undefined ? undefined : this.threads.get(threadId);
+    const event = thread?.events
+      .map((record) => record.msg)
+      .findLast((msg) => msg.type === "session_configured");
+    if (event === undefined || event.type !== "session_configured") {
+      return "session initialization details have not arrived yet";
+    }
+    const sources =
+      event.sources.length === 0 ? "none" : event.sources.join(", ");
+    return [
+      "[session-init]",
+      `  session: ${event.sessionId}`,
+      `  cwd: ${event.cwd}`,
+      `  model: ${event.model}`,
+      `  approval: ${event.approvalPolicy}`,
+      `  sandbox: ${event.sandboxMode}`,
+      `  sources: ${sources}`,
+      formatBootstrap(event.bootstrap),
+    ].join("\n");
+  }
+
+  private formatRecentEvents(threadId: string | undefined): string {
+    const thread =
+      threadId === undefined ? undefined : this.threads.get(threadId);
+    if (thread === undefined || thread.events.length === 0) {
+      return "no runtime events received";
+    }
+    return thread.events
+      .slice(-20)
+      .map(
+        (event, index) =>
+          `${String(index + 1).padStart(2, " ")}. ${event.msg.type}`,
+      )
+      .join("\n");
   }
 }
 
@@ -548,10 +682,38 @@ function stringParam(params: unknown, name: string): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function slashCommandExecution(params: unknown): SlashCommandExecution {
+  const name = requiredStringParam(params, "name");
+  if (name.startsWith("/")) {
+    throw new Error("command name must not include a leading slash");
+  }
+  return {
+    name,
+    args: stringParam(params, "args"),
+    threadId: stringParam(params, "threadId"),
+  };
+}
+
 function rpcError(code: number, message: string, data?: unknown): JsonRpcError {
   return { code, message, data: data instanceof Error ? data.message : data };
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatBootstrap(bootstrap: NdxBootstrapReport): string {
+  const installed = bootstrap.elements.filter(
+    (element) => element.status === "installed",
+  );
+  const existing = bootstrap.elements.length - installed.length;
+  const rows = bootstrap.elements.map(
+    (element) => `  ${element.status}: ${element.name} (${element.path})`,
+  );
+  return [
+    `[bootstrap] ${bootstrap.globalDir}`,
+    `  installed: ${installed.length}`,
+    `  existing: ${existing}`,
+    ...rows,
+  ].join("\n");
 }

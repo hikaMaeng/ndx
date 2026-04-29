@@ -6,6 +6,8 @@ import type {
   LoadedConfig,
   McpServerSettings,
   McpSettings,
+  NdxBootstrapElement,
+  NdxBootstrapReport,
   ModelSettings,
   NdxConfig,
   PermissionSettings,
@@ -171,13 +173,41 @@ export function searchRulesFile(options: ConfigLoadOptions = {}): string {
 }
 
 /** Install required global .ndx files when they are missing. */
-export function ensureGlobalNdxHome(globalDir: string): void {
+export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
+  const elements: NdxBootstrapElement[] = [];
+  const globalDirStatus = existsSync(globalDir) ? "existing" : "installed";
   mkdirSync(globalDir, { recursive: true });
+  elements.push({
+    name: "global directory",
+    path: globalDir,
+    status: globalDirStatus,
+  });
+  for (const directory of ["core", "core/tools", "skills"]) {
+    const path = join(globalDir, directory);
+    const status = existsSync(path) ? "existing" : "installed";
+    mkdirSync(path, { recursive: true });
+    elements.push({
+      name: directory,
+      path,
+      status,
+    });
+  }
   const settingsFile = join(globalDir, SETTINGS_FILE);
+  const settingsStatus = existsSync(settingsFile) ? "existing" : "installed";
   if (!existsSync(settingsFile)) {
     writeJsonFile(settingsFile, defaultSettings());
   }
-  ensureCoreShellTool(globalDir);
+  elements.push({
+    name: SETTINGS_FILE,
+    path: settingsFile,
+    status: settingsStatus,
+  });
+  elements.push(...ensureCoreShellTool(globalDir));
+  return {
+    globalDir,
+    checkedAt: Date.now(),
+    elements,
+  };
 }
 
 function defaultSettings(): PartialSettings {
@@ -212,11 +242,19 @@ function defaultSettings(): PartialSettings {
   };
 }
 
-function ensureCoreShellTool(globalDir: string): void {
+function ensureCoreShellTool(globalDir: string): NdxBootstrapElement[] {
+  const elements: NdxBootstrapElement[] = [];
   const toolDir = join(globalDir, "core", "tools", "shell");
   const manifestFile = join(toolDir, "tool.json");
   const runtimeFile = join(toolDir, "tool.mjs");
+  const toolDirStatus = existsSync(toolDir) ? "existing" : "installed";
   mkdirSync(toolDir, { recursive: true });
+  elements.push({
+    name: "core shell tool",
+    path: toolDir,
+    status: toolDirStatus,
+  });
+  const manifestStatus = existsSync(manifestFile) ? "existing" : "installed";
   if (!existsSync(manifestFile)) {
     writeJsonFile(manifestFile, {
       type: "function",
@@ -249,9 +287,21 @@ function ensureCoreShellTool(globalDir: string): void {
       args: ["tool.mjs"],
     });
   }
+  elements.push({
+    name: "core shell manifest",
+    path: manifestFile,
+    status: manifestStatus,
+  });
+  const runtimeStatus = existsSync(runtimeFile) ? "existing" : "installed";
   if (!existsSync(runtimeFile)) {
     writeFileSync(runtimeFile, `${CORE_SHELL_TOOL}\n`);
   }
+  elements.push({
+    name: "core shell runtime",
+    path: runtimeFile,
+    status: runtimeStatus,
+  });
+  return elements;
 }
 
 function writeJsonFile(path: string, value: unknown): void {

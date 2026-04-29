@@ -13,16 +13,18 @@ one-shot and interactive modes start an embedded loopback session server, then
 send socket requests to it. `ndx serve` keeps the session server open for other
 clients.
 
-Interactive commands are CLI-local session-client controls:
+Interactive slash commands are session-server controls. The CLI parses the
+leading slash and sends `command/execute`; command text is not appended to model
+context.
 
-| Command      | Behavior                                             |
-| ------------ | ---------------------------------------------------- |
-| `/help`      | Print available CLI commands.                        |
-| `/status`    | Print initialized server and current thread status.  |
-| `/init`      | Print the latest session initialization event.       |
-| `/events`    | Print recent runtime event types received by socket. |
-| `/interrupt` | Send `turn/interrupt` for the current thread.        |
-| `/exit`      | Close the CLI client.                                |
+| Command      | Behavior                                            |
+| ------------ | --------------------------------------------------- |
+| `/help`      | Print available session-server commands.            |
+| `/status`    | Print initialized server and current thread status. |
+| `/init`      | Print the latest session initialization event.      |
+| `/events`    | Print recent runtime event types for the thread.    |
+| `/interrupt` | Ask the server to interrupt the current thread.     |
+| `/exit`      | Close the CLI client.                               |
 
 ## Options
 
@@ -41,14 +43,16 @@ notifications; they are not authoritative session stores.
 
 Requests:
 
-| Method             | Params                  | Result                         |
-| ------------------ | ----------------------- | ------------------------------ |
-| `initialize`       | none                    | server name, protocol, methods |
-| `thread/start`     | `{ cwd? }`              | `{ thread }`                   |
-| `thread/subscribe` | `{ threadId }`          | `{ thread, events }`           |
-| `thread/read`      | `{ threadId }`          | `{ thread, events }`           |
-| `turn/start`       | `{ threadId, prompt }`  | `{ turn }`                     |
-| `turn/interrupt`   | `{ threadId, reason? }` | `{ thread }`                   |
+| Method             | Params                       | Result                                    |
+| ------------------ | ---------------------------- | ----------------------------------------- |
+| `initialize`       | none                         | server name, protocol, methods, bootstrap |
+| `command/list`     | none                         | `{ commands }`                            |
+| `command/execute`  | `{ name, args?, threadId? }` | command result                            |
+| `thread/start`     | `{ cwd? }`                   | `{ thread }`                              |
+| `thread/subscribe` | `{ threadId }`               | `{ thread, events }`                      |
+| `thread/read`      | `{ threadId }`               | `{ thread, events }`                      |
+| `turn/start`       | `{ threadId, prompt }`       | `{ turn }`                                |
+| `turn/interrupt`   | `{ threadId, reason? }`      | `{ thread }`                              |
 
 Notifications:
 
@@ -68,6 +72,26 @@ Server JSONL records are queued by the session server and written by a child
 writer process to `<globalDir>/sessions/ts-server/<threadId>.jsonl`. Records
 include `persistedAt` and `writerPid`. If every client disconnects from a
 thread, the server queues `thread_detached` and drains pending persistence work.
+
+`initialize` returns `bootstrap`, and `thread/sessionConfigured` includes the
+same shape on `event.bootstrap`:
+
+```json
+{
+  "globalDir": "/home/.ndx",
+  "checkedAt": 1777440000000,
+  "elements": [
+    {
+      "name": "settings.json",
+      "path": "/home/.ndx/settings.json",
+      "status": "installed"
+    }
+  ]
+}
+```
+
+`status` is either `installed` or `existing`. The session server performs this
+bootstrap check before starting session work.
 
 ## Settings
 

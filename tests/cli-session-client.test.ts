@@ -24,7 +24,7 @@ test("CLI session controller initializes socket, starts thread, and renders stat
 
   assert.deepEqual(
     transport.requests.map((request) => request.method),
-    ["initialize", "thread/start"],
+    ["initialize", "thread/start", "command/execute"],
   );
   assert.deepEqual(status, { handled: true, shouldExit: false });
   assert.equal(
@@ -34,7 +34,7 @@ test("CLI session controller initializes socket, starts thread, and renders stat
   assert.equal(
     stderr
       .join("\n")
-      .includes("[methods] initialize, thread/start, turn/start"),
+      .includes("[methods] initialize, command/list, command/execute"),
     true,
   );
 });
@@ -65,6 +65,7 @@ test("CLI session controller records initialization events outside prompt contex
         approvalPolicy: "never",
         sandboxMode: "danger-full-access",
         sources: ["/home/.ndx/settings.json", "/workspace/.ndx/settings.json"],
+        bootstrap: bootstrapReport("/home/.ndx"),
       },
     },
   });
@@ -92,14 +93,35 @@ test("CLI session controller records initialization events outside prompt contex
     true,
   );
   assert.deepEqual(transport.requests.at(-1), {
-    method: "turn/start",
-    params: { threadId: "thread-1", prompt: "hello" },
+    method: "command/execute",
+    params: { name: "events", args: undefined, threadId: "thread-1" },
   });
 });
 
 test("interactive help advertises session client commands", () => {
   assert.equal(interactiveHelp().includes("/interrupt"), true);
   assert.equal(interactiveHelp().includes("/events"), true);
+});
+
+test("CLI session controller does not send registered unsupported slash commands as prompts", async () => {
+  const transport = new FakeTransport();
+  const stdout: string[] = [];
+  const controller = new CliSessionController({
+    client: transport,
+    cwd: "/workspace",
+    print: (message) => stdout.push(message),
+  });
+
+  await controller.initialize();
+  await controller.startThread();
+  const result = await controller.handleCommand("/diff");
+
+  assert.deepEqual(result, { handled: true, shouldExit: false });
+  assert.equal(stdout.at(-1), "/diff is registered but is not implemented yet");
+  assert.equal(
+    transport.requests.some((request) => request.method === "turn/start"),
+    false,
+  );
 });
 
 class FakeTransport implements CliSessionTransport {
@@ -114,7 +136,14 @@ class FakeTransport implements CliSessionTransport {
       return {
         server: "ndx-ts-session-server",
         protocolVersion: 1,
-        methods: ["initialize", "thread/start", "turn/start"],
+        bootstrap: bootstrapReport("/home/.ndx"),
+        methods: [
+          "initialize",
+          "command/list",
+          "command/execute",
+          "thread/start",
+          "turn/start",
+        ],
       } as T;
     }
     if (method === "thread/start") {
@@ -135,6 +164,48 @@ class FakeTransport implements CliSessionTransport {
     if (method === "turn/interrupt") {
       return { thread: { id: "thread-1" } } as T;
     }
+    if (method === "command/execute") {
+      const command = params as { name: string };
+      if (command.name === "status") {
+        return {
+          handled: true,
+          action: "print",
+          output: "server: ndx-ts-session-server\nthread: thread-1 (idle)",
+        } as T;
+      }
+      if (command.name === "init") {
+        return {
+          handled: true,
+          action: "print",
+          output: [
+            "[session-init]",
+            "  session: session-1",
+            "  cwd: /workspace",
+            "  model: mock",
+            "  approval: never",
+            "  sandbox: danger-full-access",
+            "  sources: /home/.ndx/settings.json, /workspace/.ndx/settings.json",
+            "[bootstrap] /home/.ndx",
+            "  installed: 0",
+            "  existing: 1",
+            "  existing: settings.json (/home/.ndx/settings.json)",
+          ].join("\n"),
+        } as T;
+      }
+      if (command.name === "events") {
+        return {
+          handled: true,
+          action: "print",
+          output: " 1. session_configured\n 2. turn_complete",
+        } as T;
+      }
+      if (command.name === "diff") {
+        return {
+          handled: false,
+          output: "/diff is registered but is not implemented yet",
+        } as T;
+      }
+    }
     throw new Error(`unexpected request: ${method}`);
   }
 
@@ -152,4 +223,18 @@ class FakeTransport implements CliSessionTransport {
       handler(notification);
     }
   }
+}
+
+function bootstrapReport(globalDir: string) {
+  return {
+    globalDir,
+    checkedAt: 1,
+    elements: [
+      {
+        name: "settings.json",
+        path: `${globalDir}/settings.json`,
+        status: "existing",
+      },
+    ],
+  };
 }

@@ -7,7 +7,7 @@ import { classifyModelError } from "../src/runtime/errors.js";
 import { MockModelClient } from "../src/model/mock-client.js";
 import type { RuntimeEvent } from "../src/shared/protocol.js";
 import { AgentRuntime } from "../src/runtime/runtime.js";
-import type { NdxConfig } from "../src/shared/types.js";
+import type { NdxBootstrapReport, NdxConfig } from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
@@ -64,6 +64,7 @@ test("runtime emits session, turn, tool, and completion events", async () => {
       config: { ...baseConfig, paths: { globalDir } },
       client: new MockModelClient(),
       sources: ["/home/.ndx/settings.json"],
+      bootstrap: bootstrapReport(globalDir),
     });
 
     const finalText = await runtime.runPrompt("list files", (event) => {
@@ -124,6 +125,7 @@ test("runtime interrupt emits turn_aborted", async () => {
     cwd: process.cwd(),
     config: baseConfig,
     client: new MockModelClient(),
+    bootstrap: bootstrapReport(baseConfig.paths.globalDir),
   });
 
   await runtime.submit(
@@ -146,6 +148,20 @@ test("runtime interrupt emits turn_aborted", async () => {
     assert.equal(abort.reason, "user requested stop");
   }
 });
+
+function bootstrapReport(globalDir: string): NdxBootstrapReport {
+  return {
+    globalDir,
+    checkedAt: 1,
+    elements: [
+      {
+        name: "settings.json",
+        path: join(globalDir, "settings.json"),
+        status: "existing",
+      },
+    ],
+  };
+}
 
 test("model error classification separates retryable failures", () => {
   assert.deepEqual(classifyModelError(new Error("HTTP 401 unauthorized")), {

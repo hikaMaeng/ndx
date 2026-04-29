@@ -22,19 +22,20 @@ domain.
 
 ## Runtime Flow
 
-1. CLI resolves `cwd` and reads `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`.
+1. CLI resolves `cwd` and reads `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` elements.
 2. CLI prints the ndx startup logo, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
-3. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts one thread, tracks socket/server/thread status, receives notifications, and prints selected initialization, tool, warning, and final events.
-4. The session server chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live thread.
-5. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-6. The session server enqueues thread, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
-7. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
-8. `runAgent` sends the prompt to the model client through the runtime.
-9. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
-10. Function schemas from that registry are sent to the model.
-11. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
-12. Filesystem tools are executed from their `tool.json` command process. MCP tools are executed through the configured MCP stdio command. Task tools run inside the worker.
-13. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
+3. Session server startup re-checks required global `.ndx` elements and installs any missing settings, core directories, shell tool files, and skills directory before accepting session work.
+4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts one thread, tracks socket/server/thread status, receives notifications, and prints selected initialization, tool, warning, and final events.
+5. The session server chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live thread.
+6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
+7. The session server enqueues thread, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
+8. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
+9. `runAgent` sends the prompt to the model client through the runtime.
+10. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
+11. Function schemas from that registry are sent to the model.
+12. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
+13. Filesystem tools are executed from their `tool.json` command process. MCP tools are executed through the configured MCP stdio command. Task tools run inside the worker.
+14. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
 
 ## Runtime Event Contract
 
@@ -55,6 +56,8 @@ The server translates runtime events into JSON-RPC notifications:
 - `error`
 
 Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live thread state and durable JSONL. Session initialization detail is displayed by the CLI and kept in client-local status/history only; it is not sent back as prompt context.
+
+`initialize` responses and `thread/sessionConfigured` events include a bootstrap report. The report lists each required `.ndx` element, absolute path, and whether it already existed or was installed during startup.
 
 ## CLI Client Boundary
 

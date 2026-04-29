@@ -53,6 +53,12 @@ session server, connects over WebSocket, sends `initialize`, starts a thread,
 and sends the prompt as a user turn. The server owns the live thread and writes
 session JSONL under `/home/.ndx/sessions/ts-server`.
 
+On startup, config loading and the session server both enforce required global
+`.ndx` elements. Missing `settings.json`, `core/`, `core/tools/`, the built-in
+shell tool files, and `skills/` are installed before session work begins. The
+socket initialization output includes a bootstrap report showing what was
+installed and what already existed.
+
 ## Session Server
 
 Run a long-lived server:
@@ -75,16 +81,17 @@ persistence.
 ## Interactive Commands
 
 ```text
-/help       Show CLI commands.
+/help       Show session-server commands.
 /status     Show socket, server, and current thread status.
 /init       Show the latest session initialization detail received from server events.
-/events     Show recent runtime event types received over the socket.
+/events     Show recent runtime event types recorded on the session server thread.
 /interrupt  Ask the session server to interrupt the active turn.
 /exit       Leave ndx.
 ```
 
+Slash commands are sent to the session server with `command/execute`.
 Initialization detail is for operator visibility only. The CLI does not append
-that detail to the model prompt.
+slash command text or initialization detail to the model prompt.
 
 ## Real Agent
 

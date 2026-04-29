@@ -139,15 +139,48 @@ test("ensureGlobalNdxHome installs missing settings and core shell tool", () => 
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
-    ensureGlobalNdxHome(globalDir);
+    const report = ensureGlobalNdxHome(globalDir);
 
     assert.equal(existsSync(join(globalDir, "settings.json")), true);
+    assert.equal(existsSync(join(globalDir, "core")), true);
+    assert.equal(existsSync(join(globalDir, "skills")), true);
     assert.equal(
       existsSync(join(globalDir, "core", "tools", "shell", "tool.json")),
       true,
     );
     assert.equal(
       existsSync(join(globalDir, "core", "tools", "shell", "tool.mjs")),
+      true,
+    );
+    assert.equal(report.globalDir, globalDir);
+    assert.equal(
+      report.elements.some(
+        (element) =>
+          element.name === "settings.json" && element.status === "installed",
+      ),
+      true,
+    );
+    assert.equal(
+      report.elements.some(
+        (element) =>
+          element.name === "skills" && element.status === "installed",
+      ),
+      true,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ensureGlobalNdxHome reports existing required elements on later runs", () => {
+  const root = tempRoot();
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    ensureGlobalNdxHome(globalDir);
+    const report = ensureGlobalNdxHome(globalDir);
+
+    assert.equal(
+      report.elements.every((element) => element.status === "existing"),
       true,
     );
   } finally {

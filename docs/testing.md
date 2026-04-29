@@ -15,7 +15,7 @@ npm run deploy
 - Global `/home/.ndx/search.json` rule loading.
 - Provider/model resolution from settings.
 - Provider type validation for `openai` and `anthropic`.
-- Global `.ndx` bootstrap for missing `settings.json` and core shell tool.
+- Global `.ndx` bootstrap for missing `settings.json`, core directories, shell tool files, and skills directory.
 - OpenAI Responses normalization.
 - OpenAI Chat Completions normalization.
 - OpenAI Responses-to-Chat fallback on missing `/responses`.
@@ -32,6 +32,7 @@ npm run deploy
 - Runtime interrupt event contract.
 - CLI session-client controller initialization, thread status, initialization-event display, recent-event display, and interactive command help.
 - WebSocket session server request/notification flow.
+- Session server startup bootstrap report in `initialize` and `thread/sessionConfigured`.
 - Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
 - Session JSONL writes performed by a child writer process, not the main process.
 - Queue drain after clients disconnect without an explicit session close command.
