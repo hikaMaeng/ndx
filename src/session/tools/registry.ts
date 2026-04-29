@@ -85,16 +85,17 @@ export class ToolRegistry {
     name: string,
     args: Record<string, unknown>,
     context: ToolContext,
+    signal?: AbortSignal,
   ): Promise<ToolExecutionResult> {
     const tool = this.byName.get(name);
     if (tool === undefined) {
       return { output: `unsupported tool: ${name}` };
     }
     if (tool.kind === "external" && tool.runtime !== undefined) {
-      return await runExternalTool(tool.runtime, args, context);
+      return await runExternalTool(tool.runtime, args, context, signal);
     }
     if (tool.execute !== undefined) {
-      return await tool.execute(args, context);
+      return await tool.execute(args, context, signal);
     }
     return { output: `tool ${name} has no executable runtime` };
   }

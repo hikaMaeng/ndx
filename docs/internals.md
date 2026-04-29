@@ -49,6 +49,13 @@ input, planning, and collaboration tools belong under the session-owned
 tools such as shell remain external `/core/tools` packages. Task tools execute
 inside the worker, never inside the agent process.
 
+Abort propagation crosses the same boundary. `AgentRuntime` owns the turn
+`AbortController`, `executeToolInWorker` attaches it to the worker process, and
+the worker relays `SIGINT` or `SIGTERM` into a local `AbortSignal` passed through
+`ToolRegistry.execute`. External tool commands receive that signal through
+`runProcess`, so an interrupted turn cancels the worker and the manifest command
+instead of leaving the capability process detached.
+
 ## Runtime Session
 
 `src/runtime/runtime.ts` owns turn coordination. `AgentRuntime` wraps `runAgent`
@@ -59,7 +66,9 @@ emit `turn_aborted`.
 
 Runtime errors are classified into `unauthorized`, `bad_request`, `rate_limited`, `server_error`, `connection_failed`, or `unknown` so future retry and approval flows can be implemented without changing event consumers.
 
-The current interrupt support records and emits the abort contract. It does not yet cancel an in-flight process tree; that belongs to the later execution/permissions branches.
+Interrupt support records and emits the abort contract and cancels in-flight
+worker plus external manifest command processes. Full process-tree cleanup below
+the manifest command remains owned by the capability tool implementation.
 
 ## Session Server
 

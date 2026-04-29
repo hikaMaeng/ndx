@@ -28,6 +28,8 @@
 - Every model tool call runs in a separate worker Node process. No capability tool executes inside the agent process.
 - Multiple tool calls in one model response are launched in parallel. Sequential behavior is achieved by model turns queuing later asynchronous calls.
 - The default tool timeout is `shellTimeoutMs` from settings unless a tool manifest declares `timeoutMs`.
+- Turn cancellation is propagated to worker processes and to the immediate external manifest command process.
+- External tools that spawn their own children must handle cleanup for that deeper process tree.
 
 ## Model Providers
 
@@ -44,6 +46,7 @@
 - `TaskQueue` instances are independent. There is no global queue singleton.
 - Queue plans may nest `{ "serial": [...] }` and `{ "parallel": [...] }` nodes.
 - Cancellation is delivered through `AbortSignal` plus per-task cancellation hooks.
+- `runProcess` must honor an already-aborted signal as well as a signal aborted after spawn.
 
 ## MCP And Plugins
 

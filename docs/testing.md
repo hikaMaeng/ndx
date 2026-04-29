@@ -21,6 +21,7 @@ npm run deploy
 - OpenAI Responses-to-Chat fallback on missing `/responses`.
 - Anthropic Messages normalization.
 - Standalone process runner output capture.
+- Standalone process runner abort handling for already-aborted and later-aborted signals.
 - Standalone nested serial/parallel `TaskQueue` execution.
 - `keys` and compatibility `env` merge into the shell tool environment.
 - Mock model plus shell tool execution.
@@ -28,6 +29,7 @@ npm run deploy
 - Filesystem `tool.json` layer discovery and priority override.
 - Project MCP priority over global MCP.
 - Every tool call starts a separate Node worker process.
+- Agent abort propagation from turn signal to worker and external manifest command process.
 - Runtime session event order for session, turn, tool, model message, and completion.
 - Runtime interrupt event contract.
 - CLI session-client controller initialization, thread status, initialization-event display, recent-event display, and interactive command help.
