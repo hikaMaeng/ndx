@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   await withEmbeddedServer({ args, config, sources }, async (client) => {
     const session = new CliSessionController({ client, cwd: args.cwd });
     await session.initialize();
-    await session.startThread();
+    await session.startSession();
     await session.runPrompt(prompt);
   });
 }
@@ -78,11 +78,11 @@ async function runInteractive(options: {
       cwd: options.args.cwd,
     });
     await session.initialize();
-    await session.startThread();
     const rl = createInterface({ input, output });
 
     printInteractiveHeader(options.config);
     try {
+      await selectInitialSession(session, rl);
       while (true) {
         const prompt = (await rl.question("ndx> ")).trim();
         if (prompt.length === 0) {
@@ -130,10 +130,31 @@ async function runConnected(options: {
       cwd: options.args.cwd,
     });
     await session.initialize();
-    await session.startThread();
+    await session.startSession();
     await session.runPrompt(options.prompt);
   } finally {
     client.close();
+  }
+}
+
+async function selectInitialSession(
+  session: CliSessionController,
+  rl: ReturnType<typeof createInterface>,
+): Promise<void> {
+  const sessions = await session.listSessions();
+  console.log(session.formatSessionChoices(sessions));
+  while (true) {
+    const answer = (await rl.question("session> ")).trim();
+    const selector = answer.length === 0 ? "0" : answer;
+    if (selector === "0") {
+      await session.startSession();
+      return;
+    }
+    if (sessions.some((entry) => String(entry.number) === selector)) {
+      await session.restoreSession(selector);
+      return;
+    }
+    console.log("choose 0 for a new session or a listed session number");
   }
 }
 
@@ -254,13 +275,13 @@ function readStdin(): string {
 
 function printInteractiveHeader(config: NdxConfig): void {
   console.log(
-    `ndx\nmodel: ${config.model}\nType a task and press Enter. Commands: /help, /exit\n`,
+    `ndx\nmodel: ${config.model}\nChoose a session, then type a task and press Enter. Commands: /help, /exit\n`,
   );
 }
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, starts a thread, and exposes server commands such as /status, /init, /events, and /interrupt.\n\nSession server:\n  The session server owns live thread state, event broadcast, initialization detail, and JSONL persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restore, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and JSONL persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 

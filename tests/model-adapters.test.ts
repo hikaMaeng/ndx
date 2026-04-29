@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import { createProviderModelClient } from "../src/model/factory.js";
 import { normalizeAnthropicResponse } from "../src/model/anthropic.js";
 import { normalizeChatResponse } from "../src/model/openai-chat.js";
-import { normalizeResponsesPayload } from "../src/model/openai-responses.js";
+import {
+  normalizeResponsesPayload,
+  responsesTools,
+} from "../src/model/openai-responses.js";
 import type { NdxConfig } from "../src/shared/types.js";
 
 test("normalizes OpenAI responses function calls and usage", () => {
@@ -57,6 +60,37 @@ test("normalizes OpenAI responses function calls and usage", () => {
         },
       },
     },
+  );
+});
+
+test("converts chat-compatible function tools for OpenAI responses", () => {
+  assert.deepEqual(
+    responsesTools([
+      {
+        type: "function",
+        function: {
+          name: "shell",
+          description: "Run a shell command.",
+          parameters: {
+            type: "object",
+            properties: { command: { type: "string" } },
+            required: ["command"],
+          },
+        },
+      },
+    ]),
+    [
+      {
+        type: "function",
+        name: "shell",
+        description: "Run a shell command.",
+        parameters: {
+          type: "object",
+          properties: { command: { type: "string" } },
+          required: ["command"],
+        },
+      },
+    ],
   );
 });
 

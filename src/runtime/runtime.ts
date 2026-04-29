@@ -17,6 +17,7 @@ export interface AgentRuntimeOptions {
   cwd: string;
   config: NdxConfig;
   client: ModelClient;
+  sessionId?: string;
   sources?: string[];
   bootstrap: NdxBootstrapReport;
 }
@@ -24,7 +25,7 @@ export interface AgentRuntimeOptions {
 export type RuntimeEventHandler = (event: RuntimeEvent) => void;
 
 export class AgentRuntime {
-  readonly sessionId = randomUUID();
+  readonly sessionId: string;
 
   private readonly cwd: string;
   private readonly config: NdxConfig;
@@ -36,6 +37,7 @@ export class AgentRuntime {
   private readonly abortedTurnIds = new Set<string>();
 
   constructor(options: AgentRuntimeOptions) {
+    this.sessionId = options.sessionId ?? randomUUID();
     this.cwd = options.cwd;
     this.config = options.config;
     this.client = options.client;

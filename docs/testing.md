@@ -17,6 +17,7 @@ npm run deploy
 - Provider type validation for `openai` and `anthropic`.
 - Global `.ndx` bootstrap for missing `settings.json`, core directories, built-in core tool package files, and skills directory.
 - OpenAI Responses normalization.
+- OpenAI Responses function tool schema conversion.
 - OpenAI Chat Completions normalization.
 - OpenAI Responses-to-Chat fallback on missing `/responses`.
 - Anthropic Messages normalization.
@@ -33,13 +34,18 @@ npm run deploy
 - Agent abort propagation from turn signal to worker and external manifest command process.
 - Runtime session event order for session, turn, tool, model message, and completion.
 - Runtime interrupt event contract.
-- CLI session-client controller initialization, thread status, initialization-event display, recent-event display, and interactive command help.
+- CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
 - WebSocket session server request/notification flow.
-- Session server startup bootstrap report in `initialize` and `thread/sessionConfigured`.
+- Session server startup bootstrap report in `initialize` and `session/configured`.
 - Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
+- Workspace-scoped session listing and restore by session id or list number.
+- Empty sessions stay unnumbered and unpersisted until the first prompt.
+- Session ownership is reclaimed by the last socket server that attempts a prompt.
+- Session owner file contention waits and retries before restore claims
+  ownership.
 - Session JSONL writes performed by a child writer process, not the main process.
 - Queue drain after clients disconnect without an explicit session close command.
-- Multiple WebSocket clients subscribed to the same live thread.
+- Multiple WebSocket clients subscribed to the same live session.
 - Provider error classification for non-retryable and retryable failures.
 - Docker remote-clone build using the selected `NDX_GIT_REF` branch.
 - Docker workspace and global settings bind mounts under `./docker/volume`.

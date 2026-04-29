@@ -11,11 +11,18 @@ export interface SlashCommandDefinition {
 export interface SlashCommandExecution {
   name: string;
   args?: string;
-  threadId?: string;
+  sessionId?: string;
+  cwd?: string;
 }
 
 export type SlashCommandResult =
   | { handled: true; action: "print"; output: string }
+  | {
+      handled: true;
+      action: "restore";
+      output: string;
+      session: unknown;
+    }
   | { handled: true; action: "exit"; output?: string }
   | { handled: false; output: string };
 
@@ -39,7 +46,7 @@ const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
     "use skills to improve how Codex performs specific tasks",
   ),
   builtin("review", "review my current changes and find issues"),
-  builtin("rename", "rename the current thread"),
+  builtin("rename", "rename the current session"),
   builtin("new", "start a new chat during a conversation"),
   builtin("resume", "resume a saved chat"),
   builtin("fork", "fork the current chat"),
@@ -51,7 +58,7 @@ const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
   builtin("plan", "switch to Plan mode"),
   builtin("goal", "set or view the goal for a long-running task"),
   builtin("collab", "change collaboration mode (experimental)"),
-  builtin("agent", "switch the active agent thread"),
+  builtin("agent", "switch the active agent session"),
   builtin("side", "start a side conversation in an ephemeral fork"),
   candidate("copy", "copy last response as markdown"),
   candidate("diff", "show git diff (including untracked files)"),
@@ -78,7 +85,7 @@ const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
   builtin("realtime", "toggle realtime voice mode (experimental)"),
   builtin("settings", "configure realtime microphone/speaker"),
   builtin("test-approval", "test approval request"),
-  builtin("subagents", "switch the active agent thread"),
+  builtin("subagents", "switch the active agent session"),
   builtin("debug-m-drop", "DO NOT USE"),
   builtin("debug-m-update", "DO NOT USE"),
 ];
@@ -92,7 +99,19 @@ const NDX_SESSION_COMMANDS: SlashCommandDefinition[] = [
   },
   {
     name: "events",
-    description: "show recent runtime event types for the current thread",
+    description: "show recent runtime event types for the current session",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "session",
+    description: "list sessions for the current workspace",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "restore",
+    description: "restore a saved session by id or workspace session number",
     placement: "session-builtin",
     implemented: true,
   },

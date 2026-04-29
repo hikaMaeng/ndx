@@ -42,7 +42,7 @@ export class OpenAiResponsesAdapter {
         instructions: this.options.instructions,
         input,
         previous_response_id: previousResponseId,
-        tools,
+        tools: responsesTools(tools),
         tool_choice: "auto",
       },
     );
@@ -53,6 +53,27 @@ export class OpenAiResponsesAdapter {
       (await response.json()) as ResponsesPayload,
     );
   }
+}
+
+export function responsesTools(tools: unknown[]): unknown[] {
+  return tools.map((tool) => {
+    if (!isObject(tool)) {
+      return tool;
+    }
+    if (
+      tool.type === "function" &&
+      isObject(tool.function) &&
+      typeof tool.function.name === "string"
+    ) {
+      return {
+        type: "function",
+        name: tool.function.name,
+        description: tool.function.description,
+        parameters: tool.function.parameters,
+      };
+    }
+    return tool;
+  });
 }
 
 export function normalizeResponsesPayload(
@@ -101,4 +122,8 @@ function normalizeResponsesUsage(
         outputTokens: usage.output_tokens,
         totalTokens: usage.total_tokens,
       };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

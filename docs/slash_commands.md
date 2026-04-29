@@ -12,6 +12,8 @@ The command registry is owned by the ndx TypeScript session server.
 | Command                  | Origin description                                                     | Target placement |
 | ------------------------ | ---------------------------------------------------------------------- | ---------------- |
 | `/help`                  | show session-server slash commands                                     | session built-in |
+| `/session`               | list sessions for the current workspace                                | session built-in |
+| `/restore`               | restore a saved session by id or list number                           | session built-in |
 | `/model`                 | choose what model and reasoning effort to use                          | session built-in |
 | `/fast`                  | toggle Fast mode to enable fastest inference with increased plan usage | session built-in |
 | `/approvals`             | choose what Codex is allowed to do                                     | session built-in |
@@ -109,6 +111,8 @@ Implemented now:
 - `/status`
 - `/init`
 - `/events`
+- `/session`
+- `/restore`
 - `/interrupt`
 - `/quit`
 - `/exit`
