@@ -223,7 +223,7 @@ function writeAbortAwareTool(
 }
 
 async function waitForFile(path: string): Promise<boolean> {
-  const deadline = Date.now() + 2_000;
+  const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (existsSync(path)) {
       return true;

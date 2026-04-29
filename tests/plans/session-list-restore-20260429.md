@@ -37,7 +37,12 @@ controller.
    appending to the original JSONL file.
 8. Verify a second socket server can claim ownership and the first server
    reloads/reclaims on its next prompt attempt.
-9. Verify the CLI controller updates its active session after a `/restore`
+9. Start a turn on the first socket server, hold model completion, restore the
+   same session from a second socket server, then release the first server's
+   model completion.
+10. Verify the stale in-flight model text and `turn_complete` are not appended
+   to JSONL and do not appear in `session/read`.
+11. Verify the CLI controller updates its active session after a `/restore`
    command before sending the next `turn/start`.
 
 ## Expected Results
@@ -48,6 +53,8 @@ controller.
 - `session_restored` is persisted.
 - The restored session accepts subsequent turns.
 - Last prompt attempt wins ownership after a persisted reload.
+- In-flight output from a server that lost ownership is discarded from durable
+  context.
 - CLI commands do not send `/session` or `/restore` text to the model prompt.
 
 ## Logs To Capture

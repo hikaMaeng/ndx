@@ -17,7 +17,11 @@ import {
 } from "../src/session/client.js";
 import { SessionServer } from "../src/session/server.js";
 import type { RuntimeEventMsg } from "../src/shared/protocol.js";
-import type { NdxConfig } from "../src/shared/types.js";
+import type {
+  ModelClient,
+  ModelResponse,
+  NdxConfig,
+} from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
@@ -442,6 +446,115 @@ test("session ownership uses last prompt attempt across socket servers", async (
   }
 });
 
+test("session ownership discards in-flight output from a previous socket server", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-owner-race-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  const firstModel = new BlockingModelClient();
+  let firstServer: SessionServer | undefined;
+  let secondServer: SessionServer | undefined;
+  let firstClient: SessionClient | undefined;
+  let secondClient: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    firstServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => firstModel,
+      persistenceDir,
+    });
+    secondServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    firstClient = await SessionClient.connect(
+      (await firstServer.listen(0, "127.0.0.1")).url,
+    );
+    secondClient = await SessionClient.connect(
+      (await secondServer.listen(0, "127.0.0.1")).url,
+    );
+    await firstClient.request("initialize");
+    await secondClient.request("initialize");
+
+    const startResponse = await firstClient.request<{
+      session: { id: string };
+    }>("session/start", { cwd: root });
+    const sessionId = startResponse.session.id;
+    const initialCompleted = waitForMethod(firstClient, "turn/completed");
+    await firstClient.request("turn/start", {
+      sessionId,
+      prompt: "initial persisted prompt",
+    });
+    await initialCompleted;
+    await firstServer.flushPersistence();
+
+    const blockedTurnStarted = waitForMethod(firstClient, "turn/started");
+    await firstClient.request("turn/start", {
+      sessionId,
+      prompt: "stale in flight prompt",
+    });
+    await blockedTurnStarted;
+
+    await secondClient.request("session/restore", { cwd: root, selector: "1" });
+    await secondServer.flushPersistence();
+
+    const ownershipChanged = waitForMethod(
+      firstClient,
+      "session/ownershipChanged",
+    );
+    firstModel.releaseBlockedTurn();
+    await ownershipChanged;
+    await firstServer.flushPersistence();
+
+    const records = readJsonl(join(persistenceDir, `${sessionId}.jsonl`));
+    const runtimeMessages = records
+      .filter((record) => record.type === "runtime_event")
+      .map((record) => (record.event as { msg?: unknown }).msg)
+      .filter((msg): msg is Record<string, unknown> => typeof msg === "object");
+    assert.equal(
+      runtimeMessages.some(
+        (msg) =>
+          msg.type === "agent_message" && msg.text === "stale in-flight output",
+      ),
+      false,
+    );
+    assert.equal(
+      runtimeMessages.some(
+        (msg) =>
+          msg.type === "turn_complete" &&
+          msg.finalText === "stale in-flight output",
+      ),
+      false,
+    );
+
+    const readResponse = await firstClient.request<{
+      events: Array<{
+        msg: { type: string; text?: string; finalText?: string };
+      }>;
+    }>("session/read", { sessionId });
+    assert.equal(
+      readResponse.events.some(
+        (event) =>
+          event.msg.text === "stale in-flight output" ||
+          event.msg.finalText === "stale in-flight output",
+      ),
+      false,
+    );
+  } finally {
+    firstModel.releaseBlockedTurn();
+    firstClient?.close();
+    secondClient?.close();
+    await firstServer?.close();
+    await secondServer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function waitForMethod(
   client: SessionClient,
   method: string,
@@ -522,4 +635,35 @@ function writeShellTool(toolDir: string): void {
     join(toolDir, "tool.mjs"),
     'import { stdout } from "node:process"; stdout.write(JSON.stringify({ exitCode: 0, stdout: "", stderr: "" }) + "\\n");\n',
   );
+}
+
+class BlockingModelClient implements ModelClient {
+  private releaseBlocked:
+    | ((response: ModelResponse | PromiseLike<ModelResponse>) => void)
+    | undefined;
+
+  async create(input: unknown): Promise<ModelResponse> {
+    const prompt = String(input);
+    if (prompt.includes("stale in flight prompt")) {
+      return new Promise<ModelResponse>((resolve) => {
+        this.releaseBlocked = resolve;
+      });
+    }
+    return {
+      id: "blocking-initial",
+      text: "initial persisted output",
+      toolCalls: [],
+      raw: { input },
+    };
+  }
+
+  releaseBlockedTurn(): void {
+    this.releaseBlocked?.({
+      id: "blocking-stale",
+      text: "stale in-flight output",
+      toolCalls: [],
+      raw: { blocked: true },
+    });
+    this.releaseBlocked = undefined;
+  }
 }

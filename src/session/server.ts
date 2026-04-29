@@ -68,6 +68,7 @@ interface LiveSession {
   runtime: AgentRuntime;
   events: RuntimeEvent[];
   pendingEvents: RuntimeEvent[];
+  discardedTurnIds: Set<string>;
   subscribers: Set<WebSocketConnection>;
   status: "idle" | "running" | "aborted" | "failed";
   createdAt: number;
@@ -291,6 +292,7 @@ export class SessionServer {
       runtime,
       events: [],
       pendingEvents: [],
+      discardedTurnIds: new Set(),
       subscribers: new Set([connection]),
       status: "idle",
       createdAt: now,
@@ -497,8 +499,15 @@ export class SessionServer {
   }
 
   private handleRuntimeEvent(session: LiveSession, event: RuntimeEvent): void {
+    const turnId = eventTurnId(event);
+    if (turnId !== undefined && session.discardedTurnIds.has(turnId)) {
+      return;
+    }
     if (session.persisted && this.currentOwner(session.id) !== this.serverId) {
       session.pendingEvents = [];
+      if (turnId !== undefined) {
+        session.discardedTurnIds.add(turnId);
+      }
       const reloaded = this.reloadAndAcquire(session);
       this.publishEphemeral(reloaded, {
         method: "session/ownershipChanged",
@@ -649,6 +658,7 @@ export class SessionServer {
       runtime,
       events: persisted.events,
       pendingEvents: [],
+      discardedTurnIds: new Set(),
       subscribers: new Set(connection === undefined ? [] : [connection]),
       status: persisted.status,
       createdAt: persisted.createdAt,
@@ -960,6 +970,7 @@ export class SessionServer {
       }),
       events: persisted.events,
       pendingEvents: [],
+      discardedTurnIds: new Set(),
       subscribers: session.subscribers,
       status: persisted.status,
       createdAt: persisted.createdAt,
@@ -1258,6 +1269,11 @@ function isTerminalEvent(event: RuntimeEvent): boolean {
     event.msg.type === "turn_aborted" ||
     event.msg.type === "error"
   );
+}
+
+function eventTurnId(event: RuntimeEvent): string | undefined {
+  const value = (event.msg as { turnId?: unknown }).turnId;
+  return typeof value === "string" ? value : undefined;
 }
 
 function parseThreadStatus(value: unknown): LiveSession["status"] | undefined {
