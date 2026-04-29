@@ -23,7 +23,7 @@ domain.
 ## Runtime Flow
 
 1. CLI resolves `cwd` and reads `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` elements.
-2. CLI prints the robot plus uppercase `NDX` startup logo, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
+2. CLI prints the configured robot startup art, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
 3. Session server startup re-checks required global `.ndx` elements and installs any missing settings, core directories, core tool package files, and skills directory before accepting session work.
 4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts one thread, tracks socket/server/thread status, receives notifications, and prints selected initialization, tool, warning, and final events.
 5. The session server chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live thread.
@@ -63,7 +63,7 @@ Client programs must not maintain authoritative live session or persistence stat
 
 `src/cli/session-client.ts` owns CLI-only session behavior:
 
-- robot plus uppercase `NDX` startup logo and socket initialization display
+- configured robot startup art and socket initialization display
 - thread start status display
 - `/status`, `/init`, `/events`, and `/interrupt`
 - runtime notification formatting for human output
