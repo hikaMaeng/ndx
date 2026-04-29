@@ -825,6 +825,7 @@ function writeShellTool(toolDir: string): void {
 }
 
 class BlockingModelClient implements ModelClient {
+  private calls = 0;
   private releaseBlocked:
     | ((response: ModelResponse | PromiseLike<ModelResponse>) => void)
     | undefined;
@@ -836,8 +837,8 @@ class BlockingModelClient implements ModelClient {
     | undefined;
 
   async create(input: unknown): Promise<ModelResponse> {
-    const prompt = JSON.stringify(input);
-    if (prompt.includes("stale in flight prompt")) {
+    this.calls += 1;
+    if (this.calls === 2) {
       return new Promise<ModelResponse>((resolve) => {
         this.releaseBlocked = resolve;
         this.blockedTurn?.resolve();
