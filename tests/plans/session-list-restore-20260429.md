@@ -42,7 +42,10 @@ controller.
    model completion.
 10. Verify the stale in-flight model text and `turn_complete` are not appended
    to JSONL and do not appear in `session/read`.
-11. Verify the CLI controller updates its active session after a `/restore`
+11. Hold the owner file lock from a separate process, request restore from a
+   second socket server, and verify restore waits for lock release before
+   claiming the session.
+12. Verify the CLI controller updates its active session after a `/restore`
    command before sending the next `turn/start`.
 
 ## Expected Results
@@ -53,6 +56,8 @@ controller.
 - `session_restored` is persisted.
 - The restored session accepts subsequent turns.
 - Last prompt attempt wins ownership after a persisted reload.
+- Owner file claims are serialized; contention waits and retries before
+  restore proceeds.
 - In-flight output from a server that lost ownership is discarded from durable
   context.
 - CLI commands do not send `/session` or `/restore` text to the model prompt.

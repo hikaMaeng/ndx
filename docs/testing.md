@@ -40,6 +40,8 @@ npm run deploy
 - Workspace-scoped session listing and restore by session id or list number.
 - Empty sessions stay unnumbered and unpersisted until the first prompt.
 - Session ownership is reclaimed by the last socket server that attempts a prompt.
+- Session owner file contention waits and retries before restore claims
+  ownership.
 - Session JSONL writes performed by a child writer process, not the main process.
 - Queue drain after clients disconnect without an explicit session close command.
 - Multiple WebSocket clients subscribed to the same live session.

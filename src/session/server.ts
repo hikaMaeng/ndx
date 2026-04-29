@@ -5,6 +5,8 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
@@ -28,6 +30,10 @@ import type {
 } from "../shared/types.js";
 
 type JsonRpcId = number | string | null;
+
+const OWNER_LOCK_RETRY_DELAY_MS = 10;
+const OWNER_LOCK_MAX_ATTEMPTS = 200;
+const OWNER_LOCK_STALE_MS = 30_000;
 
 interface JsonRpcRequest {
   id?: JsonRpcId;
@@ -988,31 +994,84 @@ export class SessionServer {
     if (!session.persisted) {
       return;
     }
-    const dir = this.ownerDir();
-    mkdirSync(dir, { recursive: true });
-    const owner = {
-      sessionId: session.id,
-      serverId: this.serverId,
-      claimedAt: Date.now(),
-    };
-    const file = this.ownerFile(session.id);
-    const temp = `${file}.${process.pid}.${this.serverId}.tmp`;
-    writeFileSync(temp, JSON.stringify(owner));
-    renameSync(temp, file);
+    this.withOwnerLock(session.id, () => {
+      const owner = {
+        sessionId: session.id,
+        serverId: this.serverId,
+        claimedAt: Date.now(),
+      };
+      const file = this.ownerFile(session.id);
+      const temp = `${file}.${process.pid}.${this.serverId}.${randomUUID()}.tmp`;
+      writeFileSync(temp, JSON.stringify(owner));
+      renameSync(temp, file);
+    });
   }
 
   private currentOwner(sessionId: string): string | undefined {
-    const file = this.ownerFile(sessionId);
-    if (!existsSync(file)) {
-      return undefined;
+    return this.withOwnerLock(sessionId, () => {
+      const file = this.ownerFile(sessionId);
+      if (!existsSync(file)) {
+        return undefined;
+      }
+      try {
+        const value = JSON.parse(readFileSync(file, "utf8")) as {
+          serverId?: unknown;
+        };
+        return typeof value.serverId === "string" ? value.serverId : undefined;
+      } catch {
+        return undefined;
+      }
+    });
+  }
+
+  private withOwnerLock<T>(sessionId: string, action: () => T): T {
+    mkdirSync(this.ownerDir(), { recursive: true });
+    const lockDir = `${this.ownerFile(sessionId)}.lock`;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < OWNER_LOCK_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        mkdirSync(lockDir);
+      } catch (error) {
+        lastError = error;
+        if (isFileSystemError(error, "EEXIST")) {
+          this.removeStaleOwnerLock(lockDir);
+          sleepSync(OWNER_LOCK_RETRY_DELAY_MS);
+          continue;
+        }
+        if (
+          isFileSystemError(error, "EBUSY") ||
+          isFileSystemError(error, "EPERM") ||
+          isFileSystemError(error, "EACCES") ||
+          isFileSystemError(error, "ENOENT")
+        ) {
+          mkdirSync(this.ownerDir(), { recursive: true });
+          sleepSync(OWNER_LOCK_RETRY_DELAY_MS);
+          continue;
+        }
+        throw error;
+      }
+      try {
+        return action();
+      } finally {
+        rmSync(lockDir, { recursive: true, force: true });
+      }
     }
+    throw new Error(
+      `timed out waiting for session ownership file lock: ${sessionId}`,
+      { cause: lastError },
+    );
+  }
+
+  private removeStaleOwnerLock(lockDir: string): void {
     try {
-      const value = JSON.parse(readFileSync(file, "utf8")) as {
-        serverId?: unknown;
-      };
-      return typeof value.serverId === "string" ? value.serverId : undefined;
-    } catch {
-      return undefined;
+      const ageMs = Date.now() - statSync(lockDir).mtimeMs;
+      if (ageMs > OWNER_LOCK_STALE_MS) {
+        rmSync(lockDir, { recursive: true, force: true });
+      }
+    } catch (error) {
+      if (!isFileSystemError(error, "ENOENT")) {
+        throw error;
+      }
     }
   }
 
@@ -1030,6 +1089,19 @@ export class SessionServer {
   private ownerFile(sessionId: string): string {
     return join(this.ownerDir(), `${sessionId}.json`);
   }
+}
+
+function isFileSystemError(error: unknown, code: string): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === code
+  );
+}
+
+function sleepSync(ms: number): void {
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(signal, 0, 0, ms);
 }
 
 class WebSocketConnection {

@@ -85,6 +85,12 @@ not temporary list indexes. `session/restore` reloads saved runtime events,
 creates an `AgentRuntime` with the original session id, and claims the session
 owner file, but it does not reconstruct prior model context.
 
+Session owner files are serialized with a sibling `.lock` directory. A server
+that finds the owner file locked waits briefly and retries instead of reading
+or replacing the owner file during another server's claim. Stale owner locks are
+removed after the configured stale window so a crashed claimant does not block
+future restore or prompt attempts indefinitely.
+
 The CLI is a client of this server. In normal one-shot and interactive modes it
 starts an embedded loopback server and talks to that server over WebSocket. In
 `ndx serve` mode it only hosts the server. In `--connect` mode it attaches to an

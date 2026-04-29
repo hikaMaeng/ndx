@@ -6,6 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -555,6 +556,86 @@ test("session ownership discards in-flight output from a previous socket server"
   }
 });
 
+test("session ownership waits and retries while the owner file is locked", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-owner-lock-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  let firstServer: SessionServer | undefined;
+  let secondServer: SessionServer | undefined;
+  let firstClient: SessionClient | undefined;
+  let secondClient: SessionClient | undefined;
+  let lockReleaser: ChildProcess | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    firstServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    secondServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    firstClient = await SessionClient.connect(
+      (await firstServer.listen(0, "127.0.0.1")).url,
+    );
+    secondClient = await SessionClient.connect(
+      (await secondServer.listen(0, "127.0.0.1")).url,
+    );
+    await firstClient.request("initialize");
+    await secondClient.request("initialize");
+
+    const startResponse = await firstClient.request<{
+      session: { id: string };
+    }>("session/start", { cwd: root });
+    const sessionId = startResponse.session.id;
+    const completed = waitForMethod(firstClient, "turn/completed");
+    await firstClient.request("turn/start", {
+      sessionId,
+      prompt: "persist before lock contention",
+    });
+    await completed;
+    await firstServer.flushPersistence();
+
+    const lockDir = join(persistenceDir, "owners", `${sessionId}.json.lock`);
+    mkdirSync(lockDir, { recursive: true });
+    lockReleaser = spawn(process.execPath, [
+      "-e",
+      `setTimeout(() => require("node:fs").rmSync(${JSON.stringify(lockDir)}, { recursive: true, force: true }), 80)`,
+    ]);
+    const startedAt = Date.now();
+    const restoreResponse = await secondClient.request<{
+      session: { id: string; sequence: number };
+    }>("session/restore", { cwd: root, selector: "1" });
+    const waitedMs = Date.now() - startedAt;
+    const releaseExitCode = await waitForProcess(lockReleaser);
+    lockReleaser = undefined;
+
+    assert.equal(releaseExitCode, 0);
+    assert.equal(restoreResponse.session.id, sessionId);
+    assert.ok(
+      waitedMs >= 40,
+      `expected restore to wait for owner lock contention, waited ${waitedMs}ms`,
+    );
+  } finally {
+    if (lockReleaser !== undefined) {
+      lockReleaser.kill();
+      await waitForProcess(lockReleaser).catch(() => undefined);
+    }
+    firstClient?.close();
+    secondClient?.close();
+    await firstServer?.close();
+    await secondServer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function waitForMethod(
   client: SessionClient,
   method: string,
@@ -609,6 +690,19 @@ function readJsonl(file: string): Array<Record<string, unknown>> {
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function waitForProcess(child: ChildProcess): Promise<number | null> {
+  if (child.exitCode !== null) {
+    return Promise.resolve(child.exitCode);
+  }
+  if (child.signalCode !== null) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code));
+  });
 }
 
 function writeShellTool(toolDir: string): void {
