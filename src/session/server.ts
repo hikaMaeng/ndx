@@ -159,6 +159,7 @@ export class SessionServer {
     this.closing = true;
     for (const client of this.clients) {
       client.close();
+      client.destroy();
     }
     await new Promise<void>((resolve, reject) => {
       this.server.close((error) => {
@@ -506,7 +507,7 @@ export class SessionServer {
     }
   }
 
-  private startTurn(
+  private async startTurn(
     connection: WebSocketConnection,
     params: unknown,
   ): Promise<unknown> {
@@ -533,26 +534,29 @@ export class SessionServer {
       cwd,
       requestedAt: session.updatedAt,
     });
-    void session.runtime
-      .submit(
-        {
-          id: turnId,
-          op: { type: "user_turn", prompt, cwd },
-        },
-        (event) => this.handleRuntimeEvent(session, event),
-      )
-      .catch((error: unknown) => {
-        session.status = "failed";
-        session.updatedAt = Date.now();
-        this.publish(session, {
-          method: "error",
-          params: {
-            sessionId: session.id,
-            turnId,
-            message: errorMessage(error),
+    await this.store.flush();
+    setImmediate(() => {
+      void session.runtime
+        .submit(
+          {
+            id: turnId,
+            op: { type: "user_turn", prompt, cwd },
           },
+          (event) => this.handleRuntimeEvent(session, event),
+        )
+        .catch((error: unknown) => {
+          session.status = "failed";
+          session.updatedAt = Date.now();
+          this.publish(session, {
+            method: "error",
+            params: {
+              sessionId: session.id,
+              turnId,
+              message: errorMessage(error),
+            },
+          });
         });
-      });
+    });
     return Promise.resolve({ turn: { id: turnId, status: "in_progress" } });
   }
 
@@ -1295,6 +1299,10 @@ class WebSocketConnection {
     if (!this.socket.destroyed && !this.socket.writableEnded) {
       this.socket.end(encodeFrame(0x8, Buffer.alloc(0)));
     }
+  }
+
+  destroy(): void {
+    this.socket.destroy();
   }
 
   private handleData(chunk: Buffer): void {

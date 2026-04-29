@@ -46,6 +46,10 @@ npm run deploy
 - Session ownership is reclaimed by the last socket server that attempts a prompt.
 - Deleted sessions notify stale socket owners and close the stale server on the
   next prompt attempt or completed response.
+- Turn start persistence is flushed before runtime execution so fast Docker
+  mock responses do not look like externally deleted session files.
+- Session server shutdown destroys upgraded WebSocket sockets after sending
+  close frames so tests and CLI teardown do not hang on peer close handshakes.
 - Session owner file contention waits and retries before restore claims
   ownership.
 - Session JSONL writes performed by a child writer process, not the main process.

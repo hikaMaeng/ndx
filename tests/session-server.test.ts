@@ -565,45 +565,77 @@ test("session ownership discards in-flight output from a previous socket server"
       createClient: () => new MockModelClient(),
       persistenceDir,
     });
-    firstClient = await SessionClient.connect(
-      (await firstServer.listen(0, "127.0.0.1")).url,
+    firstClient = await withTimeout(
+      SessionClient.connect((await firstServer.listen(0, "127.0.0.1")).url),
+      "connecting first race client",
     );
-    secondClient = await SessionClient.connect(
-      (await secondServer.listen(0, "127.0.0.1")).url,
+    secondClient = await withTimeout(
+      SessionClient.connect((await secondServer.listen(0, "127.0.0.1")).url),
+      "connecting second race client",
     );
-    await firstClient.request("initialize");
-    await secondClient.request("initialize");
+    await withTimeout(
+      firstClient.request("initialize"),
+      "initializing first race client",
+    );
+    await withTimeout(
+      secondClient.request("initialize"),
+      "initializing second race client",
+    );
 
-    const startResponse = await firstClient.request<{
-      session: { id: string };
-    }>("session/start", { cwd: root });
+    const startResponse = await withTimeout(
+      firstClient.request<{
+        session: { id: string };
+      }>("session/start", { cwd: root }),
+      "starting race session",
+    );
     const sessionId = startResponse.session.id;
     const initialCompleted = waitForMethod(firstClient, "turn/completed");
-    await firstClient.request("turn/start", {
-      sessionId,
-      prompt: "initial persisted prompt",
-    });
-    await initialCompleted;
-    await firstServer.flushPersistence();
+    await withTimeout(
+      firstClient.request("turn/start", {
+        sessionId,
+        prompt: "initial persisted prompt",
+      }),
+      "starting initial race turn",
+    );
+    await withTimeout(initialCompleted, "waiting for initial race completion");
+    await withTimeout(
+      firstServer.flushPersistence(),
+      "flushing initial race turn",
+    );
 
     const blockedTurnStarted = waitForMethod(firstClient, "turn/started");
-    await firstClient.request("turn/start", {
-      sessionId,
-      prompt: "stale in flight prompt",
-    });
-    await blockedTurnStarted;
-    await firstModel.waitForBlockedTurn();
+    await withTimeout(
+      firstClient.request("turn/start", {
+        sessionId,
+        prompt: "stale in flight prompt",
+      }),
+      "starting blocked stale turn",
+    );
+    await withTimeout(
+      blockedTurnStarted,
+      "waiting for blocked stale turn start",
+    );
+    await withTimeout(
+      firstModel.waitForBlockedTurn(),
+      "waiting for blocking model client",
+    );
 
-    await secondClient.request("session/restore", { cwd: root, selector: "1" });
-    await secondServer.flushPersistence();
+    await withTimeout(
+      secondClient.request("session/restore", { cwd: root, selector: "1" }),
+      "restoring session on second server",
+    );
+    await withTimeout(
+      secondServer.flushPersistence(),
+      "flushing second server",
+    );
 
     const ownershipChanged = waitForMethod(
       firstClient,
       "session/ownershipChanged",
     );
     firstModel.releaseBlockedTurn();
-    await ownershipChanged;
-    await firstServer.flushPersistence();
+    await withTimeout(ownershipChanged, "waiting for stale owner notification");
+    await withTimeout(firstServer.flushPersistence(), "flushing first server");
 
     const records = readJsonl(join(persistenceDir, `${sessionId}.jsonl`));
     const runtimeMessages = records
@@ -626,11 +658,14 @@ test("session ownership discards in-flight output from a previous socket server"
       false,
     );
 
-    const readResponse = await firstClient.request<{
-      events: Array<{
-        msg: { type: string; text?: string; finalText?: string };
-      }>;
-    }>("session/read", { sessionId });
+    const readResponse = await withTimeout(
+      firstClient.request<{
+        events: Array<{
+          msg: { type: string; text?: string; finalText?: string };
+        }>;
+      }>("session/read", { sessionId }),
+      "reading stale owner session events",
+    );
     assert.equal(
       readResponse.events.some(
         (event) =>
@@ -798,6 +833,26 @@ function waitForProcess(child: ChildProcess): Promise<number | null> {
   });
 }
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  label: string,
+  ms = 2_000,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out ${label}`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 function writeShellTool(toolDir: string): void {
   mkdirSync(toolDir, { recursive: true });
   writeFileSync(
@@ -836,8 +891,7 @@ class BlockingModelClient implements ModelClient {
     | undefined;
 
   async create(input: unknown): Promise<ModelResponse> {
-    const prompt = JSON.stringify(input);
-    if (prompt.includes("stale in flight prompt")) {
+    if (containsText(input, "stale in flight prompt")) {
       return new Promise<ModelResponse>((resolve) => {
         this.releaseBlocked = resolve;
         this.blockedTurn?.resolve();
@@ -870,6 +924,19 @@ class BlockingModelClient implements ModelClient {
     }
     return this.blockedTurn.promise;
   }
+}
+
+function containsText(value: unknown, expected: string): boolean {
+  if (typeof value === "string") {
+    return value.includes(expected);
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsText(entry, expected));
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).some((entry) => containsText(entry, expected));
+  }
+  return false;
 }
 
 function createDeferred<T>(): { promise: Promise<T>; resolve: () => void } {
