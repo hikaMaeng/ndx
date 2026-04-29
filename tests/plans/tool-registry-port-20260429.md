@@ -2,7 +2,7 @@
 
 ## Goal
 
-Verify that the TypeScript agent exposes Rust Codex default tools through a registry and supports configured MCP/plugin tool schemas.
+Verify that the TypeScript agent exposes default ndx tools through a registry and supports configured MCP/plugin tool schemas.
 
 ## Environment
 
@@ -21,7 +21,7 @@ Verify that the TypeScript agent exposes Rust Codex default tools through a regi
 1. Run `npm test`.
 2. Confirm TypeScript compilation passes.
 3. Confirm existing mock agent still executes the local shell tool.
-4. Confirm registry exposes default Rust Codex-compatible tools.
+4. Confirm registry exposes default ndx-compatible tools.
 5. Confirm registry exposes configured MCP and plugin tools with namespaced names.
 
 ## Expected Results

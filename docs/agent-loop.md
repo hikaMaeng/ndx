@@ -4,7 +4,7 @@ This document records the TypeScript agent loop contract implemented by
 `src/agent/loop.ts`, `src/runtime/runtime.ts`, `src/session/server.ts`, and
 `src/session/tools/process-runner.ts`.
 
-This is not the full Rust Codex session architecture, but the TypeScript port
+This is the TypeScript ndx session architecture. It
 now follows the same ownership split: the agent loop executes one model/tool
 turn, `AgentRuntime` converts it into session events, and `SessionServer` owns
 live threads, WebSocket subscriptions, and JSONL persistence.
@@ -102,7 +102,7 @@ and previous response id; provider-specific history stays inside the adapter.
 `SessionServer` queues server-owned JSONL records for thread creation,
 subscription, turn requests, runtime events, outbound notifications, and
 connection detach. A child writer process performs the actual file IO and
-reports result events to the parent. This is not yet Rust Codex rollout
+reports result events to the parent. This is ndx session persistence
 recovery: the server does not write `history.jsonl`, does not back thread
 metadata with SQLite, and cannot rebuild turns from persisted `RolloutItem`
 records.

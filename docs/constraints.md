@@ -36,7 +36,7 @@
 - Anthropic execution uses Messages and converts OpenAI-style function schemas to Anthropic tool schemas.
 - The agent loop only sees normalized function tool calls and `function_call_output` items. Provider-specific content blocks do not leak into `src/agent`.
 - Native Responses-only `namespace`, freeform, local_shell, and image_generation tool types are represented as function-compatible TypeScript contracts.
-- Multi-agent and agent-job task tools are exposed for Rust Codex schema parity but return unavailable until corresponding TypeScript task backends exist.
+- Multi-agent and agent-job task tools return unavailable until corresponding TypeScript task backends exist.
 
 ## Process Library
 

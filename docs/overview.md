@@ -1,6 +1,6 @@
 # Overview
 
-ndx is being converted from the upstream Rust Codex codebase into a TypeScript-first agent runtime.
+ndx is a TypeScript-first local coding agent runtime.
 
 ## Current Contract
 
@@ -17,6 +17,7 @@ ndx is being converted from the upstream Rust Codex codebase into a TypeScript-f
 - Real model execution uses the provider declared in settings. OpenAI-compatible providers try Responses first and fall back to Chat Completions when `/responses` is unavailable; Anthropic providers use Messages.
 - Missing global `.ndx` essentials are installed before config loading, including `settings.json` and the core shell tool.
 
-## Preserved Baseline
+## Source Of Truth
 
-The imported openai/codex baseline is kept as local branch `origin` at commit `09f931e`.
+The root TypeScript package, `src/`, `docs/`, and `tests/` are the active source
+of truth for ndx behavior.

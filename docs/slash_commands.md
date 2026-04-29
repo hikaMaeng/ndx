@@ -6,9 +6,8 @@ handler explicitly starts a turn.
 
 ## Source Baseline
 
-The migration baseline is the Rust TUI enum in
-`codex-rs/tui/src/slash_command.rs` on the preserved upstream `origin` import.
-`/help` is an ndx TypeScript session command and is not present in that Rust enum.
+The command registry is owned by the ndx TypeScript session server.
+`/help` is an ndx TypeScript session command.
 
 | Command                  | Origin description                                                     | Target placement |
 | ------------------------ | ---------------------------------------------------------------------- | ---------------- |
@@ -98,7 +97,7 @@ session-server bridges; they should not assume direct access to live turn state.
 
 ## Current TypeScript Implementation
 
-`src/session/commands/registry.ts` stores the Rust baseline metadata. The session
+`src/session/commands/registry.ts` stores command metadata. The session
 server exposes:
 
 - `command/list`: returns the known slash command definitions.

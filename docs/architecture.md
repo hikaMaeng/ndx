@@ -39,7 +39,7 @@ domain.
 
 ## Runtime Event Contract
 
-The TypeScript runtime ports the Rust Codex protocol shape behind a WebSocket session server. `Submission` carries user turns and interrupts. `RuntimeEvent` carries session configuration, turn lifecycle, model text, tool call/result, token usage, abort, warning, and error messages.
+The TypeScript runtime exposes the ndx protocol behind a WebSocket session server. `Submission` carries user turns and interrupts. `RuntimeEvent` carries session configuration, turn lifecycle, model text, tool call/result, token usage, abort, warning, and error messages.
 
 The server translates runtime events into JSON-RPC notifications:
 
