@@ -10,6 +10,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runAgent } from "../src/agent/loop.js";
+import { ensureGlobalNdxHome } from "../src/config/index.js";
 import { createToolRegistry } from "../src/session/tools/registry.js";
 import type {
   ModelClient,
@@ -132,6 +133,72 @@ test("registry discovers tool.json layers and keeps higher priority names", asyn
   }
 });
 
+test("registry exposes bootstrapped core capability tools as external tools", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-core-tools-"));
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    ensureGlobalNdxHome(globalDir);
+    const registry = await createToolRegistry({
+      ...baseConfig,
+      paths: { globalDir },
+    });
+
+    for (const name of [
+      "shell",
+      "apply_patch",
+      "list_dir",
+      "view_image",
+      "web_search",
+      "image_generation",
+      "tool_suggest",
+      "tool_search",
+      "request_permissions",
+    ]) {
+      assert.deepEqual(
+        registry
+          .metadata()
+          .filter((tool) => tool.name === name)
+          .map((tool) => ({ layer: tool.layer, kind: tool.kind })),
+        [{ layer: "core", kind: "external" }],
+      );
+    }
+
+    const context = {
+      cwd: root,
+      config: {
+        ...baseConfig,
+        paths: { globalDir },
+      },
+      env: {},
+      timeoutMs: 30_000,
+    };
+    const listDir = await registry.execute(
+      "list_dir",
+      { dir_path: globalDir, limit: 5 },
+      context,
+    );
+    assert.equal(
+      parseExternalStdout(listDir.output).entries.some(
+        (entry: { path: string }) => entry.path.endsWith("core"),
+      ),
+      true,
+    );
+    const toolSearch = await registry.execute(
+      "tool_search",
+      { query: "image", limit: 5 },
+      context,
+    );
+    assert.equal(
+      parseExternalStdout(toolSearch.output).tools.some(
+        (tool: { name: string }) => tool.name === "view_image",
+      ),
+      true,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("registry exposes project MCP before global MCP", async () => {
   const registry = await createToolRegistry({
     ...baseConfig,
@@ -221,6 +288,11 @@ function writeEchoTool(toolDir: string, value: string): void {
     join(toolDir, "tool.mjs"),
     `console.log(${JSON.stringify(value)});\n`,
   );
+}
+
+function parseExternalStdout(output: string): Record<string, any> {
+  const wrapped = JSON.parse(output) as { stdout: string };
+  return JSON.parse(wrapped.stdout) as Record<string, any>;
 }
 
 function writeShellTool(toolDir: string): void {

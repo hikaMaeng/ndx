@@ -24,6 +24,27 @@ export async function runExternalTool(
       ...runtime.env,
       NDX_TOOL_ARGS: JSON.stringify(args),
       NDX_TOOL_CWD: context.cwd,
+      NDX_GLOBAL_DIR: context.config.paths.globalDir,
+      NDX_CORE_TOOLS_DIR: resolve(
+        context.config.paths.globalDir,
+        "core",
+        "tools",
+      ),
+      NDX_GLOBAL_TOOLS_DIR: resolve(context.config.paths.globalDir, "tools"),
+      NDX_GLOBAL_PLUGINS_DIR: resolve(
+        context.config.paths.globalDir,
+        "plugins",
+      ),
+      NDX_PROJECT_TOOLS_DIR:
+        context.config.paths.projectNdxDir === undefined
+          ? ""
+          : resolve(context.config.paths.projectNdxDir, "tools"),
+      NDX_PROJECT_PLUGINS_DIR:
+        context.config.paths.projectNdxDir === undefined
+          ? ""
+          : resolve(context.config.paths.projectNdxDir, "plugins"),
+      NDX_WEBSEARCH_API_KEY: String(context.config.websearch.apiKey ?? ""),
+      NDX_WEBSEARCH_PROVIDER: String(context.config.websearch.provider ?? ""),
     },
     input: `${JSON.stringify({
       arguments: args,

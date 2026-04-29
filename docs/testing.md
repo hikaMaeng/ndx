@@ -15,7 +15,7 @@ npm run deploy
 - Global `/home/.ndx/search.json` rule loading.
 - Provider/model resolution from settings.
 - Provider type validation for `openai` and `anthropic`.
-- Global `.ndx` bootstrap for missing `settings.json`, core directories, shell tool files, and skills directory.
+- Global `.ndx` bootstrap for missing `settings.json`, core directories, built-in core tool package files, and skills directory.
 - OpenAI Responses normalization.
 - OpenAI Chat Completions normalization.
 - OpenAI Responses-to-Chat fallback on missing `/responses`.
@@ -26,6 +26,7 @@ npm run deploy
 - `keys` and compatibility `env` merge into the shell tool environment.
 - Mock model plus shell tool execution.
 - Agent-owned task tool exposure.
+- Bootstrapped core capability tools are exposed from the external core layer.
 - Filesystem `tool.json` layer discovery and priority override.
 - Project MCP priority over global MCP.
 - Every tool call starts a separate Node worker process.

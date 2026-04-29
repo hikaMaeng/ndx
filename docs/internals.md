@@ -15,7 +15,7 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 `finalizeConfig` resolves `model` to one `models[]` entry, then resolves that entry's `provider` against `providers`. Provider type is validated as `openai` or `anthropic`; execution reads URL and key from that resolved provider only.
 
-`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global defaults only: `settings.json` and `/core/tools/shell`. Existing files are left untouched so local secrets and custom core tools are not overwritten.
+`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global defaults only: `settings.json`, required directories, and the built-in `/core/tools` packages. Existing files are left untouched so local secrets and custom core tools are not overwritten.
 
 ## Model Adapters
 
@@ -45,8 +45,9 @@ Every model tool call is sent through `src/process/runProcess` to
 `src/session/tools/worker.ts` as a separate Node process. Filesystem tools then
 execute their manifest command through the same process library. Task,
 input, planning, and collaboration tools belong under the session-owned
-`src/session/tools/` tree because they mutate session task state; capability
-tools such as shell remain external `/core/tools` packages. Task tools execute
+`src/session/tools/` tree because they mutate session task state. Built-in
+capability tools such as shell, patch, filesystem, web, image, discovery, and
+permission stubs are external `/core/tools` packages. Task tools execute
 inside the worker, never inside the agent process.
 
 Abort propagation crosses the same boundary. `AgentRuntime` owns the turn

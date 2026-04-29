@@ -10,7 +10,7 @@
 - Provider `key` may be an empty string.
 - Provider `type` is limited to `openai` and `anthropic`.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
-- The global `.ndx` directory is self-healing at startup for required defaults: missing `settings.json` and `/core/tools/shell` are installed before config parsing continues.
+- The global `.ndx` directory is self-healing at startup for required defaults: missing `settings.json`, required directories, and built-in `/core/tools` packages are installed before config parsing continues.
 
 ## Search
 
@@ -21,6 +21,7 @@
 ## Tool System
 
 - The agent body owns only task orchestration tools. Capability tools such as shell, patch, filesystem, web, image, and plugin tools must be external packages.
+- Built-in core capability packages currently include `shell`, `apply_patch`, `list_dir`, `view_image`, `web_search`, `image_generation`, `tool_suggest`, `tool_search`, and `request_permissions`.
 - Filesystem tools must live under one of the documented layer directories and must include `tool.json`.
 - Tool folder name must equal the OpenAI function `name`.
 - Tool manifests must include an OpenAI function schema plus command execution fields.

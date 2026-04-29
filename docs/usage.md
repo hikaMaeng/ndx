@@ -54,8 +54,8 @@ thread, and sends the prompt as a user turn. The server owns the live thread and
 writes session JSONL under `/home/.ndx/sessions/ts-server`.
 
 On startup, config loading and the session server both enforce required global
-`.ndx` elements. Missing `settings.json`, `core/`, `core/tools/`, the built-in
-shell tool files, and `skills/` are installed before session work begins. The
+`.ndx` elements. Missing `settings.json`, `core/`, `core/tools/`, built-in core
+tool package files, and `skills/` are installed before session work begins. The
 socket initialization output includes a bootstrap report showing what was
 installed and what already existed.
 
