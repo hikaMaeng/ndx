@@ -820,7 +820,7 @@ class BlockingModelClient implements ModelClient {
     | undefined;
 
   async create(input: unknown): Promise<ModelResponse> {
-    const prompt = String(input);
+    const prompt = JSON.stringify(input);
     if (prompt.includes("stale in flight prompt")) {
       return new Promise<ModelResponse>((resolve) => {
         this.releaseBlocked = resolve;
