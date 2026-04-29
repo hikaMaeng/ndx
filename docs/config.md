@@ -58,7 +58,7 @@ When Codex knows which client started the turn, the legacy notify JSON payload a
 
 ## JSON Schema
 
-The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.
+Configuration is loaded from `/home/.ndx/settings.json` and the nearest project `.ndx/settings.json`.
 
 ## SQLite State DB
 

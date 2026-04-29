@@ -63,7 +63,7 @@ function placeholder(
     execute: async () => ({
       output: JSON.stringify({
         status: "unavailable",
-        message: `${name} requires the Rust Codex agent-job task runtime; no TypeScript backend is configured.`,
+        message: `${name} requires a TypeScript agent-job backend that is not configured.`,
       }),
     }),
   };

@@ -1,4 +1,4 @@
-// based on item types from codex-rs/exec/src/exec_events.rs
+// Item types for the TypeScript ndx session runtime.
 
 import type { ContentBlock as McpContentBlock } from "@modelcontextprotocol/sdk/types.js";
 

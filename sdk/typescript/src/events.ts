@@ -1,4 +1,4 @@
-// based on event types from codex-rs/exec/src/exec_events.rs
+// Event types for the TypeScript ndx session runtime.
 
 import type { ThreadItem } from "./items";
 

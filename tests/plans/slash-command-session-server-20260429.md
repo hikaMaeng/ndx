@@ -23,7 +23,7 @@ TypeScript session server instead of CLI-only state.
 ## Steps
 
 1. Run `npm test`.
-2. Confirm `command/list` includes Rust baseline commands and placement.
+2. Confirm `command/list` includes ndx baseline commands and placement.
 3. Confirm `command/execute` handles `/status` and `/events` from server thread
    state.
 4. Confirm a registered but unimplemented core candidate returns a structured
