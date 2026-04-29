@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
@@ -55,45 +62,54 @@ export interface SessionServerAddress {
   url: string;
 }
 
-interface ServerThread {
+interface LiveSession {
   id: string;
   cwd: string;
   runtime: AgentRuntime;
   events: RuntimeEvent[];
+  pendingEvents: RuntimeEvent[];
   subscribers: Set<WebSocketConnection>;
   status: "idle" | "running" | "aborted" | "failed";
   createdAt: number;
   updatedAt: number;
+  sequence?: number;
+  title: string;
+  persisted: boolean;
 }
 
 interface SessionListEntry {
   number: number;
+  sequence: number;
   id: string;
   cwd: string;
-  status: ServerThread["status"];
+  status: LiveSession["status"];
   createdAt: number;
   updatedAt: number;
   eventCount: number;
   live: boolean;
+  title: string;
 }
 
-interface PersistedThreadState {
+interface PersistedSessionState {
   id: string;
   cwd: string;
-  status: ServerThread["status"];
+  status: LiveSession["status"];
   createdAt: number;
   updatedAt: number;
   events: RuntimeEvent[];
+  sequence: number;
+  title: string;
 }
 
-/** WebSocket JSON-RPC authority for live threads, event fan-out, and JSONL. */
+/** WebSocket JSON-RPC authority for live sessions, event fan-out, and JSONL. */
 export class SessionServer {
   private readonly server: Server;
   private readonly options: SessionServerOptions;
-  private readonly threads = new Map<string, ServerThread>();
+  private readonly sessions = new Map<string, LiveSession>();
   private readonly clients = new Set<WebSocketConnection>();
   private readonly store: SessionLogStore;
   private readonly bootstrap: NdxBootstrapReport;
+  private readonly serverId = randomUUID();
 
   constructor(options: SessionServerOptions) {
     this.options = options;
@@ -224,11 +240,11 @@ export class SessionServer {
             "initialize",
             "command/list",
             "command/execute",
-            "thread/start",
-            "thread/list",
-            "thread/restore",
-            "thread/subscribe",
-            "thread/read",
+            "session/start",
+            "session/list",
+            "session/restore",
+            "session/subscribe",
+            "session/read",
             "turn/start",
             "turn/interrupt",
           ],
@@ -237,16 +253,16 @@ export class SessionServer {
         return { commands: BUILT_IN_SLASH_COMMANDS };
       case "command/execute":
         return this.executeCommand(request.params);
-      case "thread/start":
-        return this.startThread(connection, request.params);
-      case "thread/list":
-        return this.listThreads(request.params);
-      case "thread/restore":
-        return this.restoreThread(connection, request.params);
-      case "thread/subscribe":
-        return this.subscribeThread(connection, request.params);
-      case "thread/read":
-        return this.readThread(request.params);
+      case "session/start":
+        return this.startSession(connection, request.params);
+      case "session/list":
+        return this.listSessions(request.params);
+      case "session/restore":
+        return this.restoreSession(connection, request.params);
+      case "session/subscribe":
+        return this.subscribeSession(connection, request.params);
+      case "session/read":
+        return this.readSession(request.params);
       case "turn/start":
         return this.startTurn(connection, request.params);
       case "turn/interrupt":
@@ -256,7 +272,7 @@ export class SessionServer {
     }
   }
 
-  private async startThread(
+  private async startSession(
     connection: WebSocketConnection,
     params: unknown,
   ): Promise<unknown> {
@@ -269,62 +285,70 @@ export class SessionServer {
       bootstrap: this.bootstrap,
     });
     const now = Date.now();
-    const thread: ServerThread = {
+    const session: LiveSession = {
       id: runtime.sessionId,
       cwd,
       runtime,
       events: [],
+      pendingEvents: [],
       subscribers: new Set([connection]),
       status: "idle",
       createdAt: now,
       updatedAt: now,
+      title: "empty",
+      persisted: false,
     };
-    this.threads.set(thread.id, thread);
-    this.store.append(thread.id, {
-      type: "thread_started",
-      threadId: thread.id,
-      cwd,
-      createdAt: now,
+    this.sessions.set(session.id, session);
+    this.publishEphemeral(session, {
+      method: "session/started",
+      params: this.sessionSummary(session),
     });
-    this.publish(thread, {
-      method: "thread/started",
-      params: this.threadSummary(thread),
-    });
-    return { thread: this.threadSummary(thread) };
+    return {
+      session: this.sessionSummary(session),
+    };
   }
 
-  private async subscribeThread(
+  private async subscribeSession(
     connection: WebSocketConnection,
     params: unknown,
   ): Promise<unknown> {
-    const thread = this.requiredThread(params);
-    thread.subscribers.add(connection);
-    this.store.append(thread.id, {
-      type: "thread_subscribed",
-      threadId: thread.id,
+    const session = this.requiredSession(params);
+    session.subscribers.add(connection);
+    this.store.append(session.id, {
+      type: "session_subscribed",
+      sessionId: session.id,
       subscribedAt: Date.now(),
     });
-    return { thread: this.threadSummary(thread), events: thread.events };
+    return {
+      session: this.sessionSummary(session),
+      events: session.events,
+    };
   }
 
-  private readThread(params: unknown): unknown {
-    const thread = this.requiredThread(params);
-    return { thread: this.threadSummary(thread), events: thread.events };
+  private readSession(params: unknown): unknown {
+    const session = this.requiredSession(params);
+    return {
+      session: this.sessionSummary(session),
+      events: session.events,
+    };
   }
 
-  private listThreads(params: unknown): unknown {
+  private listSessions(params: unknown): unknown {
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     return { sessions: this.numberedSessionsForCwd(cwd) };
   }
 
-  private restoreThread(
+  private restoreSession(
     connection: WebSocketConnection,
     params: unknown,
   ): unknown {
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     const selector = requiredStringParam(params, "selector");
-    const thread = this.restoreThreadBySelector(connection, cwd, selector);
-    return { thread: this.threadSummary(thread), events: thread.events };
+    const session = this.restoreSessionBySelector(connection, cwd, selector);
+    return {
+      session: this.sessionSummary(session),
+      events: session.events,
+    };
   }
 
   private executeCommand(params: unknown): SlashCommandResult {
@@ -356,19 +380,19 @@ export class SessionServer {
         return {
           handled: true,
           action: "print",
-          output: this.formatCommandStatus(execution.threadId),
+          output: this.formatCommandStatus(execution.sessionId),
         };
       case "init":
         return {
           handled: true,
           action: "print",
-          output: this.formatLatestSessionConfigured(execution.threadId),
+          output: this.formatLatestSessionConfigured(execution.sessionId),
         };
       case "events":
         return {
           handled: true,
           action: "print",
-          output: this.formatRecentEvents(execution.threadId),
+          output: this.formatRecentEvents(execution.sessionId),
         };
       case "session":
         return {
@@ -384,7 +408,7 @@ export class SessionServer {
             output: "usage: /restore <session-id|session-number>",
           };
         }
-        const thread = this.restoreThreadBySelector(
+        const session = this.restoreSessionBySelector(
           undefined,
           execution.cwd ?? this.options.cwd,
           execution.args.trim(),
@@ -392,16 +416,16 @@ export class SessionServer {
         return {
           handled: true,
           action: "restore",
-          output: `restored session ${thread.id}\ncwd: ${thread.cwd}\nstatus: ${thread.status}`,
-          thread: this.threadSummary(thread),
+          output: `restored session ${session.sequence}: ${session.title}\nid: ${session.id}\nstatus: ${session.status}`,
+          session: this.sessionSummary(session),
         };
       }
       case "interrupt":
-        if (execution.threadId === undefined) {
-          throw new Error("threadId is required for /interrupt");
+        if (execution.sessionId === undefined) {
+          throw new Error("sessionId is required for /interrupt");
         }
         this.interruptTurn({
-          threadId: execution.threadId,
+          sessionId: execution.sessionId,
           reason: execution.args ?? "interrupted from CLI",
         });
         return {
@@ -421,36 +445,38 @@ export class SessionServer {
     connection: WebSocketConnection,
     params: unknown,
   ): Promise<unknown> {
-    const thread = this.requiredThread(params);
+    let session = this.requiredSession(params);
     const prompt = requiredStringParam(params, "prompt");
-    const cwd = stringParam(params, "cwd") ?? thread.cwd;
+    session = this.ensureOwnedSession(session, connection);
+    const cwd = stringParam(params, "cwd") ?? session.cwd;
     const turnId = randomUUID();
-    thread.subscribers.add(connection);
-    thread.status = "running";
-    thread.updatedAt = Date.now();
-    this.store.append(thread.id, {
+    session.subscribers.add(connection);
+    this.ensureSessionPersisted(session, prompt);
+    session.status = "running";
+    session.updatedAt = Date.now();
+    this.store.append(session.id, {
       type: "turn_start_requested",
-      threadId: thread.id,
+      sessionId: session.id,
       turnId,
       prompt,
       cwd,
-      requestedAt: thread.updatedAt,
+      requestedAt: session.updatedAt,
     });
-    void thread.runtime
+    void session.runtime
       .submit(
         {
           id: turnId,
           op: { type: "user_turn", prompt, cwd },
         },
-        (event) => this.handleRuntimeEvent(thread, event),
+        (event) => this.handleRuntimeEvent(session, event),
       )
       .catch((error: unknown) => {
-        thread.status = "failed";
-        thread.updatedAt = Date.now();
-        this.publish(thread, {
+        session.status = "failed";
+        session.updatedAt = Date.now();
+        this.publish(session, {
           method: "error",
           params: {
-            threadId: thread.id,
+            sessionId: session.id,
             turnId,
             message: errorMessage(error),
           },
@@ -460,92 +486,152 @@ export class SessionServer {
   }
 
   private interruptTurn(params: unknown): Promise<unknown> {
-    const thread = this.requiredThread(params);
+    const session = this.requiredSession(params);
     const reason = stringParam(params, "reason") ?? "interrupted";
-    thread.runtime.interrupt(reason, (event) =>
-      this.handleRuntimeEvent(thread, event),
+    session.runtime.interrupt(reason, (event) =>
+      this.handleRuntimeEvent(session, event),
     );
-    return Promise.resolve({ thread: this.threadSummary(thread) });
+    return Promise.resolve({
+      session: this.sessionSummary(session),
+    });
   }
 
-  private handleRuntimeEvent(thread: ServerThread, event: RuntimeEvent): void {
-    thread.events.push(event);
-    thread.updatedAt = Date.now();
+  private handleRuntimeEvent(session: LiveSession, event: RuntimeEvent): void {
+    if (session.persisted && this.currentOwner(session.id) !== this.serverId) {
+      session.pendingEvents = [];
+      const reloaded = this.reloadAndAcquire(session);
+      this.publishEphemeral(reloaded, {
+        method: "session/ownershipChanged",
+        params: {
+          sessionId: reloaded.id,
+          message:
+            "session ownership changed during a turn; discarded stale live output and reloaded persisted context",
+        },
+      });
+      return;
+    }
+    if (session.status === "running") {
+      session.pendingEvents.push(event);
+      this.publishEphemeral(
+        session,
+        runtimeNotification(session.id, event.msg),
+      );
+      if (isTerminalEvent(event)) {
+        this.commitPendingEvents(session);
+      }
+      return;
+    }
+    this.commitRuntimeEvent(session, event, true);
+  }
+
+  private commitPendingEvents(session: LiveSession): void {
+    const events = session.pendingEvents.splice(0);
+    for (const event of events) {
+      this.commitRuntimeEvent(session, event, false);
+    }
+  }
+
+  private commitRuntimeEvent(
+    session: LiveSession,
+    event: RuntimeEvent,
+    shouldPublish: boolean,
+  ): void {
+    session.events.push(event);
+    session.updatedAt = Date.now();
     const msg = event.msg;
     if (msg.type === "turn_complete") {
-      thread.status = "idle";
+      session.status = "idle";
     } else if (msg.type === "turn_aborted") {
-      thread.status = "aborted";
+      session.status = "aborted";
     } else if (msg.type === "error") {
-      thread.status = "failed";
+      session.status = "failed";
     }
-    this.store.append(thread.id, {
+    this.store.append(session.id, {
       type: "runtime_event",
-      threadId: thread.id,
+      sessionId: session.id,
       event,
-      recordedAt: thread.updatedAt,
+      recordedAt: session.updatedAt,
     });
-    this.publish(thread, runtimeNotification(thread.id, msg));
+    const notification = runtimeNotification(session.id, msg);
+    this.persistNotification(session, notification);
+    if (shouldPublish) {
+      this.publishEphemeral(session, notification);
+    }
   }
 
   private publish(
-    thread: ServerThread,
+    session: LiveSession,
     notification: JsonRpcNotification,
   ): void {
-    this.store.append(thread.id, {
+    this.persistNotification(session, notification);
+    this.publishEphemeral(session, notification);
+  }
+
+  private persistNotification(
+    session: LiveSession,
+    notification: JsonRpcNotification,
+  ): void {
+    this.store.append(session.id, {
       type: "notification",
-      threadId: thread.id,
+      sessionId: session.id,
       notification,
       recordedAt: Date.now(),
     });
-    for (const subscriber of thread.subscribers) {
+  }
+
+  private publishEphemeral(
+    session: LiveSession,
+    notification: JsonRpcNotification,
+  ): void {
+    for (const subscriber of session.subscribers) {
       subscriber.sendJson(notification);
     }
   }
 
   private handleConnectionClose(connection: WebSocketConnection): void {
     this.clients.delete(connection);
-    for (const thread of this.threads.values()) {
-      if (!thread.subscribers.delete(connection)) {
+    for (const session of this.sessions.values()) {
+      if (!session.subscribers.delete(connection)) {
         continue;
       }
-      if (thread.subscribers.size > 0) {
+      if (session.subscribers.size > 0 || !session.persisted) {
         continue;
       }
-      thread.updatedAt = Date.now();
-      this.store.append(thread.id, {
-        type: "thread_detached",
-        threadId: thread.id,
-        status: thread.status,
-        disconnectedAt: thread.updatedAt,
+      session.updatedAt = Date.now();
+      this.store.append(session.id, {
+        type: "session_detached",
+        sessionId: session.id,
+        status: session.status,
+        disconnectedAt: session.updatedAt,
       });
       void this.store.flush();
     }
   }
 
-  private requiredThread(params: unknown): ServerThread {
-    const threadId = requiredStringParam(params, "threadId");
-    const thread = this.threads.get(threadId);
-    if (thread === undefined) {
-      throw new Error(`unknown thread: ${threadId}`);
+  private requiredSession(params: unknown): LiveSession {
+    const sessionId = sessionIdParam(params);
+    const session = this.sessions.get(sessionId);
+    if (session === undefined) {
+      throw new Error(`unknown session: ${sessionId}`);
     }
-    return thread;
+    return session;
   }
 
-  private restoreThreadBySelector(
+  private restoreSessionBySelector(
     connection: WebSocketConnection | undefined,
     cwd: string,
     selector: string,
-  ): ServerThread {
+  ): LiveSession {
     const session = this.resolveSessionSelector(cwd, selector);
-    const live = this.threads.get(session.id);
+    const live = this.sessions.get(session.id);
     if (live !== undefined) {
       if (connection !== undefined) {
         live.subscribers.add(connection);
       }
+      this.acquireOwnership(live);
       return live;
     }
-    const persisted = this.readPersistedThread(session.id);
+    const persisted = this.readPersistedSession(session.id);
     if (persisted === undefined) {
       throw new Error(`unknown session: ${selector}`);
     }
@@ -557,30 +643,35 @@ export class SessionServer {
       sources: this.options.sources,
       bootstrap: this.bootstrap,
     });
-    const thread: ServerThread = {
+    const liveSession: LiveSession = {
       id: persisted.id,
       cwd: persisted.cwd,
       runtime,
       events: persisted.events,
+      pendingEvents: [],
       subscribers: new Set(connection === undefined ? [] : [connection]),
       status: persisted.status,
       createdAt: persisted.createdAt,
       updatedAt: Date.now(),
+      sequence: persisted.sequence,
+      title: persisted.title,
+      persisted: true,
     };
-    this.threads.set(thread.id, thread);
-    this.store.append(thread.id, {
-      type: "thread_restored",
-      threadId: thread.id,
-      cwd: thread.cwd,
-      restoredAt: thread.updatedAt,
+    this.sessions.set(liveSession.id, liveSession);
+    this.acquireOwnership(liveSession);
+    this.store.append(liveSession.id, {
+      type: "session_restored",
+      sessionId: liveSession.id,
+      cwd: liveSession.cwd,
+      restoredAt: liveSession.updatedAt,
     });
     if (connection !== undefined) {
-      this.publish(thread, {
-        method: "thread/restored",
-        params: this.threadSummary(thread),
+      this.publish(liveSession, {
+        method: "session/restored",
+        params: this.sessionSummary(liveSession),
       });
     }
-    return thread;
+    return liveSession;
   }
 
   private resolveSessionSelector(
@@ -602,64 +693,71 @@ export class SessionServer {
   private numberedSessionsForCwd(cwd: string): SessionListEntry[] {
     const normalizedCwd = resolve(cwd);
     const byId = new Map<string, Omit<SessionListEntry, "number">>();
-    for (const persisted of this.readPersistedThreads()) {
+    for (const persisted of this.readPersistedSessions()) {
       if (resolve(persisted.cwd) !== normalizedCwd) {
         continue;
       }
       byId.set(persisted.id, {
         id: persisted.id,
+        sequence: persisted.sequence,
         cwd: persisted.cwd,
         status: persisted.status,
         createdAt: persisted.createdAt,
         updatedAt: persisted.updatedAt,
         eventCount: persisted.events.length,
         live: false,
+        title: persisted.title,
       });
     }
-    for (const thread of this.threads.values()) {
-      if (resolve(thread.cwd) !== normalizedCwd) {
+    for (const session of this.sessions.values()) {
+      if (!session.persisted || resolve(session.cwd) !== normalizedCwd) {
         continue;
       }
-      byId.set(thread.id, {
-        id: thread.id,
-        cwd: thread.cwd,
-        status: thread.status,
-        createdAt: thread.createdAt,
-        updatedAt: thread.updatedAt,
-        eventCount: thread.events.length,
+      byId.set(session.id, {
+        id: session.id,
+        sequence: session.sequence ?? this.nextSequenceForCwd(session.cwd),
+        cwd: session.cwd,
+        status: session.status,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        eventCount: session.events.length,
         live: true,
+        title: session.title,
       });
     }
     return [...byId.values()]
-      .sort((left, right) => right.updatedAt - left.updatedAt)
-      .map((session, index) => ({ number: index + 1, ...session }));
+      .sort((left, right) => left.sequence - right.sequence)
+      .map((session) => ({ number: session.sequence, ...session }));
   }
 
-  private threadSummary(thread: ServerThread): unknown {
+  private sessionSummary(session: LiveSession): unknown {
     return {
-      id: thread.id,
-      cwd: thread.cwd,
-      status: thread.status,
+      id: session.id,
+      sessionId: session.id,
+      cwd: session.cwd,
+      status: session.status,
       model: this.options.config.model,
-      createdAt: thread.createdAt,
-      updatedAt: thread.updatedAt,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      number: session.sequence,
+      title: session.title,
     };
   }
 
-  private formatCommandStatus(threadId: string | undefined): string {
-    const thread =
-      threadId === undefined ? undefined : this.threads.get(threadId);
-    const threadLine =
-      thread === undefined
-        ? "thread: not started"
-        : `thread: ${thread.id} (${thread.status})`;
-    return ["server: ndx-ts-session-server", threadLine].join("\n");
+  private formatCommandStatus(sessionId: string | undefined): string {
+    const session =
+      sessionId === undefined ? undefined : this.sessions.get(sessionId);
+    const sessionLine =
+      session === undefined
+        ? "session: not started"
+        : `session: ${session.sequence ?? "empty"} ${session.id} (${session.status})`;
+    return ["server: ndx-ts-session-server", sessionLine].join("\n");
   }
 
-  private formatLatestSessionConfigured(threadId: string | undefined): string {
-    const thread =
-      threadId === undefined ? undefined : this.threads.get(threadId);
-    const event = thread?.events
+  private formatLatestSessionConfigured(sessionId: string | undefined): string {
+    const session =
+      sessionId === undefined ? undefined : this.sessions.get(sessionId);
+    const event = session?.events
       .map((record) => record.msg)
       .findLast((msg) => msg.type === "session_configured");
     if (event === undefined || event.type !== "session_configured") {
@@ -679,13 +777,13 @@ export class SessionServer {
     ].join("\n");
   }
 
-  private formatRecentEvents(threadId: string | undefined): string {
-    const thread =
-      threadId === undefined ? undefined : this.threads.get(threadId);
-    if (thread === undefined || thread.events.length === 0) {
+  private formatRecentEvents(sessionId: string | undefined): string {
+    const session =
+      sessionId === undefined ? undefined : this.sessions.get(sessionId);
+    if (session === undefined || session.events.length === 0) {
       return "no runtime events received";
     }
-    return thread.events
+    return session.events
       .slice(-20)
       .map(
         (event, index) =>
@@ -697,13 +795,15 @@ export class SessionServer {
   private formatSessions(cwd: string): string {
     const sessions = this.numberedSessionsForCwd(cwd);
     if (sessions.length === 0) {
-      return `no sessions found for ${resolve(cwd)}`;
+      return [`sessions for ${resolve(cwd)}`, "0. new session"].join("\n");
     }
     return [
       `sessions for ${resolve(cwd)}`,
+      "0. new session",
       ...sessions.map((session) =>
         [
-          `${session.number}. ${session.id}`,
+          `${session.number}. ${session.title}`,
+          `id: ${session.id}`,
           `updated: ${new Date(session.updatedAt).toISOString()}`,
           `status: ${session.status}`,
           `events: ${session.eventCount}`,
@@ -713,21 +813,23 @@ export class SessionServer {
     ].join("\n");
   }
 
-  private readPersistedThreads(): PersistedThreadState[] {
+  private readPersistedSessions(): PersistedSessionState[] {
     const dir = this.persistenceDir();
     if (!existsSync(dir)) {
       return [];
     }
     return readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map((entry) => this.readPersistedThread(basename(entry.name, ".jsonl")))
-      .filter((thread): thread is PersistedThreadState => thread !== undefined);
+      .map((entry) => this.readPersistedSession(basename(entry.name, ".jsonl")))
+      .filter(
+        (session): session is PersistedSessionState => session !== undefined,
+      );
   }
 
-  private readPersistedThread(
-    threadId: string,
-  ): PersistedThreadState | undefined {
-    const file = join(this.persistenceDir(), `${threadId}.jsonl`);
+  private readPersistedSession(
+    sessionId: string,
+  ): PersistedSessionState | undefined {
+    const file = join(this.persistenceDir(), `${sessionId}.jsonl`);
     if (!existsSync(file)) {
       return undefined;
     }
@@ -738,15 +840,22 @@ export class SessionServer {
     let cwd: string | undefined;
     let createdAt: number | undefined;
     let updatedAt = 0;
-    let status: ServerThread["status"] = "idle";
+    let status: LiveSession["status"] = "idle";
+    let sequence: number | undefined;
+    let title = "empty";
     const events: RuntimeEvent[] = [];
     for (const record of records) {
       const recordTime = recordTimestamp(record);
       updatedAt = Math.max(updatedAt, recordTime);
-      if (record.type === "thread_started") {
+      if (record.type === "session_started") {
         cwd = typeof record.cwd === "string" ? record.cwd : cwd;
         createdAt =
           typeof record.createdAt === "number" ? record.createdAt : createdAt;
+        sequence =
+          typeof record.sequence === "number" ? record.sequence : sequence;
+        title = typeof record.title === "string" ? record.title : title;
+      } else if (record.type === "session_title_updated") {
+        title = typeof record.title === "string" ? record.title : title;
       } else if (record.type === "runtime_event") {
         const event = record.event;
         if (isRuntimeEvent(event)) {
@@ -758,21 +867,142 @@ export class SessionServer {
             cwd = event.msg.cwd;
           }
         }
-      } else if (record.type === "thread_detached") {
+      } else if (record.type === "session_detached") {
         status = parseThreadStatus(record.status) ?? status;
       }
     }
-    if (cwd === undefined) {
+    if (cwd === undefined || sequence === undefined) {
       return undefined;
     }
     return {
-      id: threadId,
+      id: sessionId,
       cwd,
       status,
       createdAt: createdAt ?? updatedAt,
       updatedAt,
       events,
+      sequence,
+      title,
     };
+  }
+
+  private ensureSessionPersisted(session: LiveSession, prompt: string): void {
+    if (session.persisted) {
+      return;
+    }
+    const now = Date.now();
+    const sequence = this.nextSequenceForCwd(session.cwd);
+    session.sequence = sequence;
+    session.title = titleFromPrompt(prompt);
+    session.createdAt = now;
+    session.updatedAt = now;
+    session.persisted = true;
+    this.acquireOwnership(session);
+    this.store.append(session.id, {
+      type: "session_started",
+      sessionId: session.id,
+      cwd: session.cwd,
+      sequence,
+      title: session.title,
+      createdAt: now,
+    });
+  }
+
+  private nextSequenceForCwd(cwd: string): number {
+    const normalizedCwd = resolve(cwd);
+    const maxSequence = this.readPersistedSessions()
+      .filter((session) => resolve(session.cwd) === normalizedCwd)
+      .reduce((max, session) => Math.max(max, session.sequence), 0);
+    return maxSequence + 1;
+  }
+
+  private ensureOwnedSession(
+    session: LiveSession,
+    connection: WebSocketConnection,
+  ): LiveSession {
+    if (!session.persisted) {
+      return session;
+    }
+    const owner = this.currentOwner(session.id);
+    if (owner === undefined || owner === this.serverId) {
+      this.acquireOwnership(session);
+      return session;
+    }
+    const reloaded = this.reloadAndAcquire(session);
+    reloaded.subscribers.add(connection);
+    this.publishEphemeral(reloaded, {
+      method: "session/ownershipChanged",
+      params: {
+        sessionId: reloaded.id,
+        message:
+          "session ownership changed; reloaded persisted context before handling the prompt",
+      },
+    });
+    return reloaded;
+  }
+
+  private reloadAndAcquire(session: LiveSession): LiveSession {
+    const persisted = this.readPersistedSession(session.id);
+    if (persisted === undefined) {
+      this.acquireOwnership(session);
+      return session;
+    }
+    const reloaded: LiveSession = {
+      id: persisted.id,
+      cwd: persisted.cwd,
+      runtime: new AgentRuntime({
+        cwd: persisted.cwd,
+        config: this.options.config,
+        client: this.options.createClient(),
+        sessionId: persisted.id,
+        sources: this.options.sources,
+        bootstrap: this.bootstrap,
+      }),
+      events: persisted.events,
+      pendingEvents: [],
+      subscribers: session.subscribers,
+      status: persisted.status,
+      createdAt: persisted.createdAt,
+      updatedAt: Date.now(),
+      sequence: persisted.sequence,
+      title: persisted.title,
+      persisted: true,
+    };
+    this.sessions.set(reloaded.id, reloaded);
+    this.acquireOwnership(reloaded);
+    return reloaded;
+  }
+
+  private acquireOwnership(session: LiveSession): void {
+    if (!session.persisted) {
+      return;
+    }
+    const dir = this.ownerDir();
+    mkdirSync(dir, { recursive: true });
+    const owner = {
+      sessionId: session.id,
+      serverId: this.serverId,
+      claimedAt: Date.now(),
+    };
+    const file = this.ownerFile(session.id);
+    const temp = `${file}.${process.pid}.${this.serverId}.tmp`;
+    writeFileSync(temp, JSON.stringify(owner));
+    renameSync(temp, file);
+  }
+
+  private currentOwner(sessionId: string): string | undefined {
+    const file = this.ownerFile(sessionId);
+    if (!existsSync(file)) {
+      return undefined;
+    }
+    try {
+      const value = JSON.parse(readFileSync(file, "utf8")) as {
+        serverId?: unknown;
+      };
+      return typeof value.serverId === "string" ? value.serverId : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private persistenceDir(): string {
@@ -780,6 +1010,14 @@ export class SessionServer {
       this.options.persistenceDir ??
       join(this.options.config.paths.globalDir, "sessions", "ts-server")
     );
+  }
+
+  private ownerDir(): string {
+    return join(this.persistenceDir(), "owners");
+  }
+
+  private ownerFile(sessionId: string): string {
+    return join(this.ownerDir(), `${sessionId}.json`);
   }
 }
 
@@ -897,13 +1135,13 @@ function encodeFrame(opcode: number, payload: Buffer): Buffer {
 }
 
 function runtimeNotification(
-  threadId: string,
+  sessionId: string,
   msg: RuntimeEventMsg,
 ): JsonRpcNotification {
-  const params = { threadId, event: msg };
+  const params = { sessionId, event: msg };
   switch (msg.type) {
     case "session_configured":
-      return { method: "thread/sessionConfigured", params };
+      return { method: "session/configured", params };
     case "turn_started":
       return { method: "turn/started", params };
     case "agent_message":
@@ -913,7 +1151,7 @@ function runtimeNotification(
     case "tool_result":
       return { method: "item/toolResult", params };
     case "token_count":
-      return { method: "thread/tokenUsage/updated", params };
+      return { method: "session/tokenUsage/updated", params };
     case "turn_complete":
       return { method: "turn/completed", params };
     case "turn_aborted":
@@ -933,6 +1171,10 @@ function requiredStringParam(params: unknown, name: string): string {
   return value;
 }
 
+function sessionIdParam(params: unknown): string {
+  return stringParam(params, "sessionId") ?? requiredStringParam(params, "id");
+}
+
 function stringParam(params: unknown, name: string): string | undefined {
   if (params === null || typeof params !== "object") {
     return undefined;
@@ -949,9 +1191,17 @@ function slashCommandExecution(params: unknown): SlashCommandExecution {
   return {
     name,
     args: stringParam(params, "args"),
-    threadId: stringParam(params, "threadId"),
+    sessionId: stringParam(params, "sessionId"),
     cwd: stringParam(params, "cwd"),
   };
+}
+
+function titleFromPrompt(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) {
+    return "empty";
+  }
+  return normalized.length > 64 ? `${normalized.slice(0, 61)}...` : normalized;
 }
 
 function recordTimestamp(record: Record<string, unknown>): number {
@@ -986,8 +1236,8 @@ function isRuntimeEvent(value: unknown): value is RuntimeEvent {
 
 function statusFromEvent(
   event: RuntimeEvent,
-  fallback: ServerThread["status"],
-): ServerThread["status"] {
+  fallback: LiveSession["status"],
+): LiveSession["status"] {
   switch (event.msg.type) {
     case "turn_started":
       return "running";
@@ -1002,7 +1252,15 @@ function statusFromEvent(
   }
 }
 
-function parseThreadStatus(value: unknown): ServerThread["status"] | undefined {
+function isTerminalEvent(event: RuntimeEvent): boolean {
+  return (
+    event.msg.type === "turn_complete" ||
+    event.msg.type === "turn_aborted" ||
+    event.msg.type === "error"
+  );
+}
+
+function parseThreadStatus(value: unknown): LiveSession["status"] | undefined {
   return value === "idle" ||
     value === "running" ||
     value === "aborted" ||

@@ -74,16 +74,16 @@ the manifest command remains owned by the capability tool implementation.
 ## Session Server
 
 `src/session/server.ts` owns live sessions. `SessionServer` accepts WebSocket
-JSON-RPC, creates one `AgentRuntime` per `thread/start`, stores per-thread event
+JSON-RPC, creates one `AgentRuntime` per live session, stores per-session event
 history, maps runtime events to client notifications, and enqueues server-owned
 JSONL records under `<globalDir>/sessions/ts-server`.
 
-`thread/list` scans the same JSONL directory and merges matching live threads
-with saved records for a requested resolved `cwd`. Each response assigns
-temporary list numbers by descending `updatedAt`; these numbers are only a
-convenience for `/restore` in the same workspace view. `thread/restore` reloads
-the saved runtime events and creates an `AgentRuntime` with the original
-session id, but it does not reconstruct prior model context.
+`session/list` scans the same JSONL directory and merges matching persisted live
+sessions with saved records for a requested resolved `cwd`. Workspace numbers
+are monotonically increasing sequence values assigned on the first user prompt,
+not temporary list indexes. `session/restore` reloads saved runtime events,
+creates an `AgentRuntime` with the original session id, and claims the session
+owner file, but it does not reconstruct prior model context.
 
 The CLI is a client of this server. In normal one-shot and interactive modes it
 starts an embedded loopback server and talks to that server over WebSocket. In
@@ -101,9 +101,9 @@ events. The parent retries failed writes three times and logs drops instead of
 crashing the server.
 
 Socket close is also a persistence boundary. When a connection disappears and a
-thread has no subscribers left, the server records `thread_detached` and drains
-the queue. This protects embedded CLI and external clients that exit without
-sending an explicit session close command.
+persisted session has no subscribers left, the server records
+`session_detached` and drains the queue. Empty sessions are ignored because they
+have no durable identity yet.
 
 ## Mock Client
 

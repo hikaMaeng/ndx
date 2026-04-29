@@ -26,13 +26,28 @@ export interface InitializeResult {
   bootstrap?: NdxBootstrapReport;
 }
 
-export interface ThreadSummary {
+export interface SessionSummary {
   id: string;
+  sessionId?: string;
   cwd: string;
   status: string;
   model: string;
   createdAt: number;
   updatedAt: number;
+  number?: number;
+  title?: string;
+}
+
+export interface SessionListEntry {
+  number: number;
+  id: string;
+  cwd: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+  eventCount: number;
+  live: boolean;
+  title: string;
 }
 
 type CommandResult =
@@ -42,7 +57,13 @@ type CommandResult =
 
 type ServerCommandResult =
   | { handled: true; action: "print"; output: string }
-  | { handled: true; action: "restore"; output: string; thread: ThreadSummary }
+  | {
+      handled: true;
+      action: "restore";
+      output: string;
+      session: SessionSummary;
+      thread?: SessionSummary;
+    }
   | { handled: true; action: "exit"; output?: string }
   | { handled: false; output: string };
 
@@ -53,7 +74,7 @@ export class CliSessionController {
   private readonly print: (message: string) => void;
   private readonly printError: (message: string) => void;
   private initializeResult: InitializeResult | undefined;
-  private thread: ThreadSummary | undefined;
+  private session: SessionSummary | undefined;
   private sessionConfigured: SessionConfiguredEvent | undefined;
 
   constructor(options: CliSessionRuntime) {
@@ -69,18 +90,41 @@ export class CliSessionController {
     this.printError(formatInitializeResult(this.initializeResult));
   }
 
-  async startThread(): Promise<string> {
-    const response = await this.client.request<{ thread: ThreadSummary }>(
-      "thread/start",
+  async startSession(): Promise<string> {
+    const response = await this.client.request<{ session: SessionSummary }>(
+      "session/start",
       { cwd: this.cwd },
     );
-    this.thread = response.thread;
-    this.printError(formatThreadStarted(response.thread));
-    return response.thread.id;
+    this.session = response.session;
+    this.printError(formatSessionStarted(response.session));
+    return response.session.id;
+  }
+
+  async listSessions(): Promise<SessionListEntry[]> {
+    const response = await this.client.request<{
+      sessions: SessionListEntry[];
+    }>("session/list", { cwd: this.cwd });
+    return response.sessions;
+  }
+
+  formatSessionChoices(sessions: SessionListEntry[]): string {
+    return formatSessionChoices(this.cwd, sessions);
+  }
+
+  async restoreSession(selector: string): Promise<string> {
+    const response = await this.client.request<{
+      session: SessionSummary;
+      events: unknown[];
+    }>("session/restore", { cwd: this.cwd, selector });
+    this.session = response.session;
+    this.print(
+      `restored session ${response.session.number}: ${response.session.title ?? "empty"}`,
+    );
+    return response.session.id;
   }
 
   async runPrompt(prompt: string): Promise<void> {
-    const threadId = this.requireThreadId();
+    const sessionId = this.requireSessionId();
     const completion = new Promise<string>((resolve, reject) => {
       const off = this.client.onNotification((notification) => {
         const msg = runtimeEvent(notification);
@@ -120,7 +164,7 @@ export class CliSessionController {
         }
       });
     });
-    await this.client.request("turn/start", { threadId, prompt });
+    await this.client.request("turn/start", { sessionId, prompt });
     const text = await completion;
     if (text) {
       this.print(text);
@@ -137,7 +181,7 @@ export class CliSessionController {
       {
         name: parsed.name,
         args: parsed.args,
-        threadId: this.thread?.id,
+        sessionId: this.session?.id,
         cwd: this.cwd,
       },
     );
@@ -149,7 +193,7 @@ export class CliSessionController {
       this.print(result.output);
     }
     if (result.action === "restore") {
-      this.thread = result.thread;
+      this.session = result.session;
     }
     return {
       handled: true,
@@ -157,11 +201,11 @@ export class CliSessionController {
     };
   }
 
-  private requireThreadId(): string {
-    if (this.thread === undefined) {
-      throw new Error("thread has not been started");
+  private requireSessionId(): string {
+    if (this.session === undefined) {
+      throw new Error("session has not been started");
     }
-    return this.thread.id;
+    return this.session.id;
   }
 }
 
@@ -196,7 +240,7 @@ export function interactiveHelp(): string {
   return [
     "Commands:",
     "  /help       Show this help",
-    "  /status     Show socket, server, and thread status",
+    "  /status     Show socket, server, and session status",
     "  /init       Show latest session initialization details",
     "  /events     Show recent runtime event types",
     "  /session    List sessions for this workspace",
@@ -251,12 +295,32 @@ function formatInitializeResult(result: InitializeResult): string {
   ].join("\n");
 }
 
-function formatThreadStarted(thread: ThreadSummary): string {
+function formatSessionStarted(session: SessionSummary): string {
   return [
-    `[thread] ${thread.id}`,
-    `[cwd] ${thread.cwd}`,
-    `[model] ${thread.model}`,
-    `[status] ${thread.status}`,
+    `[session] ${session.id}`,
+    `[number] ${session.number ?? "empty"}`,
+    `[title] ${session.title ?? "empty"}`,
+    `[cwd] ${session.cwd}`,
+    `[model] ${session.model}`,
+    `[status] ${session.status}`,
+  ].join("\n");
+}
+
+function formatSessionChoices(
+  cwd: string,
+  sessions: SessionListEntry[],
+): string {
+  return [
+    `sessions for ${cwd}`,
+    "0. new session",
+    ...sessions.map((session) =>
+      [
+        `${session.number}. ${session.title}`,
+        `id: ${session.id}`,
+        `updated: ${new Date(session.updatedAt).toISOString()}`,
+        session.live ? "live" : "saved",
+      ].join(" | "),
+    ),
   ].join("\n");
 }
 

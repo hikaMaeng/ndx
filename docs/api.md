@@ -17,16 +17,16 @@ Interactive slash commands are session-server controls. The CLI parses the
 leading slash and sends `command/execute`; command text is not appended to model
 context.
 
-| Command      | Behavior                                            |
-| ------------ | --------------------------------------------------- |
-| `/help`      | Print available session-server commands.            |
-| `/status`    | Print initialized server and current thread status. |
-| `/init`      | Print the latest session initialization event.      |
-| `/events`    | Print recent runtime event types for the thread.    |
-| `/session`   | List saved and live sessions for the current `cwd`. |
-| `/restore`   | Restore a session by UUID or `/session` number.     |
-| `/interrupt` | Ask the server to interrupt the current thread.     |
-| `/exit`      | Close the CLI client.                               |
+| Command      | Behavior                                             |
+| ------------ | ---------------------------------------------------- |
+| `/help`      | Print available session-server commands.             |
+| `/status`    | Print initialized server and current session status. |
+| `/init`      | Print the latest session initialization event.       |
+| `/events`    | Print recent runtime event types for the session.    |
+| `/session`   | List saved and live sessions for the current `cwd`.  |
+| `/restore`   | Switch to a session by UUID or `/session` number.    |
+| `/interrupt` | Ask the server to interrupt the current session.     |
+| `/exit`      | Close the CLI client.                                |
 
 ## Options
 
@@ -39,57 +39,64 @@ context.
 
 ## Session Server API
 
-The session server is a WebSocket JSON-RPC endpoint. It owns live thread state,
+The session server is a WebSocket JSON-RPC endpoint. It owns live session state,
 event fan-out, and JSONL persistence. Clients send requests and receive
 notifications; they are not authoritative session stores.
 
 Requests:
 
-| Method             | Params                       | Result                                    |
-| ------------------ | ---------------------------- | ----------------------------------------- |
-| `initialize`       | none                         | server name, protocol, methods, bootstrap |
-| `command/list`     | none                         | `{ commands }`                            |
-| `command/execute`  | `{ name, args?, threadId? }` | command result                            |
-| `thread/start`     | `{ cwd? }`                   | `{ thread }`                              |
-| `thread/list`      | `{ cwd? }`                   | `{ sessions }`                            |
-| `thread/restore`   | `{ cwd?, selector }`         | `{ thread, events }`                      |
-| `thread/subscribe` | `{ threadId }`               | `{ thread, events }`                      |
-| `thread/read`      | `{ threadId }`               | `{ thread, events }`                      |
-| `turn/start`       | `{ threadId, prompt }`       | `{ turn }`                                |
-| `turn/interrupt`   | `{ threadId, reason? }`      | `{ thread }`                              |
+| Method              | Params                        | Result                                    |
+| ------------------- | ----------------------------- | ----------------------------------------- |
+| `initialize`        | none                          | server name, protocol, methods, bootstrap |
+| `command/list`      | none                          | `{ commands }`                            |
+| `command/execute`   | `{ name, args?, sessionId? }` | command result                            |
+| `session/start`     | `{ cwd? }`                    | `{ session }`                             |
+| `session/list`      | `{ cwd? }`                    | `{ sessions }`                            |
+| `session/restore`   | `{ cwd?, selector }`          | `{ session, events }`                     |
+| `session/subscribe` | `{ sessionId }`               | `{ session, events }`                     |
+| `session/read`      | `{ sessionId }`               | `{ session, events }`                     |
+| `turn/start`        | `{ sessionId, prompt }`       | `{ turn }`                                |
+| `turn/interrupt`    | `{ sessionId, reason? }`      | `{ session }`                             |
 
 Notifications:
 
-- `thread/started`
-- `thread/restored`
-- `thread/sessionConfigured`
+- `session/started`
+- `session/restored`
+- `session/configured`
 - `turn/started`
 - `item/toolCall`
 - `item/toolResult`
 - `item/agentMessage`
-- `thread/tokenUsage/updated`
+- `session/tokenUsage/updated`
 - `turn/completed`
 - `turn/aborted`
 - `warning`
 - `error`
 
 Server JSONL records are queued by the session server and written by a child
-writer process to `<globalDir>/sessions/ts-server/<threadId>.jsonl`. Records
-include `persistedAt` and `writerPid`. If every client disconnects from a
-thread, the server queues `thread_detached` and drains pending persistence work.
+writer process to `<globalDir>/sessions/ts-server/<sessionId>.jsonl`. Records
+include `persistedAt` and `writerPid`. Empty sessions are not persisted and do
+not receive workspace numbers. The first user prompt assigns the next
+monotonically increasing number for that resolved `cwd`, changes the title from
+`empty` to a shortened prompt prefix, and writes `session_started`.
 
-`thread/list` scans persisted JSONL files plus live server memory, filters by
-the requested `cwd`, sorts by last interaction time descending, and assigns
-1-based numbers for that response. `/session` prints the same numbered view.
-`thread/restore` and `/restore` accept either the full session id or the current
-workspace list number. Restored sessions reuse the original thread id and append
-new records to the original JSONL file.
+`session/list` scans persisted JSONL files plus live server memory, filters by
+the requested `cwd`, and returns workspace sequence numbers. `/session` prints
+`0. new session` plus the same numbered view. `session/restore` and `/restore`
+accept either the full session id or the workspace number. Restored sessions
+reuse the original session id and append new records to the original JSONL file.
 
 Restore does not yet replay prior turns into model context. The current agent
 loop samples each submitted prompt independently, so restore currently means
-server identity, event history, and persistence continuation.
+server identity, event history, ownership, and persistence continuation.
 
-`initialize` returns `bootstrap`, and `thread/sessionConfigured` includes the
+Session ownership is tracked in a separate owner file per session. A socket
+server claims ownership before processing a prompt. If another server has taken
+ownership, the next prompt reloads persisted state before continuing. At turn
+completion, a server also checks ownership; if ownership changed mid-turn, it
+discards stale live output, reloads persisted state, and reclaims ownership.
+
+`initialize` returns `bootstrap`, and `session/configured` includes the
 same shape on `event.bootstrap`:
 
 ```json

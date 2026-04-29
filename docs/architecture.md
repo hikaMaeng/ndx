@@ -25,10 +25,10 @@ domain.
 1. CLI resolves `cwd` and reads `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` elements.
 2. CLI prints the robot plus uppercase `NDX` startup logo, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
 3. Session server startup re-checks required global `.ndx` elements and installs any missing settings, core directories, core tool package files, and skills directory before accepting session work.
-4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts one thread, tracks socket/server/thread status, can switch to a restored thread, receives notifications, and prints selected initialization, tool, warning, and final events.
-5. The session server chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live thread.
+4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
+5. The session server chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live session.
 6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-7. The session server enqueues thread, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
+7. The session server enqueues session, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
 8. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
 9. `runAgent` sends the prompt to the model client through the runtime.
 10. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
@@ -43,28 +43,28 @@ The TypeScript runtime exposes the ndx protocol behind a WebSocket session serve
 
 The server translates runtime events into JSON-RPC notifications:
 
-- `thread/started`
-- `thread/sessionConfigured`
+- `session/started`
+- `session/configured`
 - `turn/started`
 - `item/toolCall`
 - `item/toolResult`
 - `item/agentMessage`
-- `thread/tokenUsage/updated`
+- `session/tokenUsage/updated`
 - `turn/completed`
 - `turn/aborted`
 - `warning`
 - `error`
 
-Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live thread state and durable JSONL. Session initialization detail is displayed by the CLI and kept in client-local status/history only; it is not sent back as prompt context.
+Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live session state and durable JSONL. Session initialization detail is displayed by the CLI and kept in client-local status/history only; it is not sent back as prompt context.
 
-`initialize` responses and `thread/sessionConfigured` events include a bootstrap report. The report lists each required `.ndx` element, absolute path, and whether it already existed or was installed during startup.
+`initialize` responses and `session/configured` events include a bootstrap report. The report lists each required `.ndx` element, absolute path, and whether it already existed or was installed during startup.
 
 ## CLI Client Boundary
 
 `src/cli/session-client.ts` owns CLI-only session behavior:
 
 - robot plus uppercase `NDX` startup logo and socket initialization display
-- thread start status display
+- session start status display
 - `/status`, `/init`, `/events`, `/session`, `/restore`, and `/interrupt`
 - runtime notification formatting for human output
 
@@ -80,17 +80,19 @@ retried up to three attempts, then dropped with a server-side error log so the
 main session process stays alive.
 
 When a WebSocket connection closes without an explicit session shutdown, the
-server removes that connection from thread subscriber sets. If a thread has no
-remaining subscribers, the server enqueues a `thread_detached` record and
+server removes that connection from session subscriber sets. If a persisted
+session has no remaining subscribers, the server enqueues a `session_detached` record and
 triggers a queue drain. In-flight turns can still finish and enqueue their final
-runtime events because the live thread remains in server memory.
+runtime events because the live session remains in server memory.
 
-`thread/list` and `/session` build a workspace-scoped view from live memory plus
-the server JSONL directory. The server filters by exact resolved `cwd`, sorts by
-last interaction time, and assigns temporary 1-based numbers. `thread/restore`
-and `/restore` accept either a listed number or the full session id, create a new
+`session/list` and `/session` build a workspace-scoped view from live memory
+plus the server JSONL directory. The server filters by exact resolved `cwd` and
+uses the persisted workspace sequence assigned on first prompt. Empty sessions
+have title `empty`, no sequence number, and no JSONL file. `session/restore` and
+`/restore` accept either a listed number or the full session id, create a new
 `AgentRuntime` with the original id when needed, load persisted runtime events
-back into server memory, and continue appending to the same JSONL file.
+back into server memory, claim ownership, and continue appending to the same
+JSONL file.
 
 ## Docker Flow
 

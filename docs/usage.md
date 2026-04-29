@@ -50,8 +50,9 @@ node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text v
 
 The CLI prints the robot plus uppercase `NDX` startup logo to stderr, starts an
 embedded loopback session server, connects over WebSocket, sends `initialize`,
-starts a thread, and sends the prompt as a user turn. The server owns the live
-thread and writes session JSONL under `/home/.ndx/sessions/ts-server`.
+starts a session, and sends the prompt as a user turn. The server owns the live
+session and writes session JSONL under `/home/.ndx/sessions/ts-server` once the
+first prompt is submitted.
 
 On startup, config loading and the session server both enforce required global
 `.ndx` elements. Missing `settings.json`, `core/`, `core/tools/`, built-in core
@@ -74,7 +75,7 @@ node dist/src/cli/main.js --connect ws://127.0.0.1:45123 "list files"
 ```
 
 Attached clients use the same session-client controller as embedded mode. They
-display socket initialization and thread status, but the remote server remains
+display socket initialization and session status, but the remote server remains
 the authority for live state, initialization detail, event broadcast, and
 persistence.
 
@@ -82,11 +83,11 @@ persistence.
 
 ```text
 /help       Show session-server commands.
-/status     Show socket, server, and current thread status.
+/status     Show socket, server, and current session status.
 /init       Show the latest session initialization detail received from server events.
-/events     Show recent runtime event types recorded on the session server thread.
+/events     Show recent runtime event types recorded on the current session.
 /session    List live and saved sessions for the current workspace.
-/restore N  Restore a session by UUID or by the number shown in /session.
+/restore N  Switch to a session by UUID or by the number shown in /session.
 /interrupt  Ask the session server to interrupt the active turn.
 /exit       Leave ndx.
 ```
@@ -96,9 +97,8 @@ Initialization detail is for operator visibility only. The CLI does not append
 slash command text or initialization detail to the model prompt.
 
 `/session` is scoped to the `cwd` passed when `ndx` started or connected. The
-number column is recalculated from sessions sorted by last interaction time, so
-use it immediately with `/restore <number>` or use the full session id for a
-stable reference.
+number column is the session creation sequence for that workspace. Empty
+sessions are not listed until the first prompt assigns a number and title.
 
 ## Real Agent
 

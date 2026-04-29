@@ -63,7 +63,7 @@ const baseConfig: NdxConfig = {
   },
 };
 
-test("session server owns thread events, subscribers, and JSONL persistence", async () => {
+test("session server owns session events, subscribers, and JSONL persistence", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-server-"));
   const globalDir = join(root, "home", ".ndx");
   const persistenceDir = join(root, "server-sessions");
@@ -128,16 +128,18 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
       ),
       true,
     );
-    const startResponse = await client.request<{ thread: { id: string } }>(
-      "thread/start",
-      { cwd: root },
-    );
-    const threadId = startResponse.thread.id;
-    await subscriber.request("thread/subscribe", { threadId });
+    const startResponse = await client.request<{
+      session: { id: string; number?: number; title: string };
+    }>("session/start", { cwd: root });
+    const sessionId = startResponse.session.id;
+    assert.equal(startResponse.session.number, undefined);
+    assert.equal(startResponse.session.title, "empty");
+    assert.equal(existsSync(join(persistenceDir, `${sessionId}.jsonl`)), false);
+    await subscriber.request("session/subscribe", { sessionId });
 
     const completed = waitForMethod(subscriber, "turn/completed");
     await client.request("turn/start", {
-      threadId,
+      sessionId,
       prompt: "list files",
     });
     await completed;
@@ -146,8 +148,8 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
     assert.deepEqual(
       notifications.map((notification) => notification.method),
       [
-        "thread/started",
-        "thread/sessionConfigured",
+        "session/started",
+        "session/configured",
         "turn/started",
         "item/toolCall",
         "item/toolResult",
@@ -161,10 +163,7 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
       ),
       true,
     );
-    const configured = notificationEvent(
-      notifications,
-      "thread/sessionConfigured",
-    );
+    const configured = notificationEvent(notifications, "session/configured");
     assert.equal(configured?.type, "session_configured");
     if (configured?.type === "session_configured") {
       assert.equal(configured.bootstrap.globalDir, globalDir);
@@ -177,36 +176,38 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
     }
 
     const readResponse = await subscriber.request<{
-      thread: { id: string; status: string };
+      session: { id: string; status: string; number: number; title: string };
       events: unknown[];
-    }>("thread/read", { threadId });
-    assert.equal(readResponse.thread.id, threadId);
-    assert.equal(readResponse.thread.status, "idle");
+    }>("session/read", { sessionId });
+    assert.equal(readResponse.session.id, sessionId);
+    assert.equal(readResponse.session.status, "idle");
+    assert.equal(readResponse.session.number, 1);
+    assert.equal(readResponse.session.title, "list files");
     assert.equal(readResponse.events.length >= 6, true);
 
     const status = await client.request<{ handled: true; output: string }>(
       "command/execute",
-      { name: "status", threadId },
+      { name: "status", sessionId },
     );
     assert.equal(
       status.output,
-      `server: ndx-ts-session-server\nthread: ${threadId} (idle)`,
+      `server: ndx-ts-session-server\nsession: 1 ${sessionId} (idle)`,
     );
     const events = await client.request<{ handled: true; output: string }>(
       "command/execute",
-      { name: "events", threadId },
+      { name: "events", sessionId },
     );
     assert.equal(events.output.includes("session_configured"), true);
     const init = await client.request<{ handled: true; output: string }>(
       "command/execute",
-      { name: "init", threadId },
+      { name: "init", sessionId },
     );
     assert.equal(init.output.includes("[bootstrap]"), true);
     assert.equal(init.output.includes("skills"), true);
     const unsupported = await client.request<{
       handled: false;
       output: string;
-    }>("command/execute", { name: "diff", threadId });
+    }>("command/execute", { name: "diff", sessionId });
     assert.equal(unsupported.handled, false);
     assert.equal(unsupported.output.includes("core-candidate"), true);
 
@@ -215,20 +216,21 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
       output: string;
     }>("command/execute", { name: "session", cwd: root });
     assert.equal(sessionList.output.includes("sessions for"), true);
-    assert.equal(sessionList.output.includes(`1. ${threadId}`), true);
+    assert.equal(sessionList.output.includes("0. new session"), true);
+    assert.equal(sessionList.output.includes(`id: ${sessionId}`), true);
 
     const restoredByNumber = await client.request<{
       handled: true;
       action: "restore";
-      thread: { id: string };
+      session: { id: string };
     }>("command/execute", { name: "restore", args: "1", cwd: root });
-    assert.equal(restoredByNumber.thread.id, threadId);
+    assert.equal(restoredByNumber.session.id, sessionId);
 
-    const logFile = join(persistenceDir, `${threadId}.jsonl`);
+    const logFile = join(persistenceDir, `${sessionId}.jsonl`);
     assert.equal(existsSync(logFile), true);
     let records = readJsonl(logFile);
     assert.equal(
-      records.some((record) => record.type === "thread_started"),
+      records.some((record) => record.type === "session_started"),
       true,
     );
     assert.equal(
@@ -252,10 +254,10 @@ test("session server owns thread events, subscribers, and JSONL persistence", as
     subscriber.close();
     records = await waitForLogRecord(
       logFile,
-      (record) => record.type === "thread_detached",
+      (record) => record.type === "session_detached",
     );
     assert.equal(
-      records.some((record) => record.type === "thread_detached"),
+      records.some((record) => record.type === "session_detached"),
       true,
     );
   } finally {
@@ -287,14 +289,13 @@ test("session server restores a saved workspace session by id or number", async 
     const firstAddress = await firstServer.listen(0, "127.0.0.1");
     firstClient = await SessionClient.connect(firstAddress.url);
     await firstClient.request("initialize");
-    const startResponse = await firstClient.request<{ thread: { id: string } }>(
-      "thread/start",
-      { cwd: root },
-    );
-    const originalThreadId = startResponse.thread.id;
+    const startResponse = await firstClient.request<{
+      session: { id: string };
+    }>("session/start", { cwd: root });
+    const originalSessionId = startResponse.session.id;
     const completed = waitForMethod(firstClient, "turn/completed");
     await firstClient.request("turn/start", {
-      threadId: originalThreadId,
+      sessionId: originalSessionId,
       prompt: "first turn",
     });
     await completed;
@@ -314,36 +315,42 @@ test("session server restores a saved workspace session by id or number", async 
     await secondClient.request("initialize");
 
     const listResponse = await secondClient.request<{
-      sessions: Array<{ number: number; id: string; eventCount: number }>;
-    }>("thread/list", { cwd: root });
+      sessions: Array<{
+        number: number;
+        id: string;
+        eventCount: number;
+        title: string;
+      }>;
+    }>("session/list", { cwd: root });
     assert.deepEqual(
       listResponse.sessions.map((session) => session.id),
-      [originalThreadId],
+      [originalSessionId],
     );
     assert.equal(listResponse.sessions[0]?.number, 1);
+    assert.equal(listResponse.sessions[0]?.title, "first turn");
     assert.equal(listResponse.sessions[0]?.eventCount >= 6, true);
 
     const restoreResponse = await secondClient.request<{
-      thread: { id: string; status: string };
+      session: { id: string; status: string };
       events: unknown[];
-    }>("thread/restore", { cwd: root, selector: "1" });
-    assert.equal(restoreResponse.thread.id, originalThreadId);
-    assert.equal(restoreResponse.thread.status, "idle");
+    }>("session/restore", { cwd: root, selector: "1" });
+    assert.equal(restoreResponse.session.id, originalSessionId);
+    assert.equal(restoreResponse.session.status, "idle");
     assert.equal(restoreResponse.events.length >= 6, true);
 
     const completedAgain = waitForMethod(secondClient, "turn/completed");
     await secondClient.request("turn/start", {
-      threadId: originalThreadId,
+      sessionId: originalSessionId,
       prompt: "second turn",
     });
     await completedAgain;
     await secondServer.flushPersistence();
 
     const records = readJsonl(
-      join(persistenceDir, `${originalThreadId}.jsonl`),
+      join(persistenceDir, `${originalSessionId}.jsonl`),
     );
     assert.equal(
-      records.some((record) => record.type === "thread_restored"),
+      records.some((record) => record.type === "session_restored"),
       true,
     );
     assert.equal(
@@ -354,6 +361,82 @@ test("session server restores a saved workspace session by id or number", async 
     firstClient?.close();
     secondClient?.close();
     await firstServer?.close().catch(() => undefined);
+    await secondServer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session ownership uses last prompt attempt across socket servers", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-owner-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  let firstServer: SessionServer | undefined;
+  let secondServer: SessionServer | undefined;
+  let firstClient: SessionClient | undefined;
+  let secondClient: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    firstServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    secondServer = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    firstClient = await SessionClient.connect(
+      (await firstServer.listen(0, "127.0.0.1")).url,
+    );
+    secondClient = await SessionClient.connect(
+      (await secondServer.listen(0, "127.0.0.1")).url,
+    );
+    await firstClient.request("initialize");
+    await secondClient.request("initialize");
+
+    const startResponse = await firstClient.request<{
+      session: { id: string };
+    }>("session/start", { cwd: root });
+    const sessionId = startResponse.session.id;
+    const firstCompleted = waitForMethod(firstClient, "turn/completed");
+    await firstClient.request("turn/start", {
+      sessionId,
+      prompt: "first owner prompt",
+    });
+    await firstCompleted;
+    await firstServer.flushPersistence();
+
+    await secondClient.request("session/restore", { cwd: root, selector: "1" });
+    await secondServer.flushPersistence();
+
+    const ownershipChanged = waitForMethod(
+      firstClient,
+      "session/ownershipChanged",
+    );
+    const secondCompleted = waitForMethod(firstClient, "turn/completed");
+    await firstClient.request("turn/start", {
+      sessionId,
+      prompt: "claim ownership again",
+    });
+    await ownershipChanged;
+    await secondCompleted;
+    await firstServer.flushPersistence();
+
+    const records = readJsonl(join(persistenceDir, `${sessionId}.jsonl`));
+    assert.equal(
+      records.filter((record) => record.type === "turn_start_requested").length,
+      2,
+    );
+  } finally {
+    firstClient?.close();
+    secondClient?.close();
+    await firstServer?.close();
     await secondServer?.close();
     rmSync(root, { recursive: true, force: true });
   }

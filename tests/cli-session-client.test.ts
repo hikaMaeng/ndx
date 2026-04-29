@@ -9,7 +9,7 @@ import {
 } from "../src/cli/session-client.js";
 import type { SessionNotification } from "../src/session/client.js";
 
-test("CLI session controller initializes socket, starts thread, and renders status", async () => {
+test("CLI session controller initializes socket, starts session, and renders status", async () => {
   const transport = new FakeTransport();
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -21,17 +21,17 @@ test("CLI session controller initializes socket, starts thread, and renders stat
   });
 
   await controller.initialize();
-  await controller.startThread();
+  await controller.startSession();
   const status = await controller.handleCommand("/status");
 
   assert.deepEqual(
     transport.requests.map((request) => request.method),
-    ["initialize", "thread/start", "command/execute"],
+    ["initialize", "session/start", "command/execute"],
   );
   assert.deepEqual(status, { handled: true, shouldExit: false });
   assert.equal(
     stdout.at(-1),
-    "server: ndx-ts-session-server\nthread: thread-1 (idle)",
+    "server: ndx-ts-session-server\nsession: empty session-1 (idle)",
   );
   assert.equal(
     stderr
@@ -53,12 +53,12 @@ test("CLI session controller records initialization events outside prompt contex
   });
 
   await controller.initialize();
-  await controller.startThread();
+  await controller.startSession();
   const run = controller.runPrompt("hello");
   transport.emit({
-    method: "thread/sessionConfigured",
+    method: "session/configured",
     params: {
-      threadId: "thread-1",
+      sessionId: "session-1",
       event: {
         type: "session_configured",
         sessionId: "session-1",
@@ -74,7 +74,7 @@ test("CLI session controller records initialization events outside prompt contex
   transport.emit({
     method: "turn/completed",
     params: {
-      threadId: "thread-1",
+      sessionId: "session-1",
       event: {
         type: "turn_complete",
         sessionId: "session-1",
@@ -99,7 +99,7 @@ test("CLI session controller records initialization events outside prompt contex
     params: {
       name: "events",
       args: undefined,
-      threadId: "thread-1",
+      sessionId: "session-1",
       cwd: "/workspace",
     },
   });
@@ -131,7 +131,7 @@ test("CLI session controller does not send registered unsupported slash commands
   });
 
   await controller.initialize();
-  await controller.startThread();
+  await controller.startSession();
   const result = await controller.handleCommand("/diff");
 
   assert.deepEqual(result, { handled: true, shouldExit: false });
@@ -142,7 +142,7 @@ test("CLI session controller does not send registered unsupported slash commands
   );
 });
 
-test("CLI session controller switches active thread after restore command", async () => {
+test("CLI session controller switches active session after restore command", async () => {
   const transport = new FakeTransport();
   const stdout: string[] = [];
   const controller = new CliSessionController({
@@ -152,17 +152,17 @@ test("CLI session controller switches active thread after restore command", asyn
   });
 
   await controller.initialize();
-  await controller.startThread();
+  await controller.startSession();
   const result = await controller.handleCommand("/restore 2");
 
   assert.deepEqual(result, { handled: true, shouldExit: false });
-  assert.equal(stdout.at(-1), "restored session thread-2");
+  assert.equal(stdout.at(-1), "restored session 2: restored title");
   assert.deepEqual(transport.requests.at(-1), {
     method: "command/execute",
     params: {
       name: "restore",
       args: "2",
-      threadId: "thread-1",
+      sessionId: "session-1",
       cwd: "/workspace",
     },
   });
@@ -171,10 +171,10 @@ test("CLI session controller switches active thread after restore command", asyn
   transport.emit({
     method: "turn/completed",
     params: {
-      threadId: "thread-2",
+      sessionId: "session-2",
       event: {
         type: "turn_complete",
-        sessionId: "thread-2",
+        sessionId: "session-2",
         turnId: "turn-2",
         finalText: "continued",
       },
@@ -185,7 +185,7 @@ test("CLI session controller switches active thread after restore command", asyn
     transport.requests.some(
       (request) =>
         request.method === "turn/start" &&
-        (request.params as { threadId?: string }).threadId === "thread-2",
+        (request.params as { sessionId?: string }).sessionId === "session-2",
     ),
     true,
   );
@@ -208,20 +208,21 @@ class FakeTransport implements CliSessionTransport {
           "initialize",
           "command/list",
           "command/execute",
-          "thread/start",
+          "session/start",
           "turn/start",
         ],
       } as T;
     }
-    if (method === "thread/start") {
+    if (method === "session/start") {
       return {
-        thread: {
-          id: "thread-1",
+        session: {
+          id: "session-1",
           cwd: "/workspace",
           status: "idle",
           model: "mock",
           createdAt: 1,
           updatedAt: 1,
+          title: "empty",
         },
       } as T;
     }
@@ -229,7 +230,7 @@ class FakeTransport implements CliSessionTransport {
       return { turn: { id: "turn-1", status: "in_progress" } } as T;
     }
     if (method === "turn/interrupt") {
-      return { thread: { id: "thread-1" } } as T;
+      return { session: { id: "session-1" } } as T;
     }
     if (method === "command/execute") {
       const command = params as { name: string };
@@ -237,7 +238,8 @@ class FakeTransport implements CliSessionTransport {
         return {
           handled: true,
           action: "print",
-          output: "server: ndx-ts-session-server\nthread: thread-1 (idle)",
+          output:
+            "server: ndx-ts-session-server\nsession: empty session-1 (idle)",
         } as T;
       }
       if (command.name === "init") {
@@ -270,14 +272,16 @@ class FakeTransport implements CliSessionTransport {
         return {
           handled: true,
           action: "restore",
-          output: "restored session thread-2",
-          thread: {
-            id: "thread-2",
+          output: "restored session 2: restored title",
+          session: {
+            id: "session-2",
             cwd: "/workspace",
             status: "idle",
             model: "mock",
             createdAt: 1,
             updatedAt: 2,
+            number: 2,
+            title: "restored title",
           },
         } as T;
       }
