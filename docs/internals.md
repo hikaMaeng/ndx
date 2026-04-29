@@ -96,6 +96,15 @@ or replacing the owner file during another server's claim. Stale owner locks are
 removed after the configured stale window so a crashed claimant does not block
 future restore or prompt attempts indefinitely.
 
+`turn/start` flushes the session start and turn start records before the
+runtime is scheduled. The response still returns before model completion, but a
+fast model response cannot be mistaken for a deleted session just because the
+JSONL writer has not created the file yet.
+
+Server shutdown sends WebSocket close frames and then destroys the upgraded
+sockets. Tests and short-lived CLI clients must not wait indefinitely for peer
+close handshakes when a session server is being torn down.
+
 The CLI is a client of this server. In normal one-shot and interactive modes it
 starts an embedded loopback server and talks to that server over WebSocket. In
 `ndx serve` mode it only hosts the server. In `--connect` mode it attaches to an
