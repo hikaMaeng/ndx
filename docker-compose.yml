@@ -2,8 +2,13 @@ services:
   ndx-agent:
     build:
       context: .
+      args:
+        NDX_GIT_REF: ${NDX_GIT_REF:-main}
     image: ndx-agent:local
     working_dir: /workspace
+    volumes:
+      - ./docker/volume/workspace:/workspace
+      - ./docker/volume/home-ndx:/home/.ndx
     stdin_open: true
     tty: true
     command: ["sleep", "infinity"]
