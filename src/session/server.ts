@@ -533,26 +533,28 @@ export class SessionServer {
       cwd,
       requestedAt: session.updatedAt,
     });
-    void session.runtime
-      .submit(
-        {
-          id: turnId,
-          op: { type: "user_turn", prompt, cwd },
-        },
-        (event) => this.handleRuntimeEvent(session, event),
-      )
-      .catch((error: unknown) => {
-        session.status = "failed";
-        session.updatedAt = Date.now();
-        this.publish(session, {
-          method: "error",
-          params: {
-            sessionId: session.id,
-            turnId,
-            message: errorMessage(error),
+    setImmediate(() => {
+      void session.runtime
+        .submit(
+          {
+            id: turnId,
+            op: { type: "user_turn", prompt, cwd },
           },
+          (event) => this.handleRuntimeEvent(session, event),
+        )
+        .catch((error: unknown) => {
+          session.status = "failed";
+          session.updatedAt = Date.now();
+          this.publish(session, {
+            method: "error",
+            params: {
+              sessionId: session.id,
+              turnId,
+              message: errorMessage(error),
+            },
+          });
         });
-      });
+    });
     return Promise.resolve({ turn: { id: turnId, status: "in_progress" } });
   }
 
