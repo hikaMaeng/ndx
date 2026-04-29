@@ -1,4 +1,4 @@
-import type { JsonObject } from "../shared/types.js";
+import type { JsonObject } from "../../shared/types.js";
 import type { ToolSchema } from "./types.js";
 
 export function functionTool(

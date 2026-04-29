@@ -10,7 +10,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runAgent, type AgentEvent } from "../src/agent/loop.js";
-import { createToolRegistry } from "../src/tools/registry.js";
+import { createToolRegistry } from "../src/session/tools/registry.js";
 import type {
   ModelClient,
   ModelResponse,

@@ -4,4 +4,4 @@ export type {
   McpServerSettings,
   McpSettings,
   McpToolSettings,
-} from "../../shared/types.js";
+} from "../../../shared/types.js";

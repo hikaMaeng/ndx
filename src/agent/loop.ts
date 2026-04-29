@@ -1,7 +1,7 @@
 import { throwIfAborted } from "../runtime/abort.js";
-import { createToolRegistry } from "../tools/registry.js";
-import { executeToolInWorker } from "../tools/process-runner.js";
-import { unknownArgs } from "../tools/schema.js";
+import { createToolRegistry } from "../session/tools/registry.js";
+import { executeToolInWorker } from "../session/tools/process-runner.js";
+import { unknownArgs } from "../session/tools/schema.js";
 import type {
   ModelClient,
   ModelResponse,
@@ -9,7 +9,7 @@ import type {
   NdxConfig,
   TokenUsage,
 } from "../shared/types.js";
-import type { ToolRegistry } from "../tools/registry.js";
+import type { ToolRegistry } from "../session/tools/registry.js";
 
 export interface AgentRunOptions {
   cwd: string;

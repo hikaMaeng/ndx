@@ -4,16 +4,20 @@
 
 Top-level `src` contains role folders only.
 
-| Folder         | Role                                                                 |
-| -------------- | -------------------------------------------------------------------- |
-| `src/cli/`     | CLI entrypoint, argument parsing, session client wiring.             |
-| `src/config/`  | JSON settings discovery, merge, and active provider resolution.      |
-| `src/model/`   | Model client implementations and test model client.                  |
-| `src/agent/`   | Model/tool sampling loop.                                            |
-| `src/runtime/` | Turn coordinator, abort helpers, provider error classification.      |
-| `src/session/` | WebSocket session server/client plus JSONL persistence queue/writer. |
-| `src/shared/`  | Cross-module protocol and runtime data contracts.                    |
-| `src/tools/`   | Tool registry, worker process launcher, built-in task tools, MCP.    |
+| Folder         | Role                                                                      |
+| -------------- | ------------------------------------------------------------------------- |
+| `src/cli/`     | CLI entrypoint, argument parsing, session client wiring.                  |
+| `src/config/`  | JSON settings discovery, merge, and active provider resolution.           |
+| `src/model/`   | Model client implementations and test model client.                       |
+| `src/agent/`   | Model/tool sampling loop.                                                 |
+| `src/runtime/` | Turn coordinator, abort helpers, provider error classification.           |
+| `src/session/` | WebSocket session server/client, JSONL persistence, model tool execution. |
+| `src/shared/`  | Cross-module protocol and runtime data contracts.                         |
+
+`src/session/tools/` is intentionally nested under `session`. It contains the
+tool registry, worker process launcher, built-in task tools, external `tool.json`
+adapter, and MCP adapter used by session turns. There is no top-level `src/tools`
+domain.
 
 ## Runtime Flow
 

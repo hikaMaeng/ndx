@@ -4,7 +4,7 @@ import {
   AgentAbortError,
   abortReason,
   throwIfAborted,
-} from "../runtime/abort.js";
+} from "../../runtime/abort.js";
 import type { ToolContext, ToolExecutionResult } from "./types.js";
 
 export async function executeToolInWorker(

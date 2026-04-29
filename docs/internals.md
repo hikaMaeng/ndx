@@ -27,7 +27,11 @@ adapter.
 
 The registry owns only task orchestration tool definitions. Capability tools come from filesystem `tool.json` packages. MCP tools come from project or global settings and are exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
 
-Every model tool call is sent to `src/tools/worker.ts` as a separate Node process. Filesystem tools then execute their manifest command as another process. Task tools execute inside the worker, never inside the agent process.
+Every model tool call is sent to `src/session/tools/worker.ts` as a separate
+Node process. Filesystem tools then execute their manifest command as another
+process. Task, input, planning, patch, and collaboration tools belong under the
+session-owned `src/session/tools/` tree; they are not a top-level source domain.
+Task tools execute inside the worker, never inside the agent process.
 
 ## Runtime Session
 
