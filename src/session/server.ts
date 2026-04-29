@@ -14,6 +14,7 @@ import type { Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
 import { ensureGlobalNdxHome } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
+import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import { SessionLogStore } from "./log-store.js";
 import {
   BUILT_IN_SLASH_COMMANDS,
@@ -726,6 +727,7 @@ export class SessionServer {
       config: this.options.config,
       client: this.options.createClient(),
       sessionId: persisted.id,
+      history: conversationHistoryFromRuntimeEvents(persisted.events),
       sources: this.options.sources,
       bootstrap: this.bootstrap,
     });
@@ -1108,6 +1110,7 @@ export class SessionServer {
         config: this.options.config,
         client: this.options.createClient(),
         sessionId: persisted.id,
+        history: conversationHistoryFromRuntimeEvents(persisted.events),
         sources: this.options.sources,
         bootstrap: this.bootstrap,
       }),

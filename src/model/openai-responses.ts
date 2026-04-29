@@ -4,7 +4,11 @@ import type {
   TokenUsage,
 } from "../shared/types.js";
 import { errorText, postJson, providerHeaders } from "./http.js";
-import type { ModelInput, ProviderRequestOptions } from "./types.js";
+import type {
+  ModelConversationItem,
+  ModelInput,
+  ProviderRequestOptions,
+} from "./types.js";
 
 interface ResponsesPayload {
   id?: string;
@@ -40,7 +44,7 @@ export class OpenAiResponsesAdapter {
       {
         model: this.options.model,
         instructions: this.options.instructions,
-        input,
+        input: responsesInput(input),
         previous_response_id: previousResponseId,
         tools: responsesTools(tools),
         tool_choice: "auto",
@@ -53,6 +57,40 @@ export class OpenAiResponsesAdapter {
       (await response.json()) as ResponsesPayload,
     );
   }
+}
+
+export function responsesInput(input: ModelInput): unknown {
+  if (!Array.isArray(input)) {
+    return input;
+  }
+  return input.flatMap((item) => {
+    if (isMessage(item)) {
+      return [
+        {
+          role: item.role,
+          content: item.content,
+        },
+      ];
+    }
+    if (isAssistantToolCalls(item)) {
+      return item.toolCalls.map((call) => ({
+        type: "function_call",
+        call_id: call.callId,
+        name: call.name,
+        arguments: call.arguments,
+      }));
+    }
+    if (isFunctionCallOutput(item)) {
+      return [
+        {
+          type: "function_call_output",
+          call_id: item.call_id,
+          output: item.output,
+        },
+      ];
+    }
+    return [item];
+  });
 }
 
 export function responsesTools(tools: unknown[]): unknown[] {
@@ -126,4 +164,36 @@ function normalizeResponsesUsage(
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isMessage(
+  input: unknown,
+): input is Extract<ModelConversationItem, { type: "message" }> {
+  return (
+    isObject(input) &&
+    input.type === "message" &&
+    (input.role === "user" || input.role === "assistant") &&
+    typeof input.content === "string"
+  );
+}
+
+function isAssistantToolCalls(
+  input: unknown,
+): input is Extract<ModelConversationItem, { type: "assistant_tool_calls" }> {
+  return (
+    isObject(input) &&
+    input.type === "assistant_tool_calls" &&
+    Array.isArray(input.toolCalls)
+  );
+}
+
+function isFunctionCallOutput(
+  input: unknown,
+): input is Extract<ModelConversationItem, { type: "function_call_output" }> {
+  return (
+    isObject(input) &&
+    input.type === "function_call_output" &&
+    typeof input.call_id === "string" &&
+    typeof input.output === "string"
+  );
 }

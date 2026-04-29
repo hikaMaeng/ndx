@@ -277,6 +277,7 @@ test("session server restores a saved workspace session by id or number", async 
   const root = mkdtempSync(join(tmpdir(), "ndx-session-restore-"));
   const globalDir = join(root, "home", ".ndx");
   const persistenceDir = join(root, "server-sessions");
+  const restoredModel = new CapturingModelClient("restored context ok");
   let firstServer: SessionServer | undefined;
   let secondServer: SessionServer | undefined;
   let firstClient: SessionClient | undefined;
@@ -312,7 +313,7 @@ test("session server restores a saved workspace session by id or number", async 
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
       sources: [join(globalDir, "settings.json")],
-      createClient: () => new MockModelClient(),
+      createClient: () => restoredModel,
       persistenceDir,
     });
     const secondAddress = await secondServer.listen(0, "127.0.0.1");
@@ -350,6 +351,14 @@ test("session server restores a saved workspace session by id or number", async 
     });
     await completedAgain;
     await secondServer.flushPersistence();
+
+    assert.ok(Array.isArray(restoredModel.inputs[0]));
+    assert.deepEqual(
+      (restoredModel.inputs[0] as Array<{ content?: string }>)
+        .map((item) => item.content)
+        .filter((content): content is string => content !== undefined),
+      ["first turn", "mock agent completed", "second turn"],
+    );
 
     const records = readJsonl(
       join(persistenceDir, `${originalSessionId}.jsonl`),
@@ -583,6 +592,7 @@ test("session ownership discards in-flight output from a previous socket server"
       prompt: "stale in flight prompt",
     });
     await blockedTurnStarted;
+    await firstModel.waitForBlockedTurn();
 
     await secondClient.request("session/restore", { cwd: root, selector: "1" });
     await secondServer.flushPersistence();
@@ -818,12 +828,19 @@ class BlockingModelClient implements ModelClient {
   private releaseBlocked:
     | ((response: ModelResponse | PromiseLike<ModelResponse>) => void)
     | undefined;
+  private blockedTurn:
+    | {
+        promise: Promise<void>;
+        resolve: () => void;
+      }
+    | undefined;
 
   async create(input: unknown): Promise<ModelResponse> {
     const prompt = JSON.stringify(input);
     if (prompt.includes("stale in flight prompt")) {
       return new Promise<ModelResponse>((resolve) => {
         this.releaseBlocked = resolve;
+        this.blockedTurn?.resolve();
       });
     }
     return {
@@ -842,5 +859,39 @@ class BlockingModelClient implements ModelClient {
       raw: { blocked: true },
     });
     this.releaseBlocked = undefined;
+  }
+
+  waitForBlockedTurn(): Promise<void> {
+    if (this.releaseBlocked !== undefined) {
+      return Promise.resolve();
+    }
+    if (this.blockedTurn === undefined) {
+      this.blockedTurn = createDeferred<void>();
+    }
+    return this.blockedTurn.promise;
+  }
+}
+
+function createDeferred<T>(): { promise: Promise<T>; resolve: () => void } {
+  let resolveDeferred: () => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = () => resolve(undefined as T);
+  });
+  return { promise, resolve: resolveDeferred };
+}
+
+class CapturingModelClient implements ModelClient {
+  readonly inputs: unknown[] = [];
+
+  constructor(private readonly text: string) {}
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.inputs.push(input);
+    return {
+      id: `captured-${this.inputs.length}`,
+      text: this.text,
+      toolCalls: [],
+      raw: { input },
+    };
   }
 }

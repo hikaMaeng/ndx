@@ -12,12 +12,14 @@ import type {
   NdxBootstrapReport,
   NdxConfig,
 } from "../shared/types.js";
+import type { ModelConversationItem } from "../model/types.js";
 
 export interface AgentRuntimeOptions {
   cwd: string;
   config: NdxConfig;
   client: ModelClient;
   sessionId?: string;
+  history?: ModelConversationItem[];
   sources?: string[];
   bootstrap: NdxBootstrapReport;
 }
@@ -32,6 +34,7 @@ export class AgentRuntime {
   private readonly client: ModelClient;
   private readonly sources: string[];
   private readonly bootstrap: NdxBootstrapReport;
+  private readonly history: ModelConversationItem[];
   private configured = false;
   private activeTurn: ActiveTurn | undefined;
   private readonly abortedTurnIds = new Set<string>();
@@ -41,6 +44,7 @@ export class AgentRuntime {
     this.cwd = options.cwd;
     this.config = options.config;
     this.client = options.client;
+    this.history = options.history ?? [];
     this.sources = options.sources ?? [];
     this.bootstrap = options.bootstrap;
   }
@@ -68,6 +72,12 @@ export class AgentRuntime {
     };
     this.activeTurn = activeTurn;
     this.abortedTurnIds.delete(turnId);
+    const historyBeforeTurn = [...this.history];
+    this.history.push({
+      type: "message",
+      role: "user",
+      content: submission.op.prompt,
+    });
     this.emit(
       {
         type: "turn_started",
@@ -85,6 +95,7 @@ export class AgentRuntime {
         config: this.config,
         client: this.client,
         prompt: submission.op.prompt,
+        history: historyBeforeTurn,
         signal: activeTurn.controller.signal,
         onEvent: (event) => this.forwardAgentEvent(turnId, event, onEvent),
       });
@@ -179,6 +190,13 @@ export class AgentRuntime {
     onEvent?: RuntimeEventHandler,
   ): void {
     if (event.type === "model_text") {
+      if (event.text.length > 0) {
+        this.history.push({
+          type: "message",
+          role: "assistant",
+          content: event.text,
+        });
+      }
       this.emit(
         {
           type: "agent_message",
@@ -191,6 +209,16 @@ export class AgentRuntime {
       return;
     }
     if (event.type === "tool_call") {
+      this.history.push({
+        type: "assistant_tool_calls",
+        toolCalls: [
+          {
+            callId: event.callId,
+            name: event.name,
+            arguments: event.arguments,
+          },
+        ],
+      });
       this.emit(
         {
           type: "tool_call",
@@ -204,6 +232,11 @@ export class AgentRuntime {
       return;
     }
     if (event.type === "tool_result") {
+      this.history.push({
+        type: "function_call_output",
+        call_id: event.callId,
+        output: event.output,
+      });
       this.emit(
         {
           type: "tool_result",

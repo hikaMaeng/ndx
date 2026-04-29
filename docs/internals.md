@@ -82,8 +82,9 @@ JSONL records under `<globalDir>/sessions/ts-server`.
 sessions with saved records for a requested resolved `cwd`. Workspace numbers
 are monotonically increasing sequence values assigned on the first user prompt,
 not temporary list indexes. `session/restore` reloads saved runtime events,
-creates an `AgentRuntime` with the original session id, and claims the session
-owner file, but it does not reconstruct prior model context. `session/delete`
+rebuilds model conversation history from prior user turns, assistant messages,
+tool calls, and tool results, creates an `AgentRuntime` with the original
+session id, and claims the session owner file. `session/delete`
 removes a non-current session's JSONL and owner files. A server that still holds
 the deleted session checks for the missing JSONL when it receives a prompt and
 when a response reaches a terminal event; if missing, it emits

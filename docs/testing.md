@@ -40,6 +40,8 @@ npm run deploy
 - Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
 - Workspace-scoped session listing, restore by session id or list number, and
   non-current session deletion.
+- Restore rebuilds provider-facing model conversation history from saved
+  runtime events.
 - Empty sessions stay unnumbered and unpersisted until the first prompt.
 - Session ownership is reclaimed by the last socket server that attempts a prompt.
 - Deleted sessions notify stale socket owners and close the stale server on the

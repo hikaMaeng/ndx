@@ -1,8 +1,14 @@
 import type { ModelResponse } from "../shared/types.js";
+import type { ModelToolCall } from "../shared/types.js";
+
+export type ModelConversationItem =
+  | { type: "message"; role: "user" | "assistant"; content: string }
+  | { type: "assistant_tool_calls"; toolCalls: ModelToolCall[] }
+  | { type: "function_call_output"; call_id: string; output: string };
 
 export type ModelInput =
   | string
-  | Array<{ type: "function_call_output"; call_id: string; output: string }>
+  | ModelConversationItem[]
   | unknown;
 
 export interface ModelAdapter {

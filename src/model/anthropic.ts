@@ -4,7 +4,11 @@ import type {
   TokenUsage,
 } from "../shared/types.js";
 import { errorText, postJson } from "./http.js";
-import type { ModelInput, ProviderRequestOptions } from "./types.js";
+import type {
+  ModelConversationItem,
+  ModelInput,
+  ProviderRequestOptions,
+} from "./types.js";
 
 interface AnthropicContent {
   type?: string;
@@ -91,17 +95,73 @@ export class AnthropicMessagesAdapter {
       return;
     }
     if (Array.isArray(input)) {
-      this.messages.push({
-        role: "user",
-        content: input.filter(isFunctionCallOutput).map((item) => ({
-          type: "tool_result",
-          tool_use_id: item.call_id,
-          content: item.output,
-        })),
-      });
+      if (input.some((item) => isMessage(item) || isAssistantToolCalls(item))) {
+        this.messages.length = 0;
+      }
+      for (const item of input) {
+        if (isFunctionCallOutput(item)) {
+          this.messages.push({
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: item.call_id,
+                content: item.output,
+              },
+            ],
+          });
+        } else if (isMessage(item)) {
+          this.messages.push({
+            role: item.role,
+            content: item.content,
+          });
+        } else if (isAssistantToolCalls(item)) {
+          this.messages.push({
+            role: "assistant",
+            content: item.toolCalls.map((call) => ({
+              type: "tool_use",
+              id: call.callId,
+              name: call.name,
+              input: safeJsonObject(call.arguments),
+            })),
+          });
+        }
+      }
       return;
     }
     this.messages.push({ role: "user", content: JSON.stringify(input) });
+  }
+}
+
+function isMessage(
+  input: unknown,
+): input is Extract<ModelConversationItem, { type: "message" }> {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    (input as { type?: unknown }).type === "message" &&
+    ((input as { role?: unknown }).role === "user" ||
+      (input as { role?: unknown }).role === "assistant") &&
+    typeof (input as { content?: unknown }).content === "string"
+  );
+}
+
+function isAssistantToolCalls(
+  input: unknown,
+): input is Extract<ModelConversationItem, { type: "assistant_tool_calls" }> {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    (input as { type?: unknown }).type === "assistant_tool_calls" &&
+    Array.isArray((input as { toolCalls?: unknown }).toolCalls)
+  );
+}
+
+function safeJsonObject(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return {};
   }
 }
 

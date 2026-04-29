@@ -93,9 +93,11 @@ original JSONL file. `/deleteSession` lists sessions for the same `cwd`, omits
 the current session, accepts Enter as cancel, and removes the selected JSONL and
 owner files.
 
-Restore does not yet replay prior turns into model context. The current agent
-loop samples each submitted prompt independently, so restore currently means
-server identity, event history, ownership, and persistence continuation.
+Restore also replays prior turns into model context. Runtime events are
+converted back into provider-facing conversation items: `turn_started` becomes a
+user message, `agent_message` and `turn_complete` become assistant messages,
+and prior `tool_call`/`tool_result` pairs are restored with stable synthetic
+call ids.
 
 Session ownership is tracked in a separate owner file per session. A socket
 server claims ownership before processing a prompt. If another server has taken
