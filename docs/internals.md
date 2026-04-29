@@ -13,7 +13,21 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 ## Active Provider
 
-`finalizeConfig` resolves `model` to one `models[]` entry, then resolves that entry's `provider` against `providers`. OpenAI-compatible execution reads URL and key from that resolved provider only.
+`finalizeConfig` resolves `model` to one `models[]` entry, then resolves that entry's `provider` against `providers`. Provider type is validated as `openai` or `anthropic`; execution reads URL and key from that resolved provider only.
+
+`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global defaults only: `settings.json` and `/core/tools/shell`. Existing files are left untouched so local secrets and custom core tools are not overwritten.
+
+## Model Adapters
+
+`src/model/factory.ts` owns provider selection. The common model contract is the existing `ModelClient` shape: input, optional previous response id, tool schemas, then normalized text/tool calls/usage/raw output.
+
+OpenAI provider instances own two adapters. `OpenAiResponsesAdapter` sends `/responses` requests and returns response ids for continuation. If `/responses` returns `404` or `405`, `OpenAiResponsesClient` switches that client instance to `OpenAiChatCompletionsAdapter`, which maintains volatile chat history and maps `function_call_output` items to tool messages.
+
+`AnthropicMessagesAdapter` maintains volatile Messages history, converts function schemas into Anthropic `tools[]`, converts `tool_use` content blocks into normalized `ModelToolCall`s, and converts `function_call_output` items back into `tool_result` user content blocks.
+
+## Process Library
+
+`src/process/index.ts` is a standalone library. `runProcess` wraps child process spawning, stdout/stderr capture, timeout, and abort handling without importing ndx modules. `TaskQueue` accepts nested serial and parallel plans, creates independent abort controllers per task, and lets task implementations register cancellation hooks. Multiple `TaskQueue` instances can coexist without shared state.
 
 ## Tool Loop
 
@@ -27,11 +41,13 @@ adapter.
 
 The registry owns only task orchestration tool definitions. Capability tools come from filesystem `tool.json` packages. MCP tools come from project or global settings and are exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
 
-Every model tool call is sent to `src/session/tools/worker.ts` as a separate
-Node process. Filesystem tools then execute their manifest command as another
-process. Task, input, planning, patch, and collaboration tools belong under the
-session-owned `src/session/tools/` tree; they are not a top-level source domain.
-Task tools execute inside the worker, never inside the agent process.
+Every model tool call is sent through `src/process/runProcess` to
+`src/session/tools/worker.ts` as a separate Node process. Filesystem tools then
+execute their manifest command through the same process library. Task,
+input, planning, and collaboration tools belong under the session-owned
+`src/session/tools/` tree because they mutate session task state; capability
+tools such as shell remain external `/core/tools` packages. Task tools execute
+inside the worker, never inside the agent process.
 
 ## Runtime Session
 

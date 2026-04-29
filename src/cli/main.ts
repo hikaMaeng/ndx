@@ -4,8 +4,8 @@ import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { loadConfig } from "../config/index.js";
+import { createProviderModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
-import { OpenAiResponsesClient } from "../model/openai.js";
 import { SessionClient, type SessionNotification } from "../session/client.js";
 import { SessionServer, type SessionServerAddress } from "../session/server.js";
 import type { RuntimeEventMsg } from "../shared/protocol.js";
@@ -223,7 +223,7 @@ async function waitForShutdown(): Promise<void> {
 }
 
 function createClient(mock: boolean, config: NdxConfig): ModelClient {
-  return mock ? new MockModelClient() : new OpenAiResponsesClient(config);
+  return mock ? new MockModelClient() : createProviderModelClient(config);
 }
 
 function parseArgs(argv: string[]): CliArgs {

@@ -101,6 +101,8 @@ Canonical shape:
 }
 ```
 
+`providers.<name>.type` must be `openai` or `anthropic`. `openai` targets OpenAI-compatible servers and prefers the Responses API. `anthropic` targets the Messages API.
+
 `keys` are merged into the shell tool environment. `env` is accepted as a compatibility alias but `keys` is the canonical settings field.
 
 ## Search Rules
@@ -109,14 +111,23 @@ Canonical shape:
 
 ## Model API
 
-The OpenAI-compatible adapter sends `POST {provider.url}/chat/completions` with:
+The model layer exposes one provider-neutral client contract to the agent loop:
 
-- `model`
-- `messages`
-- `tools` containing the TypeScript tool registry function schemas
-- `tool_choice = "auto"`
+- input: user text or ordered `function_call_output` items;
+- `previousResponseId` when the provider supports response chaining;
+- function tool schemas from the TypeScript tool registry;
+- normalized text, tool calls, usage, raw payload, and optional response id.
 
-If `provider.key` is an empty string, no `Authorization` header is sent. The adapter keeps chat history in memory for the current CLI run and converts tool results into `role = "tool"` messages.
+Adapters:
+
+| Provider type | Primary API                     | Fallback                                                 |
+| ------------- | ------------------------------- | -------------------------------------------------------- |
+| `openai`      | `POST {provider.url}/responses` | `POST {provider.url}/chat/completions` on `404` or `405` |
+| `anthropic`   | `POST {provider.url}/messages`  | none                                                     |
+
+OpenAI Responses sends `model`, `instructions`, `input`, `previous_response_id`, `tools`, and `tool_choice = "auto"`. Chat Completions keeps volatile messages in memory and converts tool outputs into `role = "tool"` messages. Anthropic Messages keeps volatile messages in memory, sends `system`, `messages`, `max_tokens`, and tools converted to Anthropic `input_schema`.
+
+If `provider.key` is an empty string, OpenAI-compatible requests omit `Authorization`; Anthropic requests omit `x-api-key`.
 
 ## Tool Layers
 
@@ -176,3 +187,5 @@ Project MCP tools are discovered before global MCP tools. Static `tools[]` decla
 ## Tool Execution
 
 Every model tool call is scheduled asynchronously through an isolated Node worker process. A model response containing multiple tool calls runs those workers in parallel. A sequential workflow is represented by later model turns, not by synchronous in-process execution.
+
+Process spawning and nested serial/parallel task plans are implemented in `src/process/`. The process library has no ndx package dependencies and can be instantiated multiple times; the session tool runner is only one consumer.

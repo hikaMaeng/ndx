@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, parse, resolve } from "node:path";
 import type {
   EnvMap,
@@ -20,6 +20,61 @@ const DEFAULT_GLOBAL_NDX_DIR = "/home/.ndx";
 const CONFIG_DIR = ".ndx";
 const SETTINGS_FILE = "settings.json";
 const SEARCH_FILE = "search.json";
+const CORE_SHELL_TOOL = `import { spawn } from "node:child_process";
+import { resolve } from "node:path";
+import { stdin, stdout } from "node:process";
+
+const request = JSON.parse(await readStdin());
+const args = request.arguments ?? {};
+const command = String(args.command ?? "");
+const cwd = resolve(String(args.cwd ?? request.cwd ?? process.env.NDX_TOOL_CWD ?? process.cwd()));
+const timeoutMs = Number.isInteger(args.timeoutMs) ? args.timeoutMs : 120000;
+const shell = process.platform === "win32" ? "cmd.exe" : "/bin/bash";
+const shellArgs =
+  process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-lc", command];
+
+const result = await new Promise((resolveResult, reject) => {
+  const child = spawn(shell, shellArgs, {
+    cwd,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  let out = "";
+  let err = "";
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGTERM");
+  }, timeoutMs);
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    out += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    err += chunk;
+  });
+  child.on("error", reject);
+  child.on("close", (exitCode) => {
+    clearTimeout(timer);
+    resolveResult({ command, cwd, exitCode, stdout: out, stderr: err, timedOut });
+  });
+});
+
+stdout.write(\`\${JSON.stringify(result)}\\n\`);
+
+function readStdin() {
+  return new Promise((resolveRead) => {
+    let body = "";
+    stdin.setEncoding("utf8");
+    stdin.on("data", (chunk) => {
+      body += chunk;
+    });
+    stdin.on("end", () => {
+      resolveRead(body);
+    });
+  });
+}`;
 
 export interface ConfigLoadOptions {
   globalDir?: string;
@@ -68,6 +123,7 @@ export function loadConfig(
   const sources: string[] = [];
   const merged = defaultSettings();
   const globalDir = resolveGlobalNdxDir(options);
+  ensureGlobalNdxHome(globalDir);
   let globalMcp: McpSettings = {};
   let projectMcp: McpSettings = {};
   let projectDir: string | undefined;
@@ -114,6 +170,16 @@ export function searchRulesFile(options: ConfigLoadOptions = {}): string {
   return join(resolveGlobalNdxDir(options), SEARCH_FILE);
 }
 
+/** Install required global .ndx files when they are missing. */
+export function ensureGlobalNdxHome(globalDir: string): void {
+  mkdirSync(globalDir, { recursive: true });
+  const settingsFile = join(globalDir, SETTINGS_FILE);
+  if (!existsSync(settingsFile)) {
+    writeJsonFile(settingsFile, defaultSettings());
+  }
+  ensureCoreShellTool(globalDir);
+}
+
 function defaultSettings(): PartialSettings {
   return {
     model: "qwen3.6-35b-a3b:tr",
@@ -144,6 +210,52 @@ function defaultSettings(): PartialSettings {
     keys: {},
     env: {},
   };
+}
+
+function ensureCoreShellTool(globalDir: string): void {
+  const toolDir = join(globalDir, "core", "tools", "shell");
+  const manifestFile = join(toolDir, "tool.json");
+  const runtimeFile = join(toolDir, "tool.mjs");
+  mkdirSync(toolDir, { recursive: true });
+  if (!existsSync(manifestFile)) {
+    writeJsonFile(manifestFile, {
+      type: "function",
+      function: {
+        name: "shell",
+        description:
+          "Run a shell command in the local workspace and return stdout, stderr, and exit status.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            command: {
+              type: "string",
+              description: "Command line to run through the platform shell.",
+            },
+            cwd: {
+              type: "string",
+              description:
+                "Optional working directory. Defaults to the agent cwd.",
+            },
+            timeoutMs: {
+              type: "integer",
+              description: "Optional timeout in milliseconds.",
+            },
+          },
+          required: ["command"],
+        },
+      },
+      command: "node",
+      args: ["tool.mjs"],
+    });
+  }
+  if (!existsSync(runtimeFile)) {
+    writeFileSync(runtimeFile, `${CORE_SHELL_TOOL}\n`);
+  }
+}
+
+function writeJsonFile(path: string, value: unknown): void {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function findProjectSettingsFile(cwd: string): string | undefined {
@@ -406,6 +518,15 @@ function assertProviders(
     assertOptionalString(provider.type, `providers.${name}.type`, file);
     assertOptionalString(provider.key, `providers.${name}.key`, file);
     assertOptionalString(provider.url, `providers.${name}.url`, file);
+    if (
+      provider.type !== undefined &&
+      provider.type !== "openai" &&
+      provider.type !== "anthropic"
+    ) {
+      throw new Error(
+        `providers.${name}.type in ${file} must be openai or anthropic`,
+      );
+    }
   }
 }
 

@@ -92,10 +92,12 @@ intervention point. It preserves `previousResponseId` and submits the next input
 to the model client. Provider-side continuation and any model-client request
 shaping are outside the loop state machine.
 
-`OpenAiResponsesClient` keeps chat messages in memory for the life of one client
-instance. It starts with `config.instructions` as a `system` message, appends
-string input as a `user` message, and appends function outputs as `tool`
-messages. This volatile message list is the current TypeScript context.
+OpenAI-compatible providers first use the Responses continuation id kept in
+`previousResponseId`. When `/responses` is unavailable, the client falls back to
+Chat Completions and keeps chat messages in memory for the life of one client
+instance. Anthropic providers keep Messages history in memory for the life of
+one client instance. In every case, the agent loop only stores normalized input
+and previous response id; provider-specific history stays inside the adapter.
 
 `SessionServer` queues server-owned JSONL records for thread creation,
 subscription, turn requests, runtime events, outbound notifications, and

@@ -13,7 +13,8 @@ ndx is being converted from the upstream Rust Codex codebase into a TypeScript-f
 - `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
 - `keys` entries in settings are injected into shell tool executions.
 - `--mock` runs the full agent/tool loop without a provider key.
-- Real model execution uses an OpenAI-compatible chat completions provider declared in settings.
+- Real model execution uses the provider declared in settings. OpenAI-compatible providers try Responses first and fall back to Chat Completions when `/responses` is unavailable; Anthropic providers use Messages.
+- Missing global `.ndx` essentials are installed before config loading, including `settings.json` and the core shell tool.
 
 ## Preserved Baseline
 

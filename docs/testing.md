@@ -14,6 +14,14 @@ npm run deploy
 - Global plus project settings merge precedence.
 - Global `/home/.ndx/search.json` rule loading.
 - Provider/model resolution from settings.
+- Provider type validation for `openai` and `anthropic`.
+- Global `.ndx` bootstrap for missing `settings.json` and core shell tool.
+- OpenAI Responses normalization.
+- OpenAI Chat Completions normalization.
+- OpenAI Responses-to-Chat fallback on missing `/responses`.
+- Anthropic Messages normalization.
+- Standalone process runner output capture.
+- Standalone nested serial/parallel `TaskQueue` execution.
 - `keys` and compatibility `env` merge into the shell tool environment.
 - Mock model plus shell tool execution.
 - Agent-owned task tool exposure.

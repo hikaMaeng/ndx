@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { runProcess } from "../../process/index.js";
 import {
   AgentAbortError,
   abortReason,
@@ -15,66 +15,24 @@ export async function executeToolInWorker(
 ): Promise<ToolExecutionResult> {
   throwIfAborted(signal);
   const workerPath = fileURLToPath(new URL("./worker.js", import.meta.url));
-  return await new Promise<ToolExecutionResult>((resolve, reject) => {
-    const child = spawn(process.execPath, [workerPath], {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const activeSignal = signal;
-    const cleanup = (): void => {
-      activeSignal?.removeEventListener("abort", onAbort);
-    };
-    const rejectOnce = (error: Error): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const resolveOnce = (result: ToolExecutionResult): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolve(result);
-    };
-    const onAbort = (): void => {
-      if (activeSignal === undefined) {
-        return;
-      }
-      child.kill("SIGTERM");
-      rejectOnce(new AgentAbortError(abortReason(activeSignal)));
-    };
-    activeSignal?.addEventListener("abort", onAbort, { once: true });
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => rejectOnce(error));
-    child.on("close", (exitCode) => {
-      const response = parseWorkerResponse(stdout);
-      if (exitCode !== 0 || response?.error !== undefined) {
-        rejectOnce(
-          new Error(
-            response?.error ||
-              stderr.trim() ||
-              `tool worker exited with code ${exitCode}`,
-          ),
-        );
-        return;
-      }
-      resolveOnce({ output: response?.output ?? "" });
-    });
-    child.stdin.end(JSON.stringify({ name, args, context }));
+  const result = await runProcess({
+    command: process.execPath,
+    args: [workerPath],
+    input: JSON.stringify({ name, args, context }),
+    signal,
   });
+  if (result.cancelled && signal !== undefined) {
+    throw new AgentAbortError(abortReason(signal));
+  }
+  const response = parseWorkerResponse(result.stdout);
+  if (result.exitCode !== 0 || response?.error !== undefined) {
+    throw new Error(
+      response?.error ||
+        result.stderr.trim() ||
+        `tool worker exited with code ${result.exitCode}`,
+    );
+  }
+  return { output: response?.output ?? "" };
 }
 
 function parseWorkerResponse(

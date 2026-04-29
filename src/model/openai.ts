@@ -1,53 +1,12 @@
-import type {
-  ModelClient,
-  ModelResponse,
-  ModelToolCall,
-  NdxConfig,
-} from "../shared/types.js";
-
-interface ChatToolCallPayload {
-  id?: string;
-  type?: string;
-  function?: {
-    name?: string;
-    arguments?: string;
-  };
-}
-
-interface ChatMessagePayload {
-  content?: string | null;
-  tool_calls?: ChatToolCallPayload[];
-}
-
-interface ChatCompletionsPayload {
-  choices?: Array<{
-    message?: ChatMessagePayload;
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
-}
-
-interface ChatMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  tool_call_id?: string;
-  tool_calls?: ChatToolCallPayload[];
-}
-
-interface FunctionCallOutputItem {
-  type?: string;
-  call_id?: string;
-  output?: string;
-}
+import type { ModelClient, ModelResponse, NdxConfig } from "../shared/types.js";
+import { OpenAiChatCompletionsAdapter } from "./openai-chat.js";
+import { OpenAiResponsesAdapter } from "./openai-responses.js";
+import type { ModelInput, ProviderRequestOptions } from "./types.js";
 
 export class OpenAiResponsesClient implements ModelClient {
-  private readonly apiKey: string;
-  private readonly baseUrl: string;
-  private readonly config: NdxConfig;
-  private readonly messages: ChatMessage[];
+  private readonly responses: OpenAiResponsesAdapter;
+  private readonly chat: OpenAiChatCompletionsAdapter;
+  private useChatFallback = false;
 
   constructor(config: NdxConfig) {
     if (config.activeProvider.type !== "openai") {
@@ -55,102 +14,39 @@ export class OpenAiResponsesClient implements ModelClient {
         `provider type ${config.activeProvider.type} is not supported by the OpenAI adapter`,
       );
     }
-    this.apiKey = config.activeProvider.key;
-    this.baseUrl = config.activeProvider.url.replace(/\/$/, "");
-    this.config = config;
-    this.messages = [{ role: "system", content: config.instructions }];
+    const options: ProviderRequestOptions = {
+      model: config.model,
+      instructions: config.instructions,
+      apiKey: config.activeProvider.key,
+      baseUrl: config.activeProvider.url.replace(/\/$/, ""),
+    };
+    this.responses = new OpenAiResponsesAdapter(options);
+    this.chat = new OpenAiChatCompletionsAdapter(options);
   }
 
   async create(
-    input: unknown,
-    _previousResponseId?: string,
+    input: ModelInput,
+    previousResponseId?: string,
     tools: unknown[] = [],
   ): Promise<ModelResponse> {
-    this.appendInput(input);
-
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        model: this.config.model,
-        messages: this.messages,
-        tools,
-        tool_choice: "auto",
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(
-        `OpenAI chat completions failed: ${response.status} ${await response.text()}`,
-      );
+    if (this.useChatFallback) {
+      return await this.chat.create(input, tools);
     }
-
-    const payload = (await response.json()) as ChatCompletionsPayload;
-    const message = payload.choices?.[0]?.message ?? {};
-    this.messages.push({
-      role: "assistant",
-      content: message.content ?? null,
-      tool_calls: message.tool_calls,
-    });
-    return normalizeChatResponse(payload);
-  }
-
-  private headers(): Record<string, string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (this.apiKey.length > 0) {
-      headers.Authorization = `Bearer ${this.apiKey}`;
-    }
-    return headers;
-  }
-
-  private appendInput(input: unknown): void {
-    if (typeof input === "string") {
-      this.messages.push({ role: "user", content: input });
-      return;
-    }
-
-    if (Array.isArray(input)) {
-      for (const item of input as FunctionCallOutputItem[]) {
-        if (item.type === "function_call_output" && item.call_id) {
-          this.messages.push({
-            role: "tool",
-            tool_call_id: item.call_id,
-            content: item.output ?? "",
-          });
-        }
+    try {
+      return await this.responses.create(input, previousResponseId, tools);
+    } catch (error) {
+      if (!isMissingResponsesApi(error)) {
+        throw error;
       }
-      return;
+      this.useChatFallback = true;
+      return await this.chat.create(input, tools);
     }
-
-    this.messages.push({ role: "user", content: JSON.stringify(input) });
   }
 }
 
-export function normalizeChatResponse(
-  payload: ChatCompletionsPayload,
-): ModelResponse {
-  const message = payload.choices?.[0]?.message ?? {};
-  const toolCalls: ModelToolCall[] = (message.tool_calls ?? [])
-    .filter((item) => item.type === "function" || item.function !== undefined)
-    .map((item) => ({
-      callId: item.id ?? "",
-      name: item.function?.name ?? "",
-      arguments: item.function?.arguments ?? "{}",
-    }))
-    .filter((call) => call.callId.length > 0 && call.name.length > 0);
-
-  return {
-    text: message.content ?? "",
-    toolCalls,
-    usage:
-      payload.usage === undefined
-        ? undefined
-        : {
-            inputTokens: payload.usage.prompt_tokens,
-            outputTokens: payload.usage.completion_tokens,
-            totalTokens: payload.usage.total_tokens,
-          },
-    raw: payload,
-  };
+function isMissingResponsesApi(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /\b(404|405)\b/.test(error.message);
 }

@@ -1,10 +1,17 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
   configFiles,
+  ensureGlobalNdxHome,
   loadConfig,
   resolveGlobalNdxDir,
 } from "../src/config/index.js";
@@ -123,6 +130,26 @@ test("configFiles returns only global and nearest project settings", () => {
       join(globalDir, "settings.json"),
       join(project, ".ndx", "settings.json"),
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ensureGlobalNdxHome installs missing settings and core shell tool", () => {
+  const root = tempRoot();
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    ensureGlobalNdxHome(globalDir);
+
+    assert.equal(existsSync(join(globalDir, "settings.json")), true);
+    assert.equal(
+      existsSync(join(globalDir, "core", "tools", "shell", "tool.json")),
+      true,
+    );
+    assert.equal(
+      existsSync(join(globalDir, "core", "tools", "shell", "tool.mjs")),
+      true,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

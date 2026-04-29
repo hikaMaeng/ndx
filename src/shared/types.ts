@@ -1,8 +1,10 @@
 export type EnvMap = Record<string, string>;
 export type JsonObject = Record<string, unknown>;
 
+export type ProviderType = "openai" | "anthropic";
+
 export interface ProviderSettings {
-  type: string;
+  type: ProviderType;
   key: string;
   url: string;
 }
