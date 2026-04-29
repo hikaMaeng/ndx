@@ -60,6 +60,10 @@ npm run deploy
 - Docker workspace and global settings bind mounts under `./docker/volume`.
 - Docker build, in-container tests, and in-container mock agent execution.
 - Deploy verification uses non-interactive `docker compose run -T` so test and mock-agent containers exit cleanly even though the service keeps `tty: true` for manual use.
+- Main-image session validation can copy `tests/session-image-scenarios.mjs` into
+  a running `ndx-agent` container and run it against `/opt/ndx/dist` to verify
+  deletion, restore, stale-owner shutdown, and mid-turn ownership replacement
+  against the actual Docker image.
 
 ## Browser Verification
 
