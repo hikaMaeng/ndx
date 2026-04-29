@@ -45,7 +45,7 @@ Plugin and capability tools are filesystem packages, not settings entries. Put e
 ## Mock Agent
 
 ```bash
-node dist/src/cli.js --mock "create a file named tmp/verify.txt with text verified"
+node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text verified"
 ```
 
 The CLI starts an embedded loopback session server for this command and sends
@@ -57,19 +57,19 @@ JSONL under `/home/.ndx/sessions/ts-server`.
 Run a long-lived server:
 
 ```bash
-node dist/src/cli.js serve --mock --listen 127.0.0.1:45123
+node dist/src/cli/main.js serve --mock --listen 127.0.0.1:45123
 ```
 
 Attach a client to that server:
 
 ```bash
-node dist/src/cli.js --connect ws://127.0.0.1:45123 "list files"
+node dist/src/cli/main.js --connect ws://127.0.0.1:45123 "list files"
 ```
 
 ## Real Agent
 
 ```bash
-node dist/src/cli.js "inspect this repository and summarize the test command"
+node dist/src/cli/main.js "inspect this repository and summarize the test command"
 ```
 
 The active provider comes from settings. Empty provider keys are allowed for local OpenAI-compatible servers such as LM Studio.

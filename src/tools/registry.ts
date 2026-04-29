@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { NdxConfig } from "../types.js";
+import type { NdxConfig } from "../shared/types.js";
 import { agentJobTools } from "./collaboration/agent-jobs.js";
 import { collaborationTools } from "./collaboration/agents.js";
 import { requestUserInputTool } from "./input/request-user-input.js";

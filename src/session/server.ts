@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { join } from "node:path";
-import { AgentRuntime } from "./runtime.js";
-import { SessionLogStore } from "./session-log-store.js";
-import type { RuntimeEvent, RuntimeEventMsg } from "./protocol.js";
-import type { ModelClient, NdxConfig } from "./types.js";
+import { AgentRuntime } from "../runtime/runtime.js";
+import { SessionLogStore } from "./log-store.js";
+import type { RuntimeEvent, RuntimeEventMsg } from "../shared/protocol.js";
+import type { ModelClient, NdxConfig } from "../shared/types.js";
 
 type JsonRpcId = number | string | null;
 

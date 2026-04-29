@@ -1,4 +1,4 @@
-import type { JsonObject, McpSettings, NdxConfig } from "../../types.js";
+import type { JsonObject, McpSettings, NdxConfig } from "../../shared/types.js";
 import { functionTool } from "../schema.js";
 import type { ToolDefinition } from "../types.js";
 import { callMcpTool, listMcpServerTools } from "./client.js";

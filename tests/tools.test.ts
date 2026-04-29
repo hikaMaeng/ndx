@@ -9,9 +9,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runAgent } from "../src/agent.js";
+import { runAgent } from "../src/agent/loop.js";
 import { createToolRegistry } from "../src/tools/registry.js";
-import type { ModelClient, ModelResponse, NdxConfig } from "../src/types.js";
+import type {
+  ModelClient,
+  ModelResponse,
+  NdxConfig,
+} from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",

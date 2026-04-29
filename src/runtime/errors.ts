@@ -1,4 +1,7 @@
-import type { ClassifiedModelError, ModelErrorCode } from "./protocol.js";
+import type {
+  ClassifiedModelError,
+  ModelErrorCode,
+} from "../shared/protocol.js";
 
 export function classifyModelError(error: unknown): ClassifiedModelError {
   const message = error instanceof Error ? error.message : String(error);

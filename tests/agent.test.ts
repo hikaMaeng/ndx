@@ -10,10 +10,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isAgentAbortError } from "../src/abort.js";
-import { runAgent } from "../src/agent.js";
-import { MockModelClient } from "../src/mock-client.js";
-import type { ModelClient, ModelResponse, NdxConfig } from "../src/types.js";
+import { isAgentAbortError } from "../src/runtime/abort.js";
+import { runAgent } from "../src/agent/loop.js";
+import { MockModelClient } from "../src/model/mock-client.js";
+import type {
+  ModelClient,
+  ModelResponse,
+  NdxConfig,
+} from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",

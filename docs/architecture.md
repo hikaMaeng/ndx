@@ -1,25 +1,19 @@
 # Architecture
 
-## Modules
+## Source Layout
 
-- `src/cli.ts`: argument parsing, config load, model client selection, event output.
-- `src/config.ts`: JSON settings loader for fixed global settings, nearest project settings, and global search rules.
-- `src/protocol.ts`: session, submission, operation, and runtime event contracts shared by CLI, future TUI, and future app-server.
-- `src/runtime.ts`: `AgentRuntime` turn coordinator. It emits Rust Codex-style session/turn/tool/error events and delegates model/tool execution to the agent loop.
-- `src/session-server.ts`: WebSocket JSON-RPC session core. It owns live threads, client subscriptions, runtime event broadcast, and server-side persistence scheduling.
-- `src/session-client.ts`: JSON-RPC WebSocket client used by the CLI and tests. It does not persist session state.
-- `src/session-log-store.ts`: in-memory persistence queue that sends one JSONL write job at a time to a child writer process.
-- `src/session-log-writer.ts`: child process entrypoint that performs JSONL filesystem IO and reports success or failure over IPC.
-- `src/errors.ts`: provider error classification used by runtime error events.
-- `src/agent.ts`: Responses-style model/tool loop.
-- `src/openai.ts`: OpenAI-compatible chat completions adapter and response normalization.
-- `src/mock-client.ts`: deterministic model client for Docker and unit tests.
-- `src/tools/registry.ts`: startup tool discovery, priority resolution, and task-tool registration.
-- `src/tools/external/`: `tool.json` manifest loading and command process execution.
-- `src/tools/mcp/`: configured MCP tool, resource, and stdio call support.
-- `src/tools/worker.ts` and `src/tools/process-runner.ts`: one isolated Node worker process per model tool call.
-- `src/tools/planning/`, `src/tools/input/`, `src/tools/collaboration/`: task orchestration tools that cannot be externalized.
-- `src/types.ts`: shared runtime contracts.
+Top-level `src` contains role folders only.
+
+| Folder         | Role                                                                 |
+| -------------- | -------------------------------------------------------------------- |
+| `src/cli/`     | CLI entrypoint, argument parsing, session client wiring.             |
+| `src/config/`  | JSON settings discovery, merge, and active provider resolution.      |
+| `src/model/`   | Model client implementations and test model client.                  |
+| `src/agent/`   | Model/tool sampling loop.                                            |
+| `src/runtime/` | Turn coordinator, abort helpers, provider error classification.      |
+| `src/session/` | WebSocket session server/client plus JSONL persistence queue/writer. |
+| `src/shared/`  | Cross-module protocol and runtime data contracts.                    |
+| `src/tools/`   | Tool registry, worker process launcher, built-in task tools, MCP.    |
 
 ## Runtime Flow
 

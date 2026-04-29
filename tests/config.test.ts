@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { configFiles, loadConfig, resolveGlobalNdxDir } from "../src/config.js";
+import {
+  configFiles,
+  loadConfig,
+  resolveGlobalNdxDir,
+} from "../src/config/index.js";
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ndx-config-"));

@@ -88,7 +88,7 @@ export class SessionLogStore {
       return this.worker;
     }
     const worker = fork(
-      fileURLToPath(new URL("./session-log-writer.js", import.meta.url)),
+      fileURLToPath(new URL("./log-writer.js", import.meta.url)),
       [],
       { stdio: ["ignore", "ignore", "pipe", "ipc"] },
     );

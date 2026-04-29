@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { AgentAbortError, abortReason, throwIfAborted } from "../abort.js";
+import {
+  AgentAbortError,
+  abortReason,
+  throwIfAborted,
+} from "../runtime/abort.js";
 import type { ToolContext, ToolExecutionResult } from "./types.js";
 
 export async function executeToolInWorker(

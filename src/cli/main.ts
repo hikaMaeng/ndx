@@ -3,13 +3,13 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
-import { loadConfig } from "./config.js";
-import { MockModelClient } from "./mock-client.js";
-import { OpenAiResponsesClient } from "./openai.js";
-import { SessionClient, type SessionNotification } from "./session-client.js";
-import { SessionServer, type SessionServerAddress } from "./session-server.js";
-import type { RuntimeEventMsg } from "./protocol.js";
-import type { ModelClient, NdxConfig } from "./types.js";
+import { loadConfig } from "../config/index.js";
+import { MockModelClient } from "../model/mock-client.js";
+import { OpenAiResponsesClient } from "../model/openai.js";
+import { SessionClient, type SessionNotification } from "../session/client.js";
+import { SessionServer, type SessionServerAddress } from "../session/server.js";
+import type { RuntimeEventMsg } from "../shared/protocol.js";
+import type { ModelClient, NdxConfig } from "../shared/types.js";
 
 interface CliArgs {
   cwd: string;

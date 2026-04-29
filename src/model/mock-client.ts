@@ -1,4 +1,4 @@
-import type { ModelClient, ModelResponse } from "./types.js";
+import type { ModelClient, ModelResponse } from "../shared/types.js";
 
 export class MockModelClient implements ModelClient {
   private step = 0;

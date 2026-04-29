@@ -1,7 +1,7 @@
 # Agent Loop
 
 This document records the TypeScript agent loop contract implemented by
-`src/agent.ts`, `src/runtime.ts`, `src/session-server.ts`, and
+`src/agent/loop.ts`, `src/runtime/runtime.ts`, `src/session/server.ts`, and
 `src/tools/process-runner.ts`.
 
 This is not the full Rust Codex session architecture, but the TypeScript port

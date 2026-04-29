@@ -1,6 +1,6 @@
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
-import type { NdxConfig } from "../types.js";
+import type { NdxConfig } from "../shared/types.js";
 import { createToolRegistry } from "./registry.js";
 import type { ToolContext } from "./types.js";
 

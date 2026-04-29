@@ -10,13 +10,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MockModelClient } from "../src/mock-client.js";
+import { MockModelClient } from "../src/model/mock-client.js";
 import {
   SessionClient,
   type SessionNotification,
-} from "../src/session-client.js";
-import { SessionServer } from "../src/session-server.js";
-import type { NdxConfig } from "../src/types.js";
+} from "../src/session/client.js";
+import { SessionServer } from "../src/session/server.js";
+import type { NdxConfig } from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",

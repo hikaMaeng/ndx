@@ -1,4 +1,4 @@
-import type { JsonObject } from "../types.js";
+import type { JsonObject } from "../shared/types.js";
 import type { ToolSchema } from "./types.js";
 
 export function functionTool(
@@ -52,7 +52,10 @@ export function booleanSchema(description?: string): JsonObject {
     : { type: "boolean", description };
 }
 
-export function arraySchema(items: JsonObject, description?: string): JsonObject {
+export function arraySchema(
+  items: JsonObject,
+  description?: string,
+): JsonObject {
   return description === undefined
     ? { type: "array", items }
     : { type: "array", items, description };

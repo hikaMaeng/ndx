@@ -1,4 +1,9 @@
-import type { EnvMap, JsonObject, NdxConfig, ShellResult } from "../types.js";
+import type {
+  EnvMap,
+  JsonObject,
+  NdxConfig,
+  ShellResult,
+} from "../shared/types.js";
 
 export type ToolArguments = Record<string, unknown>;
 

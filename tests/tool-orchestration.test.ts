@@ -9,9 +9,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runAgent, type AgentEvent } from "../src/agent.js";
+import { runAgent, type AgentEvent } from "../src/agent/loop.js";
 import { createToolRegistry } from "../src/tools/registry.js";
-import type { ModelClient, ModelResponse, NdxConfig } from "../src/types.js";
+import type {
+  ModelClient,
+  ModelResponse,
+  NdxConfig,
+} from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
@@ -101,7 +105,10 @@ test("model-driven run exercises every configured tool and preserves scheduling 
     const serialSecond = requireLog(log, "serial_second");
     assert.equal(parallelA.ppid === parallelB.ppid, false);
     assert.equal(rangesOverlap(parallelA, parallelB), true);
-    assert.equal(serialFirst.start >= Math.max(parallelA.end, parallelB.end), true);
+    assert.equal(
+      serialFirst.start >= Math.max(parallelA.end, parallelB.end),
+      true,
+    );
     assert.equal(serialSecond.start >= serialFirst.end, true);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
@@ -121,7 +128,9 @@ test("each configured tool executes directly without the agent loop", async () =
       assert.equal(typeof result.output, "string");
       assert.notEqual(result.output.length, 0);
 
-      if (internalToolNames.includes(name as (typeof internalToolNames)[number])) {
+      if (
+        internalToolNames.includes(name as (typeof internalToolNames)[number])
+      ) {
         assertInternalToolResult(name, result.output);
       }
       if (name === "direct_echo") {
@@ -162,7 +171,11 @@ function createToolFixture(): ToolFixture {
   writeTimedTool(join(globalDir, "core", "tools", "parallel_a"), logPath, 160);
   writeTimedTool(join(globalDir, "core", "tools", "parallel_b"), logPath, 160);
   writeTimedTool(join(globalDir, "core", "tools", "serial_first"), logPath, 20);
-  writeTimedTool(join(globalDir, "core", "tools", "serial_second"), logPath, 20);
+  writeTimedTool(
+    join(globalDir, "core", "tools", "serial_second"),
+    logPath,
+    20,
+  );
   writeEchoTool(join(globalDir, "core", "tools", "direct_echo"));
   const mcpServerPath = join(root, "mcp-server.mjs");
   writeMcpServer(mcpServerPath);
@@ -393,9 +406,12 @@ class AllToolsModelClient implements ModelClient {
       return this.response(
         this.toolNames.filter(
           (name) =>
-            !["parallel_a", "parallel_b", "serial_first", "serial_second"].includes(
-              name,
-            ),
+            ![
+              "parallel_a",
+              "parallel_b",
+              "serial_first",
+              "serial_second",
+            ].includes(name),
         ),
       );
     }

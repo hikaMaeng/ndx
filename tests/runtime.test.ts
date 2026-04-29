@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyModelError } from "../src/errors.js";
-import { MockModelClient } from "../src/mock-client.js";
-import type { RuntimeEvent } from "../src/protocol.js";
-import { AgentRuntime } from "../src/runtime.js";
-import type { NdxConfig } from "../src/types.js";
+import { classifyModelError } from "../src/runtime/errors.js";
+import { MockModelClient } from "../src/model/mock-client.js";
+import type { RuntimeEvent } from "../src/shared/protocol.js";
+import { AgentRuntime } from "../src/runtime/runtime.js";
+import type { NdxConfig } from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",

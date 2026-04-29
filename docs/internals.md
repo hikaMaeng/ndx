@@ -2,7 +2,10 @@
 
 ## Config Loader
 
-`configFiles(cwd)` returns `/home/.ndx/settings.json` followed by the nearest ancestor `.ndx/settings.json` when present. `loadConfig(cwd)` reads those JSON files in order, merges them, then loads `/home/.ndx/search.json` as search rules.
+`src/config/index.ts` owns config loading. `configFiles(cwd)` returns
+`/home/.ndx/settings.json` followed by the nearest ancestor `.ndx/settings.json`
+when present. `loadConfig(cwd)` reads those JSON files in order, merges them,
+then loads `/home/.ndx/search.json` as search rules.
 
 ## Settings Merge
 
@@ -14,7 +17,13 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 ## Tool Loop
 
-`runAgent` builds a `ToolRegistry` once per run and passes the registry's Chat Completions-compatible schemas to every model call. Registry construction scans task, core, project, global, plugin, and MCP layers in priority order. Tool outputs use Responses-style `function_call_output` items internally and are converted to chat completions `role = "tool"` messages by the OpenAI-compatible adapter.
+`src/agent/loop.ts` owns the model/tool loop. `runAgent` builds a
+`ToolRegistry` once per run and passes the registry's Chat
+Completions-compatible schemas to every model call. Registry construction scans
+task, core, project, global, plugin, and MCP layers in priority order. Tool
+outputs use Responses-style `function_call_output` items internally and are
+converted to chat completions `role = "tool"` messages by the OpenAI-compatible
+adapter.
 
 The registry owns only task orchestration tool definitions. Capability tools come from filesystem `tool.json` packages. MCP tools come from project or global settings and are exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
 
@@ -22,7 +31,11 @@ Every model tool call is sent to `src/tools/worker.ts` as a separate Node proces
 
 ## Runtime Session
 
-`AgentRuntime` wraps `runAgent` with a session-oriented protocol. It emits `session_configured` once per runtime instance, then emits `turn_started`, model text, tool call/result, optional token usage, and `turn_complete` for every user prompt. Interrupt submissions emit `turn_aborted`.
+`src/runtime/runtime.ts` owns turn coordination. `AgentRuntime` wraps `runAgent`
+with a session-oriented protocol. It emits `session_configured` once per runtime
+instance, then emits `turn_started`, model text, tool call/result, optional
+token usage, and `turn_complete` for every user prompt. Interrupt submissions
+emit `turn_aborted`.
 
 Runtime errors are classified into `unauthorized`, `bad_request`, `rate_limited`, `server_error`, `connection_failed`, or `unknown` so future retry and approval flows can be implemented without changing event consumers.
 
@@ -30,10 +43,10 @@ The current interrupt support records and emits the abort contract. It does not 
 
 ## Session Server
 
-`SessionServer` is the live session authority. It accepts WebSocket JSON-RPC,
-creates one `AgentRuntime` per `thread/start`, stores per-thread event history,
-maps runtime events to client notifications, and enqueues server-owned JSONL
-records under `<globalDir>/sessions/ts-server`.
+`src/session/server.ts` owns live sessions. `SessionServer` accepts WebSocket
+JSON-RPC, creates one `AgentRuntime` per `thread/start`, stores per-thread event
+history, maps runtime events to client notifications, and enqueues server-owned
+JSONL records under `<globalDir>/sessions/ts-server`.
 
 The CLI is a client of this server. In normal one-shot and interactive modes it
 starts an embedded loopback server and talks to that server over WebSocket. In

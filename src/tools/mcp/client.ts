@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import type { NdxConfig } from "../../types.js";
+import type { NdxConfig } from "../../shared/types.js";
 import type {
   McpResourceSettings,
   McpResourceTemplateSettings,

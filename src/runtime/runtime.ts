@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { isAgentAbortError } from "./abort.js";
-import { runAgent, type AgentEvent } from "./agent.js";
+import { runAgent, type AgentEvent } from "../agent/loop.js";
 import { classifyModelError } from "./errors.js";
-import type { RuntimeEvent, RuntimeEventMsg, Submission } from "./protocol.js";
-import type { ModelClient, NdxConfig } from "./types.js";
+import type {
+  RuntimeEvent,
+  RuntimeEventMsg,
+  Submission,
+} from "../shared/protocol.js";
+import type { ModelClient, NdxConfig } from "../shared/types.js";
 
 export interface AgentRuntimeOptions {
   cwd: string;

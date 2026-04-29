@@ -16,8 +16,8 @@ RUN corepack enable \
     && pnpm install --frozen-lockfile \
     && mkdir -p /home/.ndx /workspace \
     && pnpm build \
-    && chmod +x dist/src/cli.js \
-    && ln -sf /opt/ndx/dist/src/cli.js /usr/local/bin/ndx
+    && chmod +x dist/src/cli/main.js \
+    && ln -sf /opt/ndx/dist/src/cli/main.js /usr/local/bin/ndx
 
 WORKDIR /workspace
 

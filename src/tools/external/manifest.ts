@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import type { EnvMap, JsonObject } from "../../types.js";
+import type { EnvMap, JsonObject } from "../../shared/types.js";
 import type {
   ExternalToolRuntime,
   ToolDefinition,

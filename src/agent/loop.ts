@@ -1,15 +1,15 @@
-import { throwIfAborted } from "./abort.js";
-import { createToolRegistry } from "./tools/registry.js";
-import { executeToolInWorker } from "./tools/process-runner.js";
-import { unknownArgs } from "./tools/schema.js";
+import { throwIfAborted } from "../runtime/abort.js";
+import { createToolRegistry } from "../tools/registry.js";
+import { executeToolInWorker } from "../tools/process-runner.js";
+import { unknownArgs } from "../tools/schema.js";
 import type {
   ModelClient,
   ModelResponse,
   ModelToolCall,
   NdxConfig,
   TokenUsage,
-} from "./types.js";
-import type { ToolRegistry } from "./tools/registry.js";
+} from "../shared/types.js";
+import type { ToolRegistry } from "../tools/registry.js";
 
 export interface AgentRunOptions {
   cwd: string;

@@ -14,7 +14,7 @@ import type {
   SearchRules,
   ToolRuntimeSettings,
   WebSearchSettings,
-} from "./types.js";
+} from "../shared/types.js";
 
 const DEFAULT_GLOBAL_NDX_DIR = "/home/.ndx";
 const CONFIG_DIR = ".ndx";

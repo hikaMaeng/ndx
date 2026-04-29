@@ -3,7 +3,7 @@ import type {
   ModelResponse,
   ModelToolCall,
   NdxConfig,
-} from "./types.js";
+} from "../shared/types.js";
 
 interface ChatToolCallPayload {
   id?: string;
