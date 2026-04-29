@@ -112,13 +112,13 @@ test("interactive help advertises session client commands", () => {
   assert.equal(interactiveHelp().includes("/restore"), true);
 });
 
-test("welcome logo combines robot art with uppercase NDX", () => {
+test("welcome logo emits the configured robot art", () => {
   const stderr: string[] = [];
   printWelcomeLogo((message) => stderr.push(message));
 
   assert.equal(stderr[0], WELCOME_LOGO);
-  assert.equal(WELCOME_LOGO.includes("N   N  DDDD   X   X"), true);
-  assert.equal(WELCOME_LOGO.includes("session client"), true);
+  assert.equal(WELCOME_LOGO.startsWith("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣺⣟⣿⢶⣄"), true);
+  assert.equal(WELCOME_LOGO.includes("⠸⡷⣟⡿⣯⢿⡾⡷⡿⣯⣟⣯⢿⣳⡿⣽⣟⣿⢽⣟⡿⣯⢿⣻⣯⢿⣽⢾⣻⡾⣟⣿⣻⣽⡾⣟⣷⢿⡽⣿⣻⣟⣷⠇"), true);
 });
 
 test("CLI session controller does not send registered unsupported slash commands as prompts", async () => {
