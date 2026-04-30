@@ -12,7 +12,7 @@ import {
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
-import { configForModel, ensureGlobalNdxHome } from "../config/index.js";
+import { ensureGlobalNdxHome } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import { SessionLogStore } from "./log-store.js";
@@ -119,7 +119,6 @@ export class SessionServer {
   private readonly store: SessionLogStore;
   private readonly bootstrap: NdxBootstrapReport;
   private readonly serverId = randomUUID();
-  private nextSessionModelIndex = 0;
   private closing = false;
 
   constructor(options: SessionServerOptions) {
@@ -136,21 +135,12 @@ export class SessionServer {
   }
 
   private nextSessionConfig(): NdxConfig {
-    const pool = this.options.config.modelPools.session;
-    const model = pool[this.nextSessionModelIndex % pool.length];
-    this.nextSessionModelIndex += 1;
-    return configForModel(this.options.config, model);
+    return this.options.config;
   }
 
   private configForPersistedSession(session: PersistedSessionState): NdxConfig {
-    const configured = session.events.find(
-      (event) => event.msg.type === "session_configured",
-    );
-    const model =
-      configured?.msg.type === "session_configured"
-        ? configured.msg.model
-        : this.options.config.model;
-    return configForModel(this.options.config, model);
+    void session;
+    return this.options.config;
   }
 
   listen(port = 0, host = "127.0.0.1"): Promise<SessionServerAddress> {

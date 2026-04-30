@@ -50,6 +50,7 @@ interface PartialModelPools {
   session?: string | string[];
   worker?: string | string[];
   reviewer?: string | string[];
+  custom?: Record<string, string | string[]>;
 }
 
 /** Return the single global ndx configuration directory. */
@@ -417,13 +418,19 @@ function assertOptionalModelSelection(
     );
   }
   for (const key of Object.keys(value)) {
-    if (key !== "session" && key !== "worker" && key !== "reviewer") {
+    if (
+      key !== "session" &&
+      key !== "worker" &&
+      key !== "reviewer" &&
+      key !== "custom"
+    ) {
       throw new Error(`${field}.${key} in ${file} is not supported`);
     }
   }
   assertModelPoolValue(value.session, `${field}.session`, file, true);
   assertModelPoolValue(value.worker, `${field}.worker`, file, false);
   assertModelPoolValue(value.reviewer, `${field}.reviewer`, file, false);
+  assertCustomModelPools(value.custom, `${field}.custom`, file);
 }
 
 function assertModelPoolValue(
@@ -663,7 +670,7 @@ function expectModelPools(value: unknown, field: string): ModelPools {
     if (value.length === 0) {
       throw new Error(`${field} must not be empty`);
     }
-    return { session: [value], worker: [], reviewer: [] };
+    return { session: [value], worker: [], reviewer: [], custom: {} };
   }
   if (isObject(value)) {
     return {
@@ -674,6 +681,7 @@ function expectModelPools(value: unknown, field: string): ModelPools {
         `${field}.reviewer`,
         false,
       ),
+      custom: expectCustomModelPools(value.custom, `${field}.custom`),
     };
   }
   throw new Error(`${field} must be a string or model pool object`);
@@ -703,12 +711,56 @@ function expectModelPoolValue(
   throw new Error(`${field} must be a string or non-empty array of strings`);
 }
 
+function assertCustomModelPools(
+  value: unknown,
+  field: string,
+  file: string,
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!isObject(value)) {
+    throw new Error(`${field} in ${file} must be an object`);
+  }
+  for (const [name, pool] of Object.entries(value)) {
+    if (name.length === 0 || /\s/.test(name) || name.includes("@")) {
+      throw new Error(
+        `${field}.${name} in ${file} must be a non-empty keyword without whitespace or @`,
+      );
+    }
+    assertModelPoolValue(pool, `${field}.${name}`, file, true);
+  }
+}
+
+function expectCustomModelPools(
+  value: unknown,
+  field: string,
+): Record<string, string[]> {
+  if (value === undefined) {
+    return {};
+  }
+  if (!isObject(value)) {
+    throw new Error(`${field} must be an object`);
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([name, pool]) => [
+      name,
+      expectModelPoolValue(pool, `${field}.${name}`, true),
+    ]),
+  );
+}
+
 function validateModelPools(
   pools: ModelPools,
   models: ModelSettings[],
   providers: Record<string, ProviderSettings>,
 ): void {
-  for (const model of [...pools.session, ...pools.worker, ...pools.reviewer]) {
+  for (const model of [
+    ...pools.session,
+    ...pools.worker,
+    ...pools.reviewer,
+    ...Object.values(pools.custom).flat(),
+  ]) {
     const activeModel = expectDeclaredModel(model, models);
     expectDeclaredProvider(model, activeModel, providers);
   }

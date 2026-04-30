@@ -14,9 +14,8 @@ live threads, WebSocket subscriptions, and JSONL persistence.
 `runAgent` owns a small loop state:
 
 - `input`: the next model input. It starts as the user prompt and becomes the
-  ordered `function_call_output` list after tool execution.
-- `previousResponseId`: the last model response id, kept so the model provider
-  can continue the prior response chain.
+  ordered local client-side stack for the current turn, including assistant
+  tool calls and `function_call_output` items after tool execution.
 - `finalText`: the latest non-empty model text, returned when the model stops
   requesting tools.
 
@@ -88,16 +87,15 @@ assembly layer, not from the current TypeScript loop.
 ## Context Management
 
 The inner loop currently has no separate context compaction or truncation
-intervention point. It preserves `previousResponseId` and submits the next input
-to the model client. Provider-side continuation and any model-client request
-shaping are outside the loop state machine.
+intervention point. It submits the full local client-side conversation stack
+needed for each sampling request. Provider-side continuation is intentionally
+unused.
 
-OpenAI-compatible providers first use the Responses continuation id kept in
-`previousResponseId`. When `/responses` is unavailable, the client falls back to
-Chat Completions and keeps chat messages in memory for the life of one client
-instance. Anthropic providers keep Messages history in memory for the life of
-one client instance. In every case, the agent loop only stores normalized input
-and previous response id; provider-specific history stays inside the adapter.
+OpenAI-compatible providers first use Responses without `previous_response_id`.
+When `/responses` is unavailable, the client falls back to Chat Completions and
+converts the same local stack into chat messages. Anthropic providers convert
+the same local stack into Messages requests. In every case, provider-specific
+wire shapes stay inside the adapter.
 
 `SessionServer` queues server-owned JSONL records for thread creation,
 subscription, turn requests, runtime events, outbound notifications, and

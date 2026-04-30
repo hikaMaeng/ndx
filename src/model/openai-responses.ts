@@ -35,7 +35,6 @@ export class OpenAiResponsesAdapter {
 
   async create(
     input: ModelInput,
-    previousResponseId?: string,
     tools: unknown[] = [],
   ): Promise<ModelResponse> {
     const response = await postJson(
@@ -45,7 +44,6 @@ export class OpenAiResponsesAdapter {
         model: this.options.model,
         instructions: this.options.instructions,
         input: responsesInput(input),
-        previous_response_id: previousResponseId,
         tools: responsesTools(tools),
         tool_choice: "auto",
       },

@@ -19,6 +19,7 @@ export interface ModelPools {
   session: string[];
   worker: string[];
   reviewer: string[];
+  custom: Record<string, string[]>;
 }
 
 export interface PermissionSettings {
@@ -170,11 +171,7 @@ export interface ModelResponse {
 }
 
 export interface ModelClient {
-  create(
-    input: unknown,
-    previousResponseId?: string,
-    tools?: unknown[],
-  ): Promise<ModelResponse>;
+  create(input: unknown, tools?: unknown[]): Promise<ModelResponse>;
 }
 
 export interface TokenUsage {

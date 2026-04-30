@@ -26,14 +26,13 @@ export class OpenAiResponsesClient implements ModelClient {
 
   async create(
     input: ModelInput,
-    previousResponseId?: string,
     tools: unknown[] = [],
   ): Promise<ModelResponse> {
     if (this.useChatFallback) {
       return await this.chat.create(input, tools);
     }
     try {
-      return await this.responses.create(input, previousResponseId, tools);
+      return await this.responses.create(input, tools);
     } catch (error) {
       if (!isMissingResponsesApi(error)) {
         throw error;

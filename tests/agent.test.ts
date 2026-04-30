@@ -21,7 +21,7 @@ import type {
 
 const baseConfig: NdxConfig = {
   model: "mock",
-  modelPools: { session: ["mock"], worker: [], reviewer: [] },
+  modelPools: { session: ["mock"], worker: [], reviewer: [], custom: {} },
   instructions: "test",
   env: {},
   keys: {},
@@ -79,6 +79,45 @@ test("mock agent exercises shell tool and completes", async () => {
     assert.equal(result, "mock agent completed");
     assert.equal(existsSync(target), true);
     assert.equal(readFileSync(target, "utf8"), "verified");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("agent sends full client-side context after tool calls", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-agent-context-stack-"));
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    const client = new CapturingToolLoopClient();
+
+    const result = await runAgent({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      client,
+      prompt: "run pwd",
+    });
+
+    assert.equal(result, "done");
+    assert.equal(client.inputs.length, 2);
+    assert.deepEqual(client.inputs[1], [
+      { type: "message", role: "user", content: "run pwd" },
+      {
+        type: "assistant_tool_calls",
+        toolCalls: [
+          {
+            callId: "call-1",
+            name: "shell",
+            arguments: '{"command":"pwd"}',
+          },
+        ],
+      },
+      {
+        type: "function_call_output",
+        call_id: "call-1",
+        output: client.inputs[1][2]?.output,
+      },
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -267,6 +306,34 @@ class SlowToolClient implements ModelClient {
     }
     return {
       text: "unused",
+      toolCalls: [],
+      raw: {},
+    };
+  }
+}
+
+class CapturingToolLoopClient implements ModelClient {
+  readonly inputs: Array<Array<Record<string, unknown>>> = [];
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.inputs.push(
+      JSON.parse(JSON.stringify(input)) as Array<Record<string, unknown>>,
+    );
+    if (this.inputs.length === 1) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            callId: "call-1",
+            name: "shell",
+            arguments: '{"command":"pwd"}',
+          },
+        ],
+        raw: {},
+      };
+    }
+    return {
+      text: "done",
       toolCalls: [],
       raw: {},
     };

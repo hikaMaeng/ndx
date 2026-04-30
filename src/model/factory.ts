@@ -1,7 +1,12 @@
 import type { ModelClient, NdxConfig } from "../shared/types.js";
 import { AnthropicMessagesAdapter } from "./anthropic.js";
 import { OpenAiResponsesClient } from "./openai.js";
+import { RoundRobinModelRouter } from "./router.js";
 import type { ProviderRequestOptions } from "./types.js";
+
+export function createRoutedModelClient(config: NdxConfig): ModelClient {
+  return new RoundRobinModelRouter(config, createProviderModelClient);
+}
 
 export function createProviderModelClient(config: NdxConfig): ModelClient {
   if (config.activeProvider.type === "openai") {

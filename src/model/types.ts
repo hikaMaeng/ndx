@@ -12,11 +12,7 @@ export type ModelInput =
   | unknown;
 
 export interface ModelAdapter {
-  create(
-    input: ModelInput,
-    previousResponseId?: string,
-    tools?: unknown[],
-  ): Promise<ModelResponse>;
+  create(input: ModelInput, tools?: unknown[]): Promise<ModelResponse>;
 }
 
 export interface ProviderRequestOptions {

@@ -26,16 +26,31 @@ domain.
 2. CLI prints the configured robot startup art, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
 3. Session server startup re-checks required global `.ndx` elements and installs any missing core directories, core tool package files, and skills directory before accepting session work.
 4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
-5. The session server assigns one model from the `model.session` pool per new session, chooses `MockModelClient` for `--mock`, otherwise creates the configured provider client, and creates one `AgentRuntime` per live session.
+5. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
 6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
 7. The session server enqueues session, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
 8. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
-9. `runAgent` sends the prompt to the model client through the runtime.
+9. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
 10. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
 11. Function schemas from that registry are sent to the model.
 12. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
 13. Filesystem tools are executed from their `tool.json` command process. MCP tools are executed through the configured MCP stdio command. Task tools run inside the worker.
 14. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
+
+## Model Routing And Context
+
+The root config's first `model.session` entry is the display/default model, but
+it is not a per-session lock. `RoundRobinModelRouter` selects the concrete model
+for every provider request. Normal prompts rotate through `model.session`; a
+prompt containing `@customKey` rotates through `model.custom.customKey`; tool
+follow-up requests keep the pool selected by that prompt.
+
+The context source is local. During a live session `AgentRuntime` owns the
+in-memory history. For restore after process restart or ownership transfer, the
+session JSONL under `<globalDir>/sessions/ts-server` is replayed into provider
+conversation items. OpenAI Responses requests intentionally omit
+`previous_response_id`, so inference servers do not need stable server-side
+session state.
 
 ## Runtime Event Contract
 

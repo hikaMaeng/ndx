@@ -115,21 +115,33 @@ node dist/src/cli/main.js "inspect this repository and summarize the test comman
 The active provider comes from settings. Empty provider keys are allowed for local OpenAI-compatible servers such as LM Studio.
 
 `model` may be a string or a pool object. String form keeps the legacy single
-model behavior. Object form requires `session` and may declare `worker` and
-`reviewer` placeholders:
+model behavior. Object form requires `session` and may declare `worker`,
+`reviewer`, and `custom` pools:
 
 ```json
 {
   "model": {
     "session": ["qwen-main-a", "qwen-main-b"],
     "worker": ["qwen-worker-a", "qwen-worker-b"],
-    "reviewer": ["qwen-review-a"]
+    "reviewer": ["qwen-review-a"],
+    "custom": {
+      "deep": ["qwen-review-a", "qwen-review-b"],
+      "fast": "qwen-main-a"
+    }
   }
 }
 ```
 
-New sessions use `model.session` in round-robin order. `worker` and `reviewer`
-are validated but are not connected to runtime dispatch yet.
+Every provider request uses the next model in the selected pool. Normal prompts
+use `model.session`. A prompt containing `@deep` uses `model.custom.deep` for
+that turn, and tool follow-up requests continue rotating through the same custom
+pool. `worker` and `reviewer` are validated but are not connected to runtime
+dispatch yet.
+
+OpenAI-compatible Responses requests do not use `previous_response_id`. ndx
+resends the local client-side conversation stack on every model request so
+sessions can survive provider restarts, model switching, and round-robin routing
+across local or remote inference servers.
 
 ## Docker
 

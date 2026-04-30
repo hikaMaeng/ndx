@@ -10,7 +10,7 @@ import {
   printWelcomeLogo,
 } from "./session-client.js";
 import { loadConfig } from "../config/index.js";
-import { createProviderModelClient } from "../model/factory.js";
+import { createRoutedModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
 import { SessionClient } from "../session/client.js";
 import { SessionServer, type SessionServerAddress } from "../session/server.js";
@@ -214,11 +214,15 @@ function createSessionServer(options: {
   config: NdxConfig;
   sources: string[];
 }): SessionServer {
+  const providerClient = options.args.mock
+    ? undefined
+    : createRoutedModelClient(options.config);
   return new SessionServer({
     cwd: options.args.cwd,
     config: options.config,
     sources: options.sources,
-    createClient: (config) => createClient(options.args.mock, config),
+    createClient: (config) =>
+      providerClient ?? createClient(options.args.mock, config),
   });
 }
 
@@ -242,7 +246,7 @@ async function waitForShutdown(): Promise<void> {
 }
 
 function createClient(mock: boolean, config: NdxConfig): ModelClient {
-  return mock ? new MockModelClient() : createProviderModelClient(config);
+  return mock ? new MockModelClient() : createRoutedModelClient(config);
 }
 
 function parseArgs(argv: string[]): CliArgs {

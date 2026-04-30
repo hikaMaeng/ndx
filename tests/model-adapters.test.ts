@@ -2,6 +2,7 @@ import { createServer, type ServerResponse } from "node:http";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createProviderModelClient } from "../src/model/factory.js";
+import { RoundRobinModelRouter } from "../src/model/router.js";
 import { normalizeAnthropicResponse } from "../src/model/anthropic.js";
 import { normalizeChatResponse } from "../src/model/openai-chat.js";
 import {
@@ -9,7 +10,7 @@ import {
   responsesInput,
   responsesTools,
 } from "../src/model/openai-responses.js";
-import type { NdxConfig } from "../src/shared/types.js";
+import type { ModelResponse, NdxConfig } from "../src/shared/types.js";
 
 test("normalizes OpenAI responses function calls and usage", () => {
   assert.deepEqual(
@@ -136,6 +137,59 @@ test("converts restored conversation history for OpenAI responses", () => {
   );
 });
 
+test("OpenAI responses adapter always sends client-side context without previous_response_id", async () => {
+  const bodies: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    assert.equal(request.url, "/v1/responses");
+    bodies.push(await readJson(request));
+    writeJson(response, 200, {
+      id: `resp-${bodies.length}`,
+      output_text: bodies.length === 1 ? "" : "done",
+      output:
+        bodies.length === 1
+          ? [
+              {
+                type: "function_call",
+                call_id: "call-1",
+                name: "shell",
+                arguments: "{}",
+              },
+            ]
+          : [],
+    });
+  });
+  const baseUrl = await listen(server);
+  try {
+    const client = createProviderModelClient(
+      configFor("openai", `${baseUrl}/v1`),
+    );
+    await client.create([
+      { type: "message", role: "user", content: "first" },
+      {
+        type: "assistant_tool_calls",
+        toolCalls: [{ callId: "call-1", name: "shell", arguments: "{}" }],
+      },
+      {
+        type: "function_call_output",
+        call_id: "call-1",
+        output: "{}",
+      },
+    ]);
+
+    assert.equal(
+      bodies.some(
+        (body) =>
+          typeof body === "object" &&
+          body !== null &&
+          "previous_response_id" in body,
+      ),
+      false,
+    );
+  } finally {
+    await close(server);
+  }
+});
+
 test("normalizes chat completions function calls", () => {
   const normalized = normalizeChatResponse({
     choices: [
@@ -215,7 +269,7 @@ test("OpenAI provider prefers responses and falls back to chat completions on mi
     const client = createProviderModelClient(
       configFor("openai", `${baseUrl}/v1`),
     );
-    const response = await client.create("hello", undefined, []);
+    const response = await client.create("hello", []);
     assert.equal(response.text, "chat-ok");
     assert.deepEqual(seen, ["/v1/responses", "/v1/chat/completions"]);
   } finally {
@@ -223,10 +277,42 @@ test("OpenAI provider prefers responses and falls back to chat completions on mi
   }
 });
 
+test("round-robin router selects models per request and honors custom prompt keywords", async () => {
+  const models: string[] = [];
+  const router = new RoundRobinModelRouter(configWithPools(), (config) => {
+    return {
+      async create(): Promise<ModelResponse> {
+        models.push(config.model);
+        return { text: config.model, toolCalls: [], raw: {} };
+      },
+    };
+  });
+
+  await router.create([{ type: "message", role: "user", content: "one" }]);
+  await router.create([{ type: "message", role: "user", content: "two" }]);
+  await router.create([
+    { type: "message", role: "user", content: "@deep inspect" },
+  ]);
+  await router.create([
+    { type: "message", role: "user", content: "@deep inspect again" },
+  ]);
+  await router.create([
+    { type: "function_call_output", call_id: "call-1", output: "{}" },
+  ]);
+
+  assert.deepEqual(models, [
+    "session-a",
+    "session-b",
+    "reviewer-a",
+    "reviewer-b",
+    "reviewer-a",
+  ]);
+});
+
 function configFor(type: "openai" | "anthropic", url: string): NdxConfig {
   return {
     model: "test-model",
-    modelPools: { session: ["test-model"], worker: [], reviewer: [] },
+    modelPools: { session: ["test-model"], worker: [], reviewer: [], custom: {} },
     instructions: "test instructions",
     env: {},
     keys: {},
@@ -261,6 +347,36 @@ function writeJson(
 ): void {
   response.writeHead(statusCode, { "Content-Type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+async function readJson(request: NodeJS.ReadableStream): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+}
+
+function configWithPools(): NdxConfig {
+  return {
+    ...configFor("openai", "http://localhost/v1"),
+    model: "session-a",
+    modelPools: {
+      session: ["session-a", "session-b"],
+      worker: [],
+      reviewer: [],
+      custom: {
+        deep: ["reviewer-a", "reviewer-b"],
+      },
+    },
+    models: [
+      { name: "session-a", provider: "test" },
+      { name: "session-b", provider: "test" },
+      { name: "reviewer-a", provider: "test" },
+      { name: "reviewer-b", provider: "test" },
+    ],
+    activeModel: { name: "session-a", provider: "test" },
+  };
 }
 
 async function listen(

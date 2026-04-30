@@ -148,7 +148,11 @@ Canonical shape:
   "model": {
     "session": ["qwen-main-a", "qwen-main-b"],
     "worker": ["qwen-worker-a", "qwen-worker-b"],
-    "reviewer": ["qwen-review-a"]
+    "reviewer": ["qwen-review-a"],
+    "custom": {
+      "deep": ["qwen-review-a", "qwen-review-b"],
+      "fast": "qwen-main-a"
+    }
   },
   "providers": {
     "lmstudio-a": {
@@ -187,8 +191,10 @@ Canonical shape:
 ```
 
 `model` may also be a single string for compatibility. A string is normalized to
-`model.session = [value]`. `model.session` is active today and assigns one model
-per new session in round-robin order. `model.worker` and `model.reviewer` are
+`model.session = [value]`. `model.session` is active today and selects one model
+per provider request in round-robin order. `model.custom.<key>` is selected when
+the current user prompt contains `@key`; tool follow-up requests continue
+rotating through that selected pool. `model.worker` and `model.reviewer` are
 validated placeholders for future worker and reviewer runtimes.
 
 `providers.<name>.type` must be `openai` or `anthropic`. `openai` targets OpenAI-compatible servers and prefers the Responses API. `anthropic` targets the Messages API.
@@ -204,7 +210,6 @@ validated placeholders for future worker and reviewer runtimes.
 The model layer exposes one provider-neutral client contract to the agent loop:
 
 - input: user text or ordered `function_call_output` items;
-- `previousResponseId` when the provider supports response chaining;
 - function tool schemas from the TypeScript tool registry;
 - normalized text, tool calls, usage, raw payload, and optional response id.
 
@@ -215,14 +220,16 @@ Adapters:
 | `openai`      | `POST {provider.url}/responses` | `POST {provider.url}/chat/completions` on `404` or `405` |
 | `anthropic`   | `POST {provider.url}/messages`  | none                                                     |
 
-OpenAI Responses sends `model`, `instructions`, `input`,
-`previous_response_id`, provider-specific `tools`, and `tool_choice = "auto"`.
+OpenAI Responses sends `model`, `instructions`, full client-side `input`,
+provider-specific `tools`, and `tool_choice = "auto"`. It does not send
+`previous_response_id`.
 The agent registry stores Chat Completions-compatible function schemas, so the
 Responses adapter converts `{ type: "function", function: ... }` into the flat
-Responses function tool shape before sending. Chat Completions keeps volatile
-messages in memory and converts tool outputs into `role = "tool"` messages.
-Anthropic Messages keeps volatile messages in memory, sends `system`,
-`messages`, `max_tokens`, and tools converted to Anthropic `input_schema`.
+Responses function tool shape before sending. Chat Completions receives the
+same client-side stack converted to `messages` and maps tool outputs into
+`role = "tool"` messages. Anthropic Messages receives the same client-side
+stack converted to Anthropic `messages`, sends `system`, `max_tokens`, and
+tools converted to Anthropic `input_schema`.
 
 If `provider.key` is an empty string, OpenAI-compatible requests omit `Authorization`; Anthropic requests omit `x-api-key`.
 
