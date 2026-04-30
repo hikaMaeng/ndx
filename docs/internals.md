@@ -15,13 +15,13 @@ context answers, then the CLI reruns `loadConfig`.
 
 ## Settings Merge
 
-Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` are merged by model name.
+Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` may be an array or an object keyed by local model ID and are merged by that ID.
 
 ## Active Provider
 
-`finalizeConfig` normalizes `model` into role pools. A string becomes a single-entry `session` pool. `session` is required; `worker`, `reviewer`, and `custom` are optional. Every referenced pool entry must exist in `models[]`, and each model's `provider` must exist in `providers`.
+`finalizeConfig` normalizes `model` into role pools. A string becomes a single-entry `session` pool. `session` is required; `worker`, `reviewer`, and `custom` are optional. Every referenced pool entry must exist in the normalized model catalog, and each model's `provider` must exist in `providers`.
 
-The active root config resolves to the first `session` model for display and provider validation. Sessions keep that base config. `RoundRobinModelRouter` chooses the concrete model per provider request, rotating through `model.session` by default and through a `model.custom.<key>` pool when the current user prompt contains `@key`. Tool follow-up requests keep using the last selected pool for that turn.
+The active root config resolves to the first `session` model for display and provider validation. Sessions keep that base config. `RoundRobinModelRouter` now binds each selected pool to one model for the live session. `@key` prompts select `model.custom.<key>` and tool follow-up requests keep using that pool. Explicit `/model` changes update `config.model`, `activeModel`, effort, and thinking state; the next provider request uses a new provider-client cache key when those values change.
 
 `loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global directories and built-in `/core/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
 
@@ -29,7 +29,7 @@ The active root config resolves to the first `session` model for display and pro
 
 `src/model/factory.ts` owns provider selection. The common model contract is the existing `ModelClient` shape: input, tool schemas, then normalized text/tool calls/usage/raw output.
 
-`createRoutedModelClient` wraps provider clients with per-request model routing. The router caches one provider client per concrete model so `/responses` fallback state is scoped to that model endpoint while round-robin counters remain shared by the session server's provider client.
+`createRoutedModelClient` wraps provider clients with sticky model routing. The router caches provider clients by model ID plus active effort, thinking, and sampling parameters so `/responses` fallback state is scoped to that provider-client binding.
 
 OpenAI provider instances own two adapters. `OpenAiResponsesAdapter` sends `/responses` requests without `previous_response_id`. If `/responses` returns `404` or `405`, `OpenAiResponsesClient` switches that client instance to `OpenAiChatCompletionsAdapter`, which maps `function_call_output` items to tool messages.
 

@@ -14,10 +14,18 @@ export function createProviderModelClient(config: NdxConfig): ModelClient {
   }
   if (config.activeProvider.type === "anthropic") {
     const options: ProviderRequestOptions = {
-      model: config.model,
+      model: config.activeModel.name,
       instructions: config.instructions,
       apiKey: config.activeProvider.key,
       baseUrl: config.activeProvider.url.replace(/\/$/, ""),
+      effort: config.activeModel.activeEffort,
+      think: config.activeModel.activeThink,
+      limitResponseLength: config.activeModel.limitResponseLength,
+      topK: config.activeModel.topK,
+      repeatPenalty: config.activeModel.repeatPenalty,
+      presencePenalty: config.activeModel.presencePenalty,
+      topP: config.activeModel.topP,
+      MinP: config.activeModel.MinP,
     };
     return new AnthropicMessagesAdapter(options);
   }

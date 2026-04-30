@@ -35,7 +35,7 @@ interface PartialSettings {
   maxTurns?: number;
   shellTimeoutMs?: number;
   providers?: Record<string, ProviderSettings>;
-  models?: ModelSettings[];
+  models?: ModelCatalogSettings;
   permissions?: Partial<PermissionSettings>;
   websearch?: WebSearchSettings;
   search?: SearchRules;
@@ -45,6 +45,10 @@ interface PartialSettings {
   keys?: EnvMap;
   env?: EnvMap;
 }
+
+type ModelCatalogSettings =
+  | ModelSettings[]
+  | Record<string, Omit<ModelSettings, "id" | "name"> & { name?: string }>;
 
 interface PartialModelPools {
   session?: string | string[];
@@ -291,7 +295,10 @@ function mergeSettings(target: PartialSettings, source: PartialSettings): void {
     target.providers = { ...(target.providers ?? {}), ...source.providers };
   }
   if (source.models !== undefined) {
-    target.models = mergeModels(target.models ?? [], source.models);
+    target.models = mergeModels(
+      normalizeModels(target.models ?? []),
+      normalizeModels(source.models),
+    );
   }
   if (source.permissions !== undefined) {
     target.permissions = {
@@ -323,7 +330,7 @@ function mergeSettings(target: PartialSettings, source: PartialSettings): void {
 }
 
 export function configForModel(config: NdxConfig, model: string): NdxConfig {
-  const activeModel = config.models.find((entry) => entry.name === model);
+  const activeModel = config.models.find((entry) => modelId(entry) === model);
   if (activeModel === undefined) {
     throw new Error(`model ${model} is not declared in settings.json models`);
   }
@@ -345,11 +352,50 @@ function mergeModels(
   existing: ModelSettings[],
   incoming: ModelSettings[],
 ): ModelSettings[] {
-  const byName = new Map(existing.map((model) => [model.name, model]));
+  const byName = new Map(existing.map((model) => [modelId(model), model]));
   for (const model of incoming) {
-    byName.set(model.name, model);
+    byName.set(modelId(model), model);
   }
   return [...byName.values()];
+}
+
+function normalizeModels(models: ModelCatalogSettings): ModelSettings[] {
+  if (Array.isArray(models)) {
+    return models.map((model) => ({
+      ...model,
+      id: model.id ?? model.name,
+      activeEffort: model.activeEffort ?? defaultModelEffort(model),
+      activeThink: model.activeThink ?? defaultModelThink(model),
+    }));
+  }
+  return Object.entries(models).map(([id, model]) => ({
+    ...model,
+    id,
+    name: model.name ?? id,
+    activeEffort: model.activeEffort ?? defaultModelEffort(model),
+    activeThink: model.activeThink ?? defaultModelThink(model),
+  }));
+}
+
+function modelId(model: ModelSettings): string {
+  return model.id ?? model.name;
+}
+
+/** Return the default live effort for a model catalog entry. */
+export function defaultModelEffort(
+  model: Pick<ModelSettings, "effort">,
+): string | undefined {
+  if (model.effort === undefined || model.effort.length === 0) {
+    return undefined;
+  }
+  return model.effort[Math.floor(model.effort.length / 2)];
+}
+
+/** Return the default live thinking mode for a model catalog entry. */
+export function defaultModelThink(
+  model: Pick<ModelSettings, "think">,
+): boolean | undefined {
+  return model.think === undefined ? undefined : true;
 }
 
 function finalizeConfig(
@@ -365,7 +411,7 @@ function finalizeConfig(
   const modelPools = expectModelPools(settings.model, "model");
   const model = modelPools.session[0];
   const providers = settings.providers ?? {};
-  const models = settings.models ?? [];
+  const models = normalizeModels(settings.models ?? []);
   validateModelPools(modelPools, models, providers);
   const activeModel = expectDeclaredModel(model, models);
   const activeProvider = expectDeclaredProvider(model, activeModel, providers);
@@ -573,24 +619,60 @@ function assertProviders(
   }
 }
 
-function assertModels(models: ModelSettings[] | undefined, file: string): void {
+function assertModels(
+  models: ModelCatalogSettings | undefined,
+  file: string,
+): void {
   if (models === undefined) {
     return;
   }
+  if (isObject(models)) {
+    for (const [id, model] of Object.entries(models)) {
+      if (!isObject(model)) {
+        throw new Error(`models.${id} in ${file} must be an object`);
+      }
+      assertModelSettings(model, `models.${id}`, file, true);
+    }
+    return;
+  }
   if (!Array.isArray(models)) {
-    throw new Error(`models in ${file} must be an array`);
+    throw new Error(`models in ${file} must be an array or object`);
   }
   for (const [index, model] of models.entries()) {
     if (!isObject(model)) {
       throw new Error(`models[${index}] in ${file} must be an object`);
     }
-    assertOptionalString(model.name, `models[${index}].name`, file);
-    assertOptionalString(model.provider, `models[${index}].provider`, file);
-    assertOptionalInteger(
-      model.maxContext,
-      `models[${index}].maxContext`,
-      file,
-    );
+    assertModelSettings(model, `models[${index}]`, file, false);
+  }
+}
+
+function assertModelSettings(
+  model: JsonObject,
+  field: string,
+  file: string,
+  objectCatalog: boolean,
+): void {
+  assertOptionalString(model.name, `${field}.name`, file);
+  if (!objectCatalog && typeof model.name !== "string") {
+    throw new Error(`${field}.name in ${file} must be a string`);
+  }
+  assertOptionalString(model.provider, `${field}.provider`, file);
+  assertOptionalInteger(model.maxContext, `${field}.maxContext`, file);
+  assertOptionalStringArray(
+    model.effort as string[] | undefined,
+    `${field}.effort`,
+    file,
+  );
+  assertOptionalBoolean(model.think, `${field}.think`, file);
+  for (const key of [
+    "limitResponseLength",
+    "topK",
+    "repeatPenalty",
+    "presencePenalty",
+    "topP",
+    "MinP",
+  ]) {
+    assertOptionalNumber(model[key], `${field}.${key}`, file);
   }
 }
 
@@ -614,6 +696,26 @@ function assertOptionalInteger(
     (typeof value !== "number" || !Number.isInteger(value) || value < 0)
   ) {
     throw new Error(`${field} in ${file} must be a non-negative integer`);
+  }
+}
+
+function assertOptionalNumber(
+  value: unknown,
+  field: string,
+  file: string,
+): void {
+  if (value !== undefined && typeof value !== "number") {
+    throw new Error(`${field} in ${file} must be a number`);
+  }
+}
+
+function assertOptionalBoolean(
+  value: unknown,
+  field: string,
+  file: string,
+): void {
+  if (value !== undefined && typeof value !== "boolean") {
+    throw new Error(`${field} in ${file} must be a boolean`);
   }
 }
 
@@ -770,7 +872,7 @@ function expectDeclaredModel(
   model: string,
   models: ModelSettings[],
 ): ModelSettings {
-  const activeModel = models.find((entry) => entry.name === model);
+  const activeModel = models.find((entry) => modelId(entry) === model);
   if (activeModel === undefined) {
     throw new Error(`model ${model} is not declared in settings.json models`);
   }

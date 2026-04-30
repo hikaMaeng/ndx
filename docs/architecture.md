@@ -39,11 +39,13 @@ domain.
 
 ## Model Routing And Context
 
-The root config's first `model.session` entry is the display/default model, but
-it is not a per-session lock. `RoundRobinModelRouter` selects the concrete model
-for every provider request. Normal prompts rotate through `model.session`; a
-prompt containing `@customKey` rotates through `model.custom.customKey`; tool
-follow-up requests keep the pool selected by that prompt.
+The root config's first `model.session` entry is the display/default model.
+`RoundRobinModelRouter` now uses round-robin only when first binding a selected
+pool, then keeps the live session sticky to that model to preserve prefix-cache
+locality. Normal prompts use `model.session`; a prompt containing `@customKey`
+uses `model.custom.customKey`; tool follow-up requests keep the pool selected by
+that prompt. Explicit `/model` model, effort, or thinking changes are treated as
+new provider-client binding boundaries.
 
 The context source is local. During a live session `AgentRuntime` owns the
 in-memory history. For restore after process restart or ownership transfer, the

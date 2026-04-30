@@ -132,16 +132,50 @@ model behavior. Object form requires `session` and may declare `worker`,
 }
 ```
 
-Every provider request uses the next model in the selected pool. Normal prompts
-use `model.session`. A prompt containing `@deep` uses `model.custom.deep` for
-that turn, and tool follow-up requests continue rotating through the same custom
-pool. `worker` and `reviewer` are validated but are not connected to runtime
-dispatch yet.
+The first request for a selected pool uses a load-spreading pick, then the
+session stays sticky to that model while the model, effort, thinking mode, and
+pool remain unchanged. Normal prompts use `model.session`. A prompt containing
+`@deep` uses `model.custom.deep` for that turn, and tool follow-up requests keep
+the same custom pool. `worker` and `reviewer` are validated but are not
+connected to runtime dispatch yet.
+
+`models` may be the legacy array or an object keyed by local model ID. Object
+form lets local aliases point to the same provider model with different runtime
+parameters:
+
+```json
+{
+  "models": {
+    "qwen-high": {
+      "name": "qwen3.6-35b-a3b:mm",
+      "provider": "lmstudio",
+      "maxContext": 262000,
+      "effort": ["low", "medium", "high"],
+      "think": true,
+      "limitResponseLength": 4096,
+      "topK": 40,
+      "repeatPenalty": 1.05,
+      "presencePenalty": 0.1,
+      "topP": 0.9,
+      "MinP": 0.05
+    }
+  }
+}
+```
+
+Use `/model`, `/effort`, and `/think` to inspect or change the live session
+state. `/model` lists session models with numbers and accepts either a number
+or model ID. `/effort` lists the active model effort choices when the model
+declares an `effort` array, and `/think` lists on/off choices when the model
+declares `think`. Changing model, effort, or thinking mode starts a new provider
+client binding for the next request, so the prefix cache is expected to restart
+at that explicit boundary. Model changes reset effort to the middle configured
+choice and thinking mode to on when those controls are supported.
 
 OpenAI-compatible Responses requests do not use `previous_response_id`. ndx
 resends the local client-side conversation stack on every model request so
-sessions can survive provider restarts, model switching, and round-robin routing
-across local or remote inference servers.
+sessions can survive provider restarts, explicit model switching, and local or
+remote inference server restarts.
 
 ## Docker
 

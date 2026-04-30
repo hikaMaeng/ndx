@@ -7,6 +7,7 @@ import { normalizeAnthropicResponse } from "../src/model/anthropic.js";
 import { normalizeChatResponse } from "../src/model/openai-chat.js";
 import {
   normalizeResponsesPayload,
+  optionalProviderParameters,
   responsesInput,
   responsesTools,
 } from "../src/model/openai-responses.js";
@@ -93,6 +94,36 @@ test("converts chat-compatible function tools for OpenAI responses", () => {
         },
       },
     ],
+  );
+});
+
+test("model request options expose effort, thinking, and sampling parameters", () => {
+  assert.deepEqual(
+    optionalProviderParameters({
+      model: "qwen",
+      instructions: "test",
+      apiKey: "",
+      baseUrl: "http://localhost/v1",
+      effort: "high",
+      think: false,
+      limitResponseLength: 1024,
+      topK: 40,
+      repeatPenalty: 1.1,
+      presencePenalty: 0.2,
+      topP: 0.9,
+      MinP: 0.05,
+    }),
+    {
+      reasoning_effort: "high",
+      think: false,
+      max_tokens: 1024,
+      max_output_tokens: 1024,
+      top_k: 40,
+      repeat_penalty: 1.1,
+      presence_penalty: 0.2,
+      top_p: 0.9,
+      min_p: 0.05,
+    },
   );
 });
 
@@ -277,7 +308,7 @@ test("OpenAI provider prefers responses and falls back to chat completions on mi
   }
 });
 
-test("round-robin router selects models per request and honors custom prompt keywords", async () => {
+test("model router keeps a sticky model per selected pool and honors custom prompt keywords", async () => {
   const models: string[] = [];
   const router = new RoundRobinModelRouter(configWithPools(), (config) => {
     return {
@@ -302,9 +333,9 @@ test("round-robin router selects models per request and honors custom prompt key
 
   assert.deepEqual(models, [
     "session-a",
-    "session-b",
+    "session-a",
     "reviewer-a",
-    "reviewer-b",
+    "reviewer-a",
     "reviewer-a",
   ]);
 });
@@ -312,7 +343,12 @@ test("round-robin router selects models per request and honors custom prompt key
 function configFor(type: "openai" | "anthropic", url: string): NdxConfig {
   return {
     model: "test-model",
-    modelPools: { session: ["test-model"], worker: [], reviewer: [], custom: {} },
+    modelPools: {
+      session: ["test-model"],
+      worker: [],
+      reviewer: [],
+      custom: {},
+    },
     instructions: "test instructions",
     env: {},
     keys: {},

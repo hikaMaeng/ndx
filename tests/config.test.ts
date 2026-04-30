@@ -173,6 +173,65 @@ test("loadConfig accepts model pools for session, worker, and reviewer", () => {
   }
 });
 
+test("loadConfig accepts object model catalog entries with aliases and runtime options", () => {
+  const root = tempRoot();
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    const project = join(root, "repo");
+    mkdirSync(globalDir, { recursive: true });
+    mkdirSync(project, { recursive: true });
+
+    writeJson(join(globalDir, "settings.json"), {
+      model: {
+        session: ["fast-local", "deep-local"],
+      },
+      providers: {
+        lmstudio: {
+          type: "openai",
+          key: "",
+          url: "http://provider.example/v1",
+        },
+      },
+      models: {
+        "fast-local": {
+          name: "qwen3.6-35b-a3b:mm",
+          provider: "lmstudio",
+          maxContext: 262000,
+          effort: ["low", "medium", "high"],
+          think: true,
+          limitResponseLength: 2048,
+          topK: 40,
+          repeatPenalty: 1.05,
+          presencePenalty: 0.1,
+          topP: 0.9,
+          MinP: 0.05,
+        },
+        "deep-local": {
+          name: "qwen3.6-35b-a3b:mm",
+          provider: "lmstudio",
+          effort: ["high"],
+          think: true,
+        },
+      },
+    });
+
+    const loaded = loadConfig(project, { globalDir });
+
+    assert.equal(loaded.config.model, "fast-local");
+    assert.equal(loaded.config.activeModel.id, "fast-local");
+    assert.equal(loaded.config.activeModel.name, "qwen3.6-35b-a3b:mm");
+    assert.equal(loaded.config.activeModel.activeEffort, "medium");
+    assert.equal(loaded.config.activeModel.activeThink, true);
+    assert.equal(loaded.config.activeModel.limitResponseLength, 2048);
+    assert.deepEqual(loaded.config.modelPools.session, [
+      "fast-local",
+      "deep-local",
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("configFiles returns only global and nearest project settings", () => {
   const root = tempRoot();
   try {

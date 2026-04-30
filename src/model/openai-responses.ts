@@ -46,6 +46,7 @@ export class OpenAiResponsesAdapter {
         input: responsesInput(input),
         tools: responsesTools(tools),
         tool_choice: "auto",
+        ...optionalProviderParameters(this.options),
       },
     );
     if (!response.ok) {
@@ -55,6 +56,38 @@ export class OpenAiResponsesAdapter {
       (await response.json()) as ResponsesPayload,
     );
   }
+}
+
+export function optionalProviderParameters(
+  options: ProviderRequestOptions,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (options.effort !== undefined) {
+    payload.reasoning_effort = options.effort;
+  }
+  if (options.think !== undefined) {
+    payload.think = options.think;
+  }
+  if (options.limitResponseLength !== undefined) {
+    payload.max_tokens = options.limitResponseLength;
+    payload.max_output_tokens = options.limitResponseLength;
+  }
+  if (options.topK !== undefined) {
+    payload.top_k = options.topK;
+  }
+  if (options.repeatPenalty !== undefined) {
+    payload.repeat_penalty = options.repeatPenalty;
+  }
+  if (options.presencePenalty !== undefined) {
+    payload.presence_penalty = options.presencePenalty;
+  }
+  if (options.topP !== undefined) {
+    payload.top_p = options.topP;
+  }
+  if (options.MinP !== undefined) {
+    payload.min_p = options.MinP;
+  }
+  return payload;
 }
 
 export function responsesInput(input: ModelInput): unknown {
