@@ -8,6 +8,11 @@ when present. `loadConfig(cwd)` reads existing JSON files in order, merges them,
 fails if neither settings file exists, then loads `/home/.ndx/search.json` as
 search rules.
 
+`src/cli/settings-wizard.ts` owns interactive first-run settings creation. When
+the CLI is attached to a TTY and `loadConfig` reports missing settings, the
+wizard writes `<cwd>/.ndx/settings.json` from permission, provider, model, and
+context answers, then the CLI reruns `loadConfig`.
+
 ## Settings Merge
 
 Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, and `reviewer` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` are merged by model name.

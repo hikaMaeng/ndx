@@ -16,7 +16,8 @@ npm run deploy
 - Provider/model resolution from settings.
 - Model pool parsing for `session`, `worker`, and `reviewer`.
 - Session model round-robin assignment across new sessions.
-- Missing global and project settings fail without falling back to a default model.
+- Missing global and project settings fail in the loader without falling back to a default model.
+- TTY setup wizard creates project `.ndx/settings.json` from permission, provider, model, and context answers.
 - Provider type validation for `openai` and `anthropic`.
 - Global `.ndx` bootstrap for missing core directories, built-in core tool package files, and skills directory.
 - OpenAI Responses normalization.

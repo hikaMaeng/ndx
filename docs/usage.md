@@ -56,11 +56,12 @@ first prompt is submitted.
 
 On startup, config loading and the session server both enforce required global
 `.ndx` elements. Missing `core/`, `core/tools/`, built-in core tool package
-files, and `skills/` are installed before session work begins. `settings.json`
-is not generated; create `/home/.ndx/settings.json` or a project
-`.ndx/settings.json` before running against a real provider. The socket
-initialization output includes a bootstrap report showing what was installed and
-what already existed.
+files, and `skills/` are installed before session work begins. If neither global
+nor project settings exist and the CLI is attached to a TTY, ndx asks for
+permission mode, provider type, provider key, provider URL, model name, and max
+context, then writes project `.ndx/settings.json`. Non-TTY startup still requires
+an existing settings file. The socket initialization output includes a bootstrap
+report showing what was installed and what already existed.
 
 ## Session Server
 

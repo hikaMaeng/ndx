@@ -14,7 +14,7 @@
 - `model.worker` and `model.reviewer` are parsed and validated only; no runtime dispatch path consumes them yet.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
 - The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
-- Settings files are not generated at startup. If neither `/home/.ndx/settings.json` nor a project `.ndx/settings.json` exists, config loading fails before model selection.
+- The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
 
 ## Search
 
