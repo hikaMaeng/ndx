@@ -3,6 +3,11 @@
 ## Config
 
 - Global settings path is fixed at `/home/.ndx/settings.json`.
+- The session origin is `/home/.ndx/sessions` unless global settings define
+  optional `sessionPath`.
+- Session records are stored as
+  `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionUuid>.jsonl`; omitted user means
+  `defaultUser`.
 - Project settings path is `.ndx/settings.json` under the nearest ancestor project directory.
 - No runtime environment variable is used to select model, provider URL, provider key, or ndx home.
 - Settings are JSON only; `config.toml`, `.codex`, `NDX_HOME`, `NDX_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are not part of the ndx TypeScript loader contract.
@@ -69,4 +74,13 @@
 
 ## Browser Markup
 
-No frontend view is rendered by this package. Browser locator contracts are not applicable.
+The only rendered frontend view is the agent-service dashboard placeholder at
+`GET /` and `GET /dashboard`.
+
+- The page exposes one `main` landmark named by the visible `ndx Agent Service`
+  heading.
+- The status text uses `role="status"`.
+- The stable machine-only locator is
+  `data-testid="agent-dashboard-placeholder"`.
+
+No other UI selectors are part of the contract yet.

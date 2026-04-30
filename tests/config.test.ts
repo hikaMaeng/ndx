@@ -44,6 +44,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
 
     writeJson(join(globalDir, "settings.json"), {
       model: "global-model",
+      sessionPath: join(root, "custom-sessions"),
       providers: {
         lmstudio: {
           type: "openai",
@@ -109,6 +110,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
     assert.equal(loaded.config.activeProvider.url, "http://project.example/v1");
     assert.deepEqual(loaded.config.env, { A: "1", B: "project", C: "3" });
     assert.equal(loaded.config.shellTimeoutMs, 111);
+    assert.equal(loaded.config.paths.sessionDir, join(root, "custom-sessions"));
     assert.deepEqual(loaded.config.search, {
       provider: "tavily",
       response: {

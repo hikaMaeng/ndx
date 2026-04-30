@@ -28,7 +28,7 @@ domain.
 4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
 5. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
 6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-7. The session server enqueues session, request, runtime-event, and notification records for JSONL persistence under `<globalDir>/sessions/ts-server`.
+7. The session server enqueues session, request, runtime-event, and notification records for JSONL persistence under the configured session origin.
 8. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
 9. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
 10. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
@@ -49,7 +49,7 @@ new provider-client binding boundaries.
 
 The context source is local. During a live session `AgentRuntime` owns the
 in-memory history. For restore after process restart or ownership transfer, the
-session JSONL under `<globalDir>/sessions/ts-server` is replayed into provider
+session JSONL under the configured session origin is replayed into provider
 conversation items. OpenAI Responses requests intentionally omit
 `previous_response_id`, so inference servers do not need stable server-side
 session state.
@@ -103,9 +103,14 @@ session has no remaining subscribers, the server enqueues a `session_detached` r
 triggers a queue drain. In-flight turns can still finish and enqueue their final
 runtime events because the live session remains in server memory.
 
-`session/list` and `/session` build a workspace-scoped view from live memory
-plus the server JSONL directory. The server filters by exact resolved `cwd` and
-uses the persisted workspace sequence assigned on first prompt. Empty sessions
+The session origin is `/home/.ndx/sessions` unless global
+`/home/.ndx/settings.json` sets optional `sessionPath`. JSONL files are stored
+as `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionUuid>.jsonl`. If a request does
+not identify a user, the server uses `defaultUser`.
+
+`session/list` and `/session` build a user-and-workspace-scoped view from live
+memory plus the server JSONL directory. The server filters by exact resolved
+`cwd` and uses the persisted workspace sequence assigned on first prompt. Empty sessions
 have title `empty`, no sequence number, and no JSONL file. `session/restore`
 and `/restoreSession` accept either a listed number or the full session id,
 create a new `AgentRuntime` with the original id when needed, load persisted
@@ -115,6 +120,17 @@ file. `/deleteSession` deletes a non-current listed session's
 JSONL and owner files; any server still holding that session detects the missing
 JSONL on the next prompt or turn completion, emits `session/deleted`, closes its
 socket clients, and terminates.
+
+The socket server also exposes account JSON-RPC methods and remembers the
+authenticated user and `clientId` on each WebSocket connection. The CLI assigns
+a fresh client id per controller instance. Two connections for the same user,
+project path, and session are still distinct clients; they may subscribe to the
+same live session event stream.
+
+Normal HTTP requests to `/` or `/dashboard` return only a dashboard placeholder.
+The placeholder exposes one `main` landmark named by `ndx Agent Service`, a
+status message, and `data-testid="agent-dashboard-placeholder"` for browser
+verification.
 
 ## Docker Flow
 

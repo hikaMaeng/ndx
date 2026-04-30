@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
-import { basename, join, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import {
   configForModel,
   defaultModelEffort,
@@ -20,7 +20,7 @@ import {
 } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
-import { SessionLogStore } from "./log-store.js";
+import { SessionLogStore, type SessionLogRecord } from "./log-store.js";
 import {
   BUILT_IN_SLASH_COMMANDS,
   formatSlashCommandHelp,
@@ -77,6 +77,9 @@ export interface SessionServerAddress {
 
 interface LiveSession {
   id: string;
+  user: string;
+  clientIds: Set<string>;
+  logKey?: string;
   cwd: string;
   config: NdxConfig;
   runtime: AgentRuntime;
@@ -96,6 +99,7 @@ interface SessionListEntry {
   number: number;
   sequence: number;
   id: string;
+  user: string;
   cwd: string;
   status: LiveSession["status"];
   createdAt: number;
@@ -107,6 +111,8 @@ interface SessionListEntry {
 
 interface PersistedSessionState {
   id: string;
+  user: string;
+  logKey: string;
   cwd: string;
   status: LiveSession["status"];
   createdAt: number;
@@ -116,12 +122,19 @@ interface PersistedSessionState {
   title: string;
 }
 
+interface AccountState {
+  password: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** WebSocket JSON-RPC authority for live sessions, event fan-out, and JSONL. */
 export class SessionServer {
   private readonly server: Server;
   private readonly options: SessionServerOptions;
   private readonly sessions = new Map<string, LiveSession>();
   private readonly clients = new Set<WebSocketConnection>();
+  private readonly accounts = new Map<string, AccountState>();
   private readonly store: SessionLogStore;
   private readonly bootstrap: NdxBootstrapReport;
   private readonly serverId = randomUUID();
@@ -131,12 +144,28 @@ export class SessionServer {
     this.options = options;
     this.bootstrap = ensureGlobalNdxHome(options.config.paths.globalDir);
     this.server = createServer();
+    this.accounts.set("defaultUser", {
+      password: "",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
     this.store = new SessionLogStore(
       options.persistenceDir ??
         join(options.config.paths.globalDir, "sessions", "ts-server"),
     );
     this.server.on("upgrade", (request, socket) => {
       this.handleUpgrade(request, socket as Socket);
+    });
+    this.server.on("request", (request, response) => {
+      if (request.url === "/" || request.url === "/dashboard") {
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+        });
+        response.end(DASHBOARD_HTML);
+        return;
+      }
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end("not found\n");
     });
   }
 
@@ -147,6 +176,28 @@ export class SessionServer {
   private configForPersistedSession(session: PersistedSessionState): NdxConfig {
     void session;
     return this.options.config;
+  }
+
+  private clientContext(
+    connection: WebSocketConnection | undefined,
+    params: unknown,
+  ): { user: string; clientId: string } {
+    const user =
+      stringParam(params, "user") ?? connection?.user ?? "defaultUser";
+    const clientId: string =
+      stringParam(params, "clientId") ?? connection?.clientId ?? randomUUID();
+    if (connection !== undefined) {
+      connection.user = user;
+      connection.clientId = clientId;
+    }
+    if (!this.accounts.has(user)) {
+      this.accounts.set(user, {
+        password: "",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    }
+    return { user, clientId };
   }
 
   listen(port = 0, host = "127.0.0.1"): Promise<SessionServerAddress> {
@@ -279,8 +330,20 @@ export class SessionServer {
             "session/read",
             "turn/start",
             "turn/interrupt",
+            "account/create",
+            "account/login",
+            "account/delete",
+            "account/changePassword",
           ],
         };
+      case "account/create":
+        return this.createAccount(request.params);
+      case "account/login":
+        return this.loginAccount(connection, request.params);
+      case "account/delete":
+        return this.deleteAccount(request.params);
+      case "account/changePassword":
+        return this.changeAccountPassword(request.params);
       case "command/list":
         return { commands: BUILT_IN_SLASH_COMMANDS };
       case "command/execute":
@@ -312,6 +375,7 @@ export class SessionServer {
     connection: WebSocketConnection,
     params: unknown,
   ): Promise<unknown> {
+    const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     const config = this.nextSessionConfig();
     const runtime = new AgentRuntime({
@@ -324,6 +388,8 @@ export class SessionServer {
     const now = Date.now();
     const session: LiveSession = {
       id: runtime.sessionId,
+      user: context.user,
+      clientIds: new Set([context.clientId]),
       cwd,
       config,
       runtime,
@@ -347,15 +413,81 @@ export class SessionServer {
     };
   }
 
+  private createAccount(params: unknown): unknown {
+    const username = requiredStringParam(params, "username");
+    const password = stringParam(params, "password") ?? "";
+    if (this.accounts.has(username)) {
+      throw new Error(`account already exists: ${username}`);
+    }
+    const now = Date.now();
+    this.accounts.set(username, {
+      password,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { username, createdAt: now };
+  }
+
+  private loginAccount(
+    connection: WebSocketConnection,
+    params: unknown,
+  ): unknown {
+    const username = stringParam(params, "username") ?? "defaultUser";
+    const password = stringParam(params, "password") ?? "";
+    const clientId: string = stringParam(params, "clientId") ?? randomUUID();
+    const account = this.accounts.get(username);
+    if (account === undefined || account.password !== password) {
+      throw new Error("invalid account credentials");
+    }
+    connection.user = username;
+    connection.clientId = clientId;
+    return {
+      username,
+      clientId,
+      sessionRoot: this.persistenceDir(),
+    };
+  }
+
+  private deleteAccount(params: unknown): unknown {
+    const username = requiredStringParam(params, "username");
+    if (username === "defaultUser") {
+      throw new Error("defaultUser cannot be deleted");
+    }
+    const deleted = this.accounts.delete(username);
+    return { username, deleted };
+  }
+
+  private changeAccountPassword(params: unknown): unknown {
+    const username = requiredStringParam(params, "username");
+    const oldPassword = stringParam(params, "oldPassword") ?? "";
+    const newPassword = requiredStringParam(params, "newPassword");
+    const account = this.accounts.get(username);
+    if (account === undefined || account.password !== oldPassword) {
+      throw new Error("invalid account credentials");
+    }
+    account.password = newPassword;
+    account.updatedAt = Date.now();
+    return { username, updatedAt: account.updatedAt };
+  }
+
   private async subscribeSession(
     connection: WebSocketConnection,
     params: unknown,
   ): Promise<unknown> {
+    const context = this.clientContext(connection, params);
     const session = this.requiredSession(params);
+    if (session.user !== context.user) {
+      throw new Error(
+        `unknown session for user ${context.user}: ${session.id}`,
+      );
+    }
+    session.clientIds.add(context.clientId);
     session.subscribers.add(connection);
-    this.store.append(session.id, {
+    this.appendSessionRecord(session, {
       type: "session_subscribed",
       sessionId: session.id,
+      user: session.user,
+      clientId: context.clientId,
       subscribedAt: Date.now(),
     });
     return {
@@ -373,23 +505,31 @@ export class SessionServer {
   }
 
   private listSessions(params: unknown): unknown {
+    const context = this.clientContext(undefined, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
-    return { sessions: this.numberedSessionsForCwd(cwd) };
+    return { sessions: this.numberedSessionsForCwd(context.user, cwd) };
   }
 
   private deleteSessionCandidates(params: unknown): unknown {
+    const context = this.clientContext(undefined, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     const currentSessionId = stringParam(params, "currentSessionId");
     return {
-      sessions: this.deletableSessionsForCwd(cwd, currentSessionId),
+      sessions: this.deletableSessionsForCwd(
+        context.user,
+        cwd,
+        currentSessionId,
+      ),
     };
   }
 
   private deleteSession(params: unknown): unknown {
+    const context = this.clientContext(undefined, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     const selector = requiredStringParam(params, "selector");
     const currentSessionId = stringParam(params, "currentSessionId");
     const deleted = this.deleteSessionBySelector(
+      context.user,
       cwd,
       selector,
       currentSessionId,
@@ -404,9 +544,16 @@ export class SessionServer {
     connection: WebSocketConnection,
     params: unknown,
   ): unknown {
+    const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     const selector = requiredStringParam(params, "selector");
-    const session = this.restoreSessionBySelector(connection, cwd, selector);
+    const session = this.restoreSessionBySelector(
+      connection,
+      context.user,
+      context.clientId,
+      cwd,
+      selector,
+    );
     return {
       session: this.sessionSummary(session),
       events: session.events,
@@ -478,7 +625,10 @@ export class SessionServer {
         return {
           handled: true,
           action: "print",
-          output: this.formatSessions(execution.cwd ?? this.options.cwd),
+          output: this.formatSessions(
+            stringParam(params, "user") ?? "defaultUser",
+            execution.cwd ?? this.options.cwd,
+          ),
         };
       case "restoreSession": {
         if (execution.args === undefined) {
@@ -490,6 +640,8 @@ export class SessionServer {
         }
         const session = this.restoreSessionBySelector(
           undefined,
+          stringParam(params, "user") ?? "defaultUser",
+          stringParam(params, "clientId") ?? "cli",
           execution.cwd ?? this.options.cwd,
           execution.args.trim(),
         );
@@ -506,12 +658,14 @@ export class SessionServer {
             handled: true,
             action: "deleteSession",
             output: this.formatDeleteSessions(
+              stringParam(params, "user") ?? "defaultUser",
               execution.cwd ?? this.options.cwd,
               execution.sessionId,
             ),
           };
         }
         const deleted = this.deleteSessionBySelector(
+          stringParam(params, "user") ?? "defaultUser",
           execution.cwd ?? this.options.cwd,
           execution.args.trim(),
           execution.sessionId,
@@ -558,13 +712,17 @@ export class SessionServer {
     }
     const cwd = stringParam(params, "cwd") ?? session.cwd;
     const turnId = randomUUID();
+    const context = this.clientContext(connection, params);
+    session.clientIds.add(context.clientId);
     session.subscribers.add(connection);
     this.ensureSessionPersisted(session, prompt);
     session.status = "running";
     session.updatedAt = Date.now();
-    this.store.append(session.id, {
+    this.appendSessionRecord(session, {
       type: "turn_start_requested",
       sessionId: session.id,
+      user: session.user,
+      clientId: context.clientId,
       turnId,
       prompt,
       cwd,
@@ -673,9 +831,10 @@ export class SessionServer {
     } else if (msg.type === "error") {
       session.status = "failed";
     }
-    this.store.append(session.id, {
+    this.appendSessionRecord(session, {
       type: "runtime_event",
       sessionId: session.id,
+      user: session.user,
       event,
       recordedAt: session.updatedAt,
     });
@@ -698,9 +857,10 @@ export class SessionServer {
     session: LiveSession,
     notification: JsonRpcNotification,
   ): void {
-    this.store.append(session.id, {
+    this.appendSessionRecord(session, {
       type: "notification",
       sessionId: session.id,
+      user: session.user,
       notification,
       recordedAt: Date.now(),
     });
@@ -725,9 +885,10 @@ export class SessionServer {
         continue;
       }
       session.updatedAt = Date.now();
-      this.store.append(session.id, {
+      this.appendSessionRecord(session, {
         type: "session_detached",
         sessionId: session.id,
+        user: session.user,
         status: session.status,
         disconnectedAt: session.updatedAt,
       });
@@ -746,15 +907,18 @@ export class SessionServer {
 
   private restoreSessionBySelector(
     connection: WebSocketConnection | undefined,
+    user: string,
+    clientId: string,
     cwd: string,
     selector: string,
   ): LiveSession {
-    const session = this.resolveSessionSelector(cwd, selector);
+    const session = this.resolveSessionSelector(user, cwd, selector);
     const live = this.sessions.get(session.id);
     if (live !== undefined) {
       if (connection !== undefined) {
         live.subscribers.add(connection);
       }
+      live.clientIds.add(clientId);
       this.acquireOwnership(live);
       return live;
     }
@@ -774,6 +938,9 @@ export class SessionServer {
     });
     const liveSession: LiveSession = {
       id: persisted.id,
+      user: persisted.user,
+      clientIds: new Set([clientId]),
+      logKey: persisted.logKey,
       cwd: persisted.cwd,
       config,
       runtime,
@@ -790,9 +957,10 @@ export class SessionServer {
     };
     this.sessions.set(liveSession.id, liveSession);
     this.acquireOwnership(liveSession);
-    this.store.append(liveSession.id, {
+    this.appendSessionRecord(liveSession, {
       type: "session_restored",
       sessionId: liveSession.id,
+      user: liveSession.user,
       cwd: liveSession.cwd,
       restoredAt: liveSession.updatedAt,
     });
@@ -806,10 +974,11 @@ export class SessionServer {
   }
 
   private resolveSessionSelector(
+    user: string,
     cwd: string,
     selector: string,
   ): SessionListEntry {
-    const sessions = this.numberedSessionsForCwd(cwd);
+    const sessions = this.numberedSessionsForCwd(user, cwd);
     const number = Number.parseInt(selector, 10);
     const selected =
       Number.isInteger(number) && String(number) === selector
@@ -822,11 +991,12 @@ export class SessionServer {
   }
 
   private deleteSessionBySelector(
+    user: string,
     cwd: string,
     selector: string,
     currentSessionId: string | undefined,
   ): SessionListEntry {
-    const session = this.resolveSessionSelector(cwd, selector);
+    const session = this.resolveSessionSelector(user, cwd, selector);
     if (session.id === currentSessionId) {
       throw new Error("cannot delete the current session");
     }
@@ -848,23 +1018,28 @@ export class SessionServer {
   }
 
   private deletableSessionsForCwd(
+    user: string,
     cwd: string,
     currentSessionId: string | undefined,
   ): SessionListEntry[] {
-    return this.numberedSessionsForCwd(cwd).filter(
+    return this.numberedSessionsForCwd(user, cwd).filter(
       (session) => session.id !== currentSessionId,
     );
   }
 
-  private numberedSessionsForCwd(cwd: string): SessionListEntry[] {
+  private numberedSessionsForCwd(
+    user: string,
+    cwd: string,
+  ): SessionListEntry[] {
     const normalizedCwd = resolve(cwd);
     const byId = new Map<string, Omit<SessionListEntry, "number">>();
     for (const persisted of this.readPersistedSessions()) {
-      if (resolve(persisted.cwd) !== normalizedCwd) {
+      if (persisted.user !== user || resolve(persisted.cwd) !== normalizedCwd) {
         continue;
       }
       byId.set(persisted.id, {
         id: persisted.id,
+        user: persisted.user,
         sequence: persisted.sequence,
         cwd: persisted.cwd,
         status: persisted.status,
@@ -876,12 +1051,19 @@ export class SessionServer {
       });
     }
     for (const session of this.sessions.values()) {
-      if (!session.persisted || resolve(session.cwd) !== normalizedCwd) {
+      if (
+        !session.persisted ||
+        session.user !== user ||
+        resolve(session.cwd) !== normalizedCwd
+      ) {
         continue;
       }
       byId.set(session.id, {
         id: session.id,
-        sequence: session.sequence ?? this.nextSequenceForCwd(session.cwd),
+        user: session.user,
+        sequence:
+          session.sequence ??
+          this.nextSequenceForCwd(session.user, session.cwd),
         cwd: session.cwd,
         status: session.status,
         createdAt: session.createdAt,
@@ -900,6 +1082,8 @@ export class SessionServer {
     return {
       id: session.id,
       sessionId: session.id,
+      user: session.user,
+      clientIds: [...session.clientIds],
       cwd: session.cwd,
       status: session.status,
       model: session.config.model,
@@ -1187,13 +1371,15 @@ export class SessionServer {
       .join("\n");
   }
 
-  private formatSessions(cwd: string): string {
-    const sessions = this.numberedSessionsForCwd(cwd);
+  private formatSessions(user: string, cwd: string): string {
+    const sessions = this.numberedSessionsForCwd(user, cwd);
     if (sessions.length === 0) {
-      return [`sessions for ${resolve(cwd)}`, "0. new session"].join("\n");
+      return [`sessions for ${user} ${resolve(cwd)}`, "0. new session"].join(
+        "\n",
+      );
     }
     return [
-      `sessions for ${resolve(cwd)}`,
+      `sessions for ${user} ${resolve(cwd)}`,
       "0. new session",
       ...sessions.map((session) =>
         [
@@ -1209,18 +1395,19 @@ export class SessionServer {
   }
 
   private formatDeleteSessions(
+    user: string,
     cwd: string,
     currentSessionId: string | undefined,
   ): string {
-    const sessions = this.deletableSessionsForCwd(cwd, currentSessionId);
+    const sessions = this.deletableSessionsForCwd(user, cwd, currentSessionId);
     if (sessions.length === 0) {
       return [
-        `delete sessions for ${resolve(cwd)}`,
+        `delete sessions for ${user} ${resolve(cwd)}`,
         "no deletable sessions",
       ].join("\n");
     }
     return [
-      `delete sessions for ${resolve(cwd)}`,
+      `delete sessions for ${user} ${resolve(cwd)}`,
       ...sessions.map((session) =>
         [
           `${session.number}. ${session.title}`,
@@ -1240,12 +1427,31 @@ export class SessionServer {
     if (!existsSync(dir)) {
       return [];
     }
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map((entry) => this.readPersistedSession(basename(entry.name, ".jsonl")))
+    return this.sessionFiles(dir)
+      .map((file) =>
+        this.readPersistedSessionFromFile(
+          file,
+          relative(dir, file)
+            .replace(/\\/g, "/")
+            .replace(/\.jsonl$/, ""),
+        ),
+      )
       .filter(
         (session): session is PersistedSessionState => session !== undefined,
       );
+  }
+
+  private sessionFiles(dir: string): string[] {
+    if (!existsSync(dir)) {
+      return [];
+    }
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return this.sessionFiles(path);
+      }
+      return entry.isFile() && entry.name.endsWith(".jsonl") ? [path] : [];
+    });
   }
 
   private readPersistedSession(
@@ -1255,11 +1461,25 @@ export class SessionServer {
     if (!existsSync(file)) {
       return undefined;
     }
+    return this.readPersistedSessionFromFile(
+      file,
+      relative(this.persistenceDir(), file)
+        .replace(/\\/g, "/")
+        .replace(/\.jsonl$/, ""),
+    );
+  }
+
+  private readPersistedSessionFromFile(
+    file: string,
+    logKey: string,
+  ): PersistedSessionState | undefined {
+    const sessionId = basename(file, ".jsonl");
     const records = readFileSync(file, "utf8")
       .split("\n")
       .filter((line) => line.trim().length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
     let cwd: string | undefined;
+    let user = userFromLogKey(logKey);
     let createdAt: number | undefined;
     let updatedAt = 0;
     let status: LiveSession["status"] = "idle";
@@ -1271,6 +1491,7 @@ export class SessionServer {
       updatedAt = Math.max(updatedAt, recordTime);
       if (record.type === "session_started") {
         cwd = typeof record.cwd === "string" ? record.cwd : cwd;
+        user = typeof record.user === "string" ? record.user : user;
         createdAt =
           typeof record.createdAt === "number" ? record.createdAt : createdAt;
         sequence =
@@ -1298,6 +1519,8 @@ export class SessionServer {
     }
     return {
       id: sessionId,
+      user,
+      logKey,
       cwd,
       status,
       createdAt: createdAt ?? updatedAt,
@@ -1313,16 +1536,18 @@ export class SessionServer {
       return;
     }
     const now = Date.now();
-    const sequence = this.nextSequenceForCwd(session.cwd);
+    const sequence = this.nextSequenceForCwd(session.user, session.cwd);
     session.sequence = sequence;
     session.title = titleFromPrompt(prompt);
     session.createdAt = now;
     session.updatedAt = now;
+    session.logKey = this.newSessionLogKey(session.user, now, session.id);
     session.persisted = true;
     this.acquireOwnership(session);
-    this.store.append(session.id, {
+    this.appendSessionRecord(session, {
       type: "session_started",
       sessionId: session.id,
+      user: session.user,
       cwd: session.cwd,
       sequence,
       title: session.title,
@@ -1330,10 +1555,13 @@ export class SessionServer {
     });
   }
 
-  private nextSequenceForCwd(cwd: string): number {
+  private nextSequenceForCwd(user: string, cwd: string): number {
     const normalizedCwd = resolve(cwd);
     const maxSequence = this.readPersistedSessions()
-      .filter((session) => resolve(session.cwd) === normalizedCwd)
+      .filter(
+        (session) =>
+          session.user === user && resolve(session.cwd) === normalizedCwd,
+      )
       .reduce((max, session) => Math.max(max, session.sequence), 0);
     return maxSequence + 1;
   }
@@ -1376,6 +1604,9 @@ export class SessionServer {
     const config = this.configForPersistedSession(persisted);
     const reloaded: LiveSession = {
       id: persisted.id,
+      user: persisted.user,
+      clientIds: session.clientIds,
+      logKey: persisted.logKey,
       cwd: persisted.cwd,
       config,
       runtime: new AgentRuntime({
@@ -1491,12 +1722,57 @@ export class SessionServer {
   private persistenceDir(): string {
     return (
       this.options.persistenceDir ??
-      join(this.options.config.paths.globalDir, "sessions", "ts-server")
+      this.options.config.paths.sessionDir ??
+      join(this.options.config.paths.globalDir, "sessions")
     );
   }
 
+  private appendSessionRecord(
+    session: LiveSession,
+    record: SessionLogRecord,
+  ): void {
+    this.store.append(this.sessionLogKey(session), record);
+  }
+
+  private sessionLogKey(session: LiveSession): string {
+    if (session.logKey !== undefined) {
+      return session.logKey;
+    }
+    session.logKey = this.newSessionLogKey(
+      session.user,
+      session.createdAt,
+      session.id,
+    );
+    return session.logKey;
+  }
+
+  private newSessionLogKey(
+    user: string,
+    createdAt: number,
+    sessionId: string,
+  ): string {
+    const created = new Date(createdAt);
+    return [
+      sanitizePathSegment(user),
+      String(created.getUTCFullYear()).padStart(4, "0"),
+      String(created.getUTCMonth() + 1).padStart(2, "0"),
+      sessionId,
+    ].join("/");
+  }
+
   private sessionFile(sessionId: string): string {
-    return join(this.persistenceDir(), `${sessionId}.jsonl`);
+    return (
+      this.sessionFiles(this.persistenceDir()).find(
+        (file) => basename(file, ".jsonl") === sessionId,
+      ) ??
+      join(
+        this.persistenceDir(),
+        "defaultUser",
+        "unknown",
+        "unknown",
+        `${sessionId}.jsonl`,
+      )
+    );
   }
 
   private sessionFileExists(sessionId: string): boolean {
@@ -1542,6 +1818,56 @@ function isFileSystemError(error: unknown, code: string): boolean {
   );
 }
 
+function sanitizePathSegment(value: string): string {
+  const sanitized = value.replace(/[^A-Za-z0-9._-]/g, "_");
+  return sanitized.length === 0 ? "defaultUser" : sanitized;
+}
+
+function userFromLogKey(logKey: string): string {
+  return logKey.split("/")[0] || "defaultUser";
+}
+
+const DASHBOARD_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ndx Agent Service</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: Canvas;
+        color: CanvasText;
+      }
+      main {
+        width: min(720px, calc(100vw - 48px));
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 32px;
+        font-weight: 650;
+      }
+      p {
+        margin: 0;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <main aria-labelledby="dashboard-title" data-testid="agent-dashboard-placeholder">
+      <h1 id="dashboard-title">ndx Agent Service</h1>
+      <p role="status">Dashboard placeholder is running.</p>
+    </main>
+  </body>
+</html>`;
+
 function sleepSync(ms: number): void {
   const signal = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(signal, 0, 0, ms);
@@ -1549,6 +1875,8 @@ function sleepSync(ms: number): void {
 
 class WebSocketConnection {
   private buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  user = "defaultUser";
+  clientId: string = randomUUID();
 
   constructor(
     private readonly socket: Socket,

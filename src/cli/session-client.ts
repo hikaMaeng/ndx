@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { SessionNotification } from "../session/client.js";
 import type {
   RuntimeEventMsg,
@@ -11,6 +12,8 @@ export interface CliSessionRuntime {
   print?: (message: string) => void;
   printError?: (message: string) => void;
   question?: (prompt: string) => Promise<string>;
+  user?: string;
+  clientId?: string;
 }
 
 export interface CliSessionTransport {
@@ -76,6 +79,8 @@ export class CliSessionController {
   private readonly print: (message: string) => void;
   private readonly printError: (message: string) => void;
   private readonly question: ((prompt: string) => Promise<string>) | undefined;
+  private readonly user: string;
+  private readonly clientId: string;
   private initializeResult: InitializeResult | undefined;
   private session: SessionSummary | undefined;
   private sessionConfigured: SessionConfiguredEvent | undefined;
@@ -87,6 +92,8 @@ export class CliSessionController {
     this.print = options.print ?? console.log;
     this.printError = options.printError ?? console.error;
     this.question = options.question;
+    this.user = options.user ?? "defaultUser";
+    this.clientId = options.clientId ?? randomUUID();
     this.client.onNotification((notification) => {
       if (notification.method !== "session/deleted") {
         return;
@@ -117,7 +124,7 @@ export class CliSessionController {
   async startSession(): Promise<string> {
     const response = await this.client.request<{ session: SessionSummary }>(
       "session/start",
-      { cwd: this.cwd },
+      this.requestParams({ cwd: this.cwd }),
     );
     this.session = response.session;
     this.printError(formatSessionStarted(response.session));
@@ -127,7 +134,7 @@ export class CliSessionController {
   async listSessions(): Promise<SessionListEntry[]> {
     const response = await this.client.request<{
       sessions: SessionListEntry[];
-    }>("session/list", { cwd: this.cwd });
+    }>("session/list", this.requestParams({ cwd: this.cwd }));
     return response.sessions;
   }
 
@@ -139,7 +146,7 @@ export class CliSessionController {
     const response = await this.client.request<{
       session: SessionSummary;
       events: unknown[];
-    }>("session/restore", { cwd: this.cwd, selector });
+    }>("session/restore", this.requestParams({ cwd: this.cwd, selector }));
     this.session = response.session;
     this.print(
       `restored session ${response.session.number}: ${response.session.title ?? "empty"}`,
@@ -195,7 +202,10 @@ export class CliSessionController {
         }
       });
     });
-    await this.client.request("turn/start", { sessionId, prompt });
+    await this.client.request(
+      "turn/start",
+      this.requestParams({ sessionId, prompt }),
+    );
     const text = await completion;
     if (text) {
       this.print(text);
@@ -216,12 +226,12 @@ export class CliSessionController {
     }
     const result = await this.client.request<ServerCommandResult>(
       "command/execute",
-      {
+      this.requestParams({
         name: parsed.name,
         args: parsed.args,
         sessionId: this.session?.id,
         cwd: this.cwd,
-      },
+      }),
     );
     if (!result.handled) {
       this.print(result.output);
@@ -249,20 +259,26 @@ export class CliSessionController {
     if (selector !== undefined) {
       const response = await this.client.request<{
         message: string;
-      }>("session/delete", {
-        cwd: this.cwd,
-        selector,
-        currentSessionId: this.session?.id,
-      });
+      }>(
+        "session/delete",
+        this.requestParams({
+          cwd: this.cwd,
+          selector,
+          currentSessionId: this.session?.id,
+        }),
+      );
       this.print(response.message);
       return;
     }
     const response = await this.client.request<{
       sessions: SessionListEntry[];
-    }>("session/deleteCandidates", {
-      cwd: this.cwd,
-      currentSessionId: this.session?.id,
-    });
+    }>(
+      "session/deleteCandidates",
+      this.requestParams({
+        cwd: this.cwd,
+        currentSessionId: this.session?.id,
+      }),
+    );
     if (response.sessions.length === 0) {
       this.print(`delete sessions for ${this.cwd}\nno deletable sessions`);
       return;
@@ -285,11 +301,11 @@ export class CliSessionController {
     }
     const deleted = await this.client.request<{ message: string }>(
       "session/delete",
-      {
+      this.requestParams({
         cwd: this.cwd,
         selector: answer,
         currentSessionId: this.session?.id,
-      },
+      }),
     );
     this.print(deleted.message);
   }
@@ -299,6 +315,12 @@ export class CliSessionController {
       throw new Error("session has not been started");
     }
     return this.session.id;
+  }
+
+  private requestParams<T extends Record<string, unknown>>(
+    params: T,
+  ): T & { user: string; clientId: string } {
+    return { ...params, user: this.user, clientId: this.clientId };
   }
 }
 

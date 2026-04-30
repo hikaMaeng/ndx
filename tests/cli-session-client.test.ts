@@ -9,6 +9,8 @@ import {
 } from "../src/cli/session-client.js";
 import type { SessionNotification } from "../src/session/client.js";
 
+const cliIdentity = { user: "defaultUser", clientId: "client-test" };
+
 test("CLI session controller initializes socket, starts session, and renders status", async () => {
   const transport = new FakeTransport();
   const stdout: string[] = [];
@@ -16,6 +18,7 @@ test("CLI session controller initializes socket, starts session, and renders sta
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
+    ...cliIdentity,
     print: (message) => stdout.push(message),
     printError: (message) => stderr.push(message),
   });
@@ -48,6 +51,7 @@ test("CLI session controller records initialization events outside prompt contex
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
+    ...cliIdentity,
     print: (message) => stdout.push(message),
     printError: (message) => stderr.push(message),
   });
@@ -101,6 +105,7 @@ test("CLI session controller records initialization events outside prompt contex
       args: undefined,
       sessionId: "session-1",
       cwd: "/workspace",
+      ...cliIdentity,
     },
   });
 });
@@ -119,7 +124,10 @@ test("welcome logo emits the configured robot art", () => {
 
   assert.equal(stderr[0], WELCOME_LOGO);
   assert.equal(WELCOME_LOGO.startsWith("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣺⣟⣿⢶⣄"), true);
-  assert.equal(WELCOME_LOGO.includes("⠸⡷⣟⡿⣯⢿⡾⡷⡿⣯⣟⣯⢿⣳⡿⣽⣟⣿⢽⣟⡿⣯⢿⣻⣯⢿⣽⢾⣻⡾⣟⣿⣻⣽⡾⣟⣷⢿⡽⣿⣻⣟⣷⠇"), true);
+  assert.equal(
+    WELCOME_LOGO.includes("⠸⡷⣟⡿⣯⢿⡾⡷⡿⣯⣟⣯⢿⣳⡿⣽⣟⣿⢽⣟⡿⣯⢿⣻⣯⢿⣽⢾⣻⡾⣟⣿⣻⣽⡾⣟⣷⢿⡽⣿⣻⣟⣷⠇"),
+    true,
+  );
 });
 
 test("CLI session controller does not send registered unsupported slash commands as prompts", async () => {
@@ -128,6 +136,7 @@ test("CLI session controller does not send registered unsupported slash commands
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
+    ...cliIdentity,
     print: (message) => stdout.push(message),
   });
 
@@ -149,6 +158,7 @@ test("CLI session controller switches active session after restoreSession comman
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
+    ...cliIdentity,
     print: (message) => stdout.push(message),
   });
 
@@ -165,6 +175,7 @@ test("CLI session controller switches active session after restoreSession comman
       args: "2",
       sessionId: "session-1",
       cwd: "/workspace",
+      ...cliIdentity,
     },
   });
 
@@ -199,6 +210,7 @@ test("CLI session controller prompts before deleting another workspace session",
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
+    ...cliIdentity,
     print: (message) => stdout.push(message),
     question: async (prompt) => {
       questions.push(prompt);
@@ -223,6 +235,7 @@ test("CLI session controller prompts before deleting another workspace session",
       cwd: "/workspace",
       selector: "2",
       currentSessionId: "session-1",
+      ...cliIdentity,
     },
   });
 });

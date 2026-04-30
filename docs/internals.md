@@ -15,7 +15,7 @@ context answers, then the CLI reruns `loadConfig`.
 
 ## Settings Merge
 
-Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` may be an array or an object keyed by local model ID and are merged by that ID.
+Scalar fields such as `model`, `sessionPath`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` may be an array or an object keyed by local model ID and are merged by that ID.
 
 ## Active Provider
 
@@ -87,10 +87,12 @@ the manifest command remains owned by the capability tool implementation.
 `src/session/server.ts` owns live sessions. `SessionServer` accepts WebSocket
 JSON-RPC, creates one `AgentRuntime` per live session, stores per-session event
 history, maps runtime events to client notifications, and enqueues server-owned
-JSONL records under `<globalDir>/sessions/ts-server`.
+JSONL records under `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionUuid>.jsonl`.
+The origin is `/home/.ndx/sessions` unless `sessionPath` is present in global
+settings. Missing user defaults to `defaultUser`.
 
-`session/list` scans the same JSONL directory and merges matching persisted live
-sessions with saved records for a requested resolved `cwd`. Workspace numbers
+`session/list` scans the same JSONL tree and merges matching persisted live
+sessions with saved records for a requested user and resolved `cwd`. Workspace numbers
 are monotonically increasing sequence values assigned on the first user prompt,
 not temporary list indexes. `session/restore` reloads saved runtime events,
 rebuilds model conversation history from prior user turns, assistant messages,
@@ -135,6 +137,16 @@ Socket close is also a persistence boundary. When a connection disappears and a
 persisted session has no subscribers left, the server records
 `session_detached` and drains the queue. Empty sessions are ignored because they
 have no durable identity yet.
+
+The account methods are in-process JSON-RPC controls for the current service
+instance: `account/create`, `account/login`, `account/delete`, and
+`account/changePassword`. Login stores user and client id on the WebSocket
+connection. The first CLI client implemented here generates a fresh client id
+per controller instance and includes user/client id in session and turn
+requests.
+
+HTTP `GET /` and `GET /dashboard` are intentionally minimal. They return the
+dashboard placeholder only; all agent interaction remains on WebSocket JSON-RPC.
 
 ## Mock Client
 

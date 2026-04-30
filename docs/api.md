@@ -46,20 +46,24 @@ notifications; they are not authoritative session stores.
 
 Requests:
 
-| Method                     | Params                                  | Result                                    |
-| -------------------------- | --------------------------------------- | ----------------------------------------- |
-| `initialize`               | none                                    | server name, protocol, methods, bootstrap |
-| `command/list`             | none                                    | `{ commands }`                            |
-| `command/execute`          | `{ name, args?, sessionId? }`           | command result                            |
-| `session/start`            | `{ cwd? }`                              | `{ session }`                             |
-| `session/list`             | `{ cwd? }`                              | `{ sessions }`                            |
-| `session/restore`          | `{ cwd?, selector }`                    | `{ session, events }`                     |
-| `session/deleteCandidates` | `{ cwd?, currentSessionId? }`           | `{ sessions }`                            |
-| `session/delete`           | `{ cwd?, selector, currentSessionId? }` | `{ session, message }`                    |
-| `session/subscribe`        | `{ sessionId }`                         | `{ session, events }`                     |
-| `session/read`             | `{ sessionId }`                         | `{ session, events }`                     |
-| `turn/start`               | `{ sessionId, prompt }`                 | `{ turn }`                                |
-| `turn/interrupt`           | `{ sessionId, reason? }`                | `{ session }`                             |
+| Method                     | Params                                                    | Result                                    |
+| -------------------------- | --------------------------------------------------------- | ----------------------------------------- |
+| `initialize`               | none                                                      | server name, protocol, methods, bootstrap |
+| `command/list`             | none                                                      | `{ commands }`                            |
+| `account/create`           | `{ username, password? }`                                 | `{ username, createdAt }`                 |
+| `account/login`            | `{ username?, password?, clientId? }`                     | `{ username, clientId, sessionRoot }`     |
+| `account/delete`           | `{ username }`                                            | `{ username, deleted }`                   |
+| `account/changePassword`   | `{ username, oldPassword?, newPassword }`                 | `{ username, updatedAt }`                 |
+| `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`           | command result                            |
+| `session/start`            | `{ cwd?, user?, clientId? }`                              | `{ session }`                             |
+| `session/list`             | `{ cwd?, user?, clientId? }`                              | `{ sessions }`                            |
+| `session/restore`          | `{ cwd?, selector, user?, clientId? }`                    | `{ session, events }`                     |
+| `session/deleteCandidates` | `{ cwd?, currentSessionId?, user?, clientId? }`           | `{ sessions }`                            |
+| `session/delete`           | `{ cwd?, selector, currentSessionId?, user?, clientId? }` | `{ session, message }`                    |
+| `session/subscribe`        | `{ sessionId, user?, clientId? }`                         | `{ session, events }`                     |
+| `session/read`             | `{ sessionId }`                                           | `{ session, events }`                     |
+| `turn/start`               | `{ sessionId, prompt, user?, clientId? }`                 | `{ turn }`                                |
+| `turn/interrupt`           | `{ sessionId, reason? }`                                  | `{ session }`                             |
 
 Notifications:
 
@@ -78,15 +82,17 @@ Notifications:
 - `error`
 
 Server JSONL records are queued by the session server and written by a child
-writer process to `<globalDir>/sessions/ts-server/<sessionId>.jsonl`. Records
-include `persistedAt` and `writerPid`. Empty sessions are not persisted and do
-not receive workspace numbers. The first user prompt assigns the next
+writer process to `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionId>.jsonl`.
+`sessionOrigin` is `/home/.ndx/sessions` unless global settings define
+`sessionPath`. Records include `persistedAt` and `writerPid`. Empty sessions are
+not persisted and do not receive workspace numbers. The first user prompt assigns the next
 monotonically increasing number for that resolved `cwd`, changes the title from
 `empty` to a shortened prompt prefix, and writes `session_started`.
 
 `session/list` scans persisted JSONL files plus live server memory, filters by
-the requested `cwd`, and returns workspace sequence numbers. `/session` prints
-`0. new session` plus the same numbered view. `session/restore` and
+the requested user and `cwd`, and returns workspace sequence numbers. If no
+user is supplied, `defaultUser` is used. `/session` prints `0. new session`
+plus the same numbered view. `session/restore` and
 `/restoreSession` accept either the full session id or the workspace number.
 Restored sessions reuse the original session id and append new records to the
 original JSONL file. `/deleteSession` lists sessions for the same `cwd`, omits
@@ -107,6 +113,10 @@ discards stale live output, reloads persisted state, and reclaims ownership.
 If the JSONL for the held session disappeared because another server deleted
 it, the stale owner sends `session/deleted`, closes its sockets, and terminates
 the server.
+
+HTTP `GET /` and `GET /dashboard` return a minimal dashboard placeholder. The
+agent service remains socket-first; this page is only an admin UI anchor until a
+real dashboard is implemented.
 
 `initialize` returns `bootstrap`, and `session/configured` includes the
 same shape on `event.bootstrap`:
@@ -154,6 +164,7 @@ Canonical shape:
       "fast": "qwen-main-a"
     }
   },
+  "sessionPath": "/mnt/state/ndx-sessions",
   "providers": {
     "lmstudio-a": {
       "type": "openai",

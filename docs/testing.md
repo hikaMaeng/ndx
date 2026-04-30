@@ -12,6 +12,7 @@ npm run deploy
 - Fixed global `/home/.ndx/settings.json` path.
 - Nearest project `.ndx/settings.json` discovery.
 - Global plus project settings merge precedence.
+- Optional `sessionPath` session-origin override.
 - Global `/home/.ndx/search.json` rule loading.
 - Provider/model resolution from settings.
 - Model pool parsing for `session`, `worker`, `reviewer`, and `custom`.
@@ -47,7 +48,10 @@ npm run deploy
 - CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
-- Server-side JSONL persistence under `<globalDir>/sessions/ts-server`.
+- Server-side JSONL persistence under
+  `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionUuid>.jsonl`.
+- Account create/login/password-change methods and WebSocket client identity.
+- Dashboard placeholder HTTP response and stable browser locator contract.
 - Workspace-scoped session listing, restore by session id or list number, and
   non-current session deletion.
 - Restore rebuilds provider-facing model conversation history from saved
@@ -74,4 +78,12 @@ npm run deploy
 
 ## Browser Verification
 
-No browser UI exists in the current TypeScript agent. Browser verification is not required for this package.
+The current browser surface is the dashboard placeholder served by the session
+server at `/` and `/dashboard`.
+
+Locator contract:
+
+- `main` landmark named by the `ndx Agent Service` heading.
+- `role="status"` for the placeholder status text.
+- `data-testid="agent-dashboard-placeholder"` for a stable non-user-facing
+  anchor.

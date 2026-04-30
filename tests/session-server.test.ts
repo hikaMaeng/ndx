@@ -3,12 +3,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MockModelClient } from "../src/model/mock-client.js";
@@ -238,9 +239,24 @@ test("session server owns session events, subscribers, and JSONL persistence", a
     }>("command/execute", { name: "restoreSession", args: "1", cwd: root });
     assert.equal(restoredByNumber.session.id, sessionId);
 
-    const logFile = join(persistenceDir, `${sessionId}.jsonl`);
+    const logFile = sessionLogFile(persistenceDir, sessionId);
     assert.equal(existsSync(logFile), true);
     let records = readJsonl(logFile);
+    const started = records.find((record) => record.type === "session_started");
+    const createdAt =
+      typeof started?.createdAt === "number" ? started.createdAt : Date.now();
+    const created = new Date(createdAt);
+    assert.equal(
+      logFile.includes(
+        join(
+          "defaultUser",
+          String(created.getUTCFullYear()).padStart(4, "0"),
+          String(created.getUTCMonth() + 1).padStart(2, "0"),
+          `${sessionId}.jsonl`,
+        ),
+      ),
+      true,
+    );
     assert.equal(
       records.some((record) => record.type === "session_started"),
       true,
@@ -473,6 +489,72 @@ test("session server keeps sessions on the base config while model routing happe
   }
 });
 
+test("session server exposes account methods, client identity, and dashboard placeholder", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-accounts-"));
+  const globalDir = join(root, "home", ".ndx");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    server = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    const dashboard = await fetch(`http://${address.host}:${address.port}/`);
+    assert.equal(dashboard.status, 200);
+    const html = await dashboard.text();
+    assert.equal(
+      html.includes('data-testid="agent-dashboard-placeholder"'),
+      true,
+    );
+    assert.equal(html.includes('role="status"'), true);
+
+    client = await SessionClient.connect(address.url);
+    await client.request("initialize");
+    const created = await client.request<{
+      username: string;
+    }>("account/create", {
+      username: "alice",
+      password: "secret",
+    });
+    assert.equal(created.username, "alice");
+    const login = await client.request<{
+      username: string;
+      clientId: string;
+      sessionRoot: string;
+    }>("account/login", {
+      username: "alice",
+      password: "secret",
+      clientId: "cli-run-1",
+    });
+    assert.deepEqual(login, {
+      username: "alice",
+      clientId: "cli-run-1",
+      sessionRoot: join(globalDir, "sessions"),
+    });
+    const start = await client.request<{
+      session: { user: string; clientIds: string[] };
+    }>("session/start", { cwd: root });
+    assert.equal(start.session.user, "alice");
+    assert.deepEqual(start.session.clientIds, ["cli-run-1"]);
+    const changed = await client.request<{
+      username: string;
+    }>("account/changePassword", {
+      username: "alice",
+      oldPassword: "secret",
+      newPassword: "changed",
+    });
+    assert.equal(changed.username, "alice");
+  } finally {
+    client?.close();
+    await server?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("session server restores a saved workspace session by id or number", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-restore-"));
   const globalDir = join(root, "home", ".ndx");
@@ -561,7 +643,7 @@ test("session server restores a saved workspace session by id or number", async 
     );
 
     const records = readJsonl(
-      join(persistenceDir, `${originalSessionId}.jsonl`),
+      sessionLogFile(persistenceDir, originalSessionId),
     );
     assert.equal(
       records.some((record) => record.type === "session_restored"),
@@ -638,7 +720,7 @@ test("session server deletes non-current workspace sessions and ends stale owner
       message: string;
     }>("session/delete", { cwd: root, selector: "1" });
     assert.equal(deleteResponse.message, "deleted session 1: delete me later");
-    assert.equal(existsSync(join(persistenceDir, `${sessionId}.jsonl`)), false);
+    assert.equal(existsSync(sessionLogFile(persistenceDir, sessionId)), false);
 
     const deleted = waitForMethod(firstClient, "session/deleted");
     await firstClient
@@ -725,7 +807,7 @@ test("session ownership uses last prompt attempt across socket servers", async (
     await secondCompleted;
     await firstServer.flushPersistence();
 
-    const records = readJsonl(join(persistenceDir, `${sessionId}.jsonl`));
+    const records = readJsonl(sessionLogFile(persistenceDir, sessionId));
     assert.equal(
       records.filter((record) => record.type === "turn_start_requested").length,
       2,
@@ -837,7 +919,7 @@ test("session ownership discards in-flight output from a previous socket server"
     await withTimeout(ownershipChanged, "waiting for stale owner notification");
     await withTimeout(firstServer.flushPersistence(), "flushing first server");
 
-    const records = readJsonl(join(persistenceDir, `${sessionId}.jsonl`));
+    const records = readJsonl(sessionLogFile(persistenceDir, sessionId));
     const runtimeMessages = records
       .filter((record) => record.type === "runtime_event")
       .map((record) => (record.event as { msg?: unknown }).msg)
@@ -1018,6 +1100,29 @@ function readJsonl(file: string): Array<Record<string, unknown>> {
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function sessionLogFile(root: string, sessionId: string): string {
+  const found = sessionLogFiles(root).find(
+    (file) => basename(file, ".jsonl") === sessionId,
+  );
+  return (
+    found ??
+    join(root, "defaultUser", "unknown", "unknown", `${sessionId}.jsonl`)
+  );
+}
+
+function sessionLogFiles(root: string): string[] {
+  if (!existsSync(root)) {
+    return [];
+  }
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) {
+      return sessionLogFiles(path);
+    }
+    return entry.isFile() && entry.name.endsWith(".jsonl") ? [path] : [];
+  });
 }
 
 function waitForProcess(child: ChildProcess): Promise<number | null> {
