@@ -33,6 +33,8 @@ export type SlashCommandResult =
 
 const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
   implementedBuiltin("model", "choose what model and reasoning effort to use"),
+  implementedBuiltin("effort", "choose the active model reasoning effort"),
+  implementedBuiltin("think", "choose whether model thinking mode is on"),
   builtin(
     "fast",
     "toggle Fast mode to enable fastest inference with increased plan usage",

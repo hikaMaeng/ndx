@@ -364,21 +364,38 @@ function normalizeModels(models: ModelCatalogSettings): ModelSettings[] {
     return models.map((model) => ({
       ...model,
       id: model.id ?? model.name,
-      activeEffort: model.activeEffort ?? model.effort?.[0],
-      activeThink: model.activeThink ?? model.think,
+      activeEffort: model.activeEffort ?? defaultModelEffort(model),
+      activeThink: model.activeThink ?? defaultModelThink(model),
     }));
   }
   return Object.entries(models).map(([id, model]) => ({
     ...model,
     id,
     name: model.name ?? id,
-    activeEffort: model.activeEffort ?? model.effort?.[0],
-    activeThink: model.activeThink ?? model.think,
+    activeEffort: model.activeEffort ?? defaultModelEffort(model),
+    activeThink: model.activeThink ?? defaultModelThink(model),
   }));
 }
 
 function modelId(model: ModelSettings): string {
   return model.id ?? model.name;
+}
+
+/** Return the default live effort for a model catalog entry. */
+export function defaultModelEffort(
+  model: Pick<ModelSettings, "effort">,
+): string | undefined {
+  if (model.effort === undefined || model.effort.length === 0) {
+    return undefined;
+  }
+  return model.effort[Math.floor(model.effort.length / 2)];
+}
+
+/** Return the default live thinking mode for a model catalog entry. */
+export function defaultModelThink(
+  model: Pick<ModelSettings, "think">,
+): boolean | undefined {
+  return model.think === undefined ? undefined : true;
 }
 
 function finalizeConfig(

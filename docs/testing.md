@@ -18,7 +18,8 @@ npm run deploy
 - Sticky model routing across the session pool after the first selected-pool binding.
 - Custom model pool selection with `@keyword` prompt routing.
 - Object model catalogs with aliases, provider-facing names, effort, thinking, and sampling parameters.
-- `/model` command state changes for model, effort, and thinking mode.
+- `/model`, `/effort`, and `/think` command state changes for numbered model,
+  effort, and thinking mode selection.
 - Session server keeps sessions on the base config while provider routing happens per request.
 - Missing global and project settings fail in the loader without falling back to a default model.
 - TTY setup wizard creates project `.ndx/settings.json` from permission, provider, model, and context answers.

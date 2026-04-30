@@ -15,7 +15,9 @@ The command registry is owned by the ndx TypeScript session server.
 | `/session`               | list sessions for the current workspace                                | session built-in |
 | `/restoreSession`        | restore a saved session by id or list number                           | session built-in |
 | `/deleteSession`         | delete another saved session for the current workspace                 | session built-in |
-| `/model`                 | choose what model and reasoning effort to use                          | session built-in |
+| `/model`                 | choose the active session model by number or ID                        | session built-in |
+| `/effort`                | choose the active model effort by number or value                      | session built-in |
+| `/think`                 | choose active model thinking mode by number or value                   | session built-in |
 | `/fast`                  | toggle Fast mode to enable fastest inference with increased plan usage | session built-in |
 | `/approvals`             | choose what Codex is allowed to do                                     | session built-in |
 | `/permissions`           | choose what Codex is allowed to do                                     | session built-in |
@@ -68,20 +70,27 @@ The command registry is owned by the ndx TypeScript session server.
 
 `/model` prints the active model ID, provider-facing model name, provider,
 effort, thinking mode, and the configured model catalog for the current live
-session.
+session. Session models are numbered and may be selected with the displayed
+number or by local model ID.
 
 ```text
 /model
-/model <model-id>
-/model effort <value>
-/model think <on|off>
-/model <model-id> effort <value> think <on|off>
+/model <number|model-id>
+/model effort <value|number>
+/model think <on|off|1|2>
+/model <number|model-id> effort <value|number> think <on|off|1|2>
+/effort
+/effort <number|value>
+/think
+/think <1|2|on|off>
 ```
 
-`/model effort` is accepted only when the active model declares an `effort`
-array. `/model think` is accepted only when the active model declares `think`.
-Changing any of these values affects the next provider request and intentionally
-starts a new prefix-cache binding.
+`/effort` is accepted only when the active model declares an `effort` array.
+If no effort has been chosen for a model, the default is the middle entry in the
+array. `/think` is accepted only when the active model declares `think`; the
+default is on. Changing the model resets effort and thinking mode to those
+defaults. Unsupported `/effort` and `/think` calls print that the active model
+does not support the requested control.
 
 ## Discovery Layers
 

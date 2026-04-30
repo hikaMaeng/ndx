@@ -163,10 +163,14 @@ parameters:
 }
 ```
 
-Use `/model`, `/model <id>`, `/model effort <value>`, and `/model think
-<on|off>` to inspect or change the live session state. Changing model, effort,
-or thinking mode starts a new provider client binding for the next request, so
-the prefix cache is expected to restart at that explicit boundary.
+Use `/model`, `/effort`, and `/think` to inspect or change the live session
+state. `/model` lists session models with numbers and accepts either a number
+or model ID. `/effort` lists the active model effort choices when the model
+declares an `effort` array, and `/think` lists on/off choices when the model
+declares `think`. Changing model, effort, or thinking mode starts a new provider
+client binding for the next request, so the prefix cache is expected to restart
+at that explicit boundary. Model changes reset effort to the middle configured
+choice and thinking mode to on when those controls are supported.
 
 OpenAI-compatible Responses requests do not use `previous_response_id`. ndx
 resends the local client-side conversation stack on every model request so

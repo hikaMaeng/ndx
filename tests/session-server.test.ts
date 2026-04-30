@@ -366,6 +366,106 @@ test("session server keeps sessions on the base config while model routing happe
     );
     assert.equal(status.output.includes("effort: high"), true);
     assert.equal(status.output.includes("think: off"), true);
+
+    const selectedByNumber = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "model",
+      args: "1",
+      sessionId: first.session.id,
+    });
+    assert.equal(
+      selectedByNumber.output.includes("model: mock-a -> mock-a"),
+      true,
+    );
+    assert.equal(selectedByNumber.output.includes("effort: unsupported"), true);
+    assert.equal(selectedByNumber.output.includes("think: unsupported"), true);
+
+    const selectedConfigurableByNumber = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "model",
+      args: "2",
+      sessionId: first.session.id,
+    });
+    assert.equal(
+      selectedConfigurableByNumber.output.includes(
+        "model: mock-b -> provider-mock-b",
+      ),
+      true,
+    );
+    assert.equal(
+      selectedConfigurableByNumber.output.includes("effort: medium"),
+      true,
+    );
+    assert.equal(
+      selectedConfigurableByNumber.output.includes("think: on"),
+      true,
+    );
+
+    const effortMenu = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "effort", sessionId: first.session.id },
+    );
+    assert.equal(effortMenu.output.includes("choose effort:"), true);
+    assert.equal(effortMenu.output.includes("2. * medium"), true);
+
+    const effortSelected = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "effort",
+      args: "3",
+      sessionId: first.session.id,
+    });
+    assert.equal(effortSelected.output.includes("effort: high"), true);
+
+    const thinkMenu = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "think", sessionId: first.session.id },
+    );
+    assert.equal(thinkMenu.output.includes("choose think mode:"), true);
+    assert.equal(thinkMenu.output.includes("1. * on"), true);
+
+    const thinkSelected = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "think",
+      args: "2",
+      sessionId: first.session.id,
+    });
+    assert.equal(thinkSelected.output.includes("think: off"), true);
+
+    await client.request("command/execute", {
+      name: "model",
+      args: "1",
+      sessionId: first.session.id,
+    });
+    const unsupportedEffort = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "effort",
+      sessionId: first.session.id,
+    });
+    assert.equal(
+      unsupportedEffort.output,
+      "model mock-a does not support effort",
+    );
+    const unsupportedThink = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "think",
+      sessionId: first.session.id,
+    });
+    assert.equal(
+      unsupportedThink.output,
+      "model mock-a does not support think",
+    );
   } finally {
     client?.close();
     await server?.close().catch(() => undefined);

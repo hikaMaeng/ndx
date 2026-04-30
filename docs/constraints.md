@@ -14,7 +14,10 @@
 - `model.worker` and `model.reviewer` are parsed and validated only; no runtime dispatch path consumes them yet.
 - `model.custom` keys are selected by `@key` in the user prompt. Keys must be non-empty and must not contain whitespace or `@`.
 - `models` may be a legacy array or an object keyed by local model ID. Object keys are the pool-facing aliases; `models.<id>.name` is the provider-facing model name.
-- `models.<id>.effort` and `models.<id>.think` declare whether `/model effort` and `/model think` can change that model's live session state.
+- `models.<id>.effort` and `models.<id>.think` declare whether `/effort` and `/think` can change that model's live session state.
+- A model with `effort` but no active effort starts at the middle configured
+  effort entry. A model with `think` starts with thinking mode on. Explicit
+  model changes reset both controls to those defaults.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
 - The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.

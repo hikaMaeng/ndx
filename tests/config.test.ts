@@ -220,7 +220,7 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
     assert.equal(loaded.config.model, "fast-local");
     assert.equal(loaded.config.activeModel.id, "fast-local");
     assert.equal(loaded.config.activeModel.name, "qwen3.6-35b-a3b:mm");
-    assert.equal(loaded.config.activeModel.activeEffort, "low");
+    assert.equal(loaded.config.activeModel.activeEffort, "medium");
     assert.equal(loaded.config.activeModel.activeThink, true);
     assert.equal(loaded.config.activeModel.limitResponseLength, 2048);
     assert.deepEqual(loaded.config.modelPools.session, [

@@ -12,7 +12,12 @@ import {
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
-import { configForModel, ensureGlobalNdxHome } from "../config/index.js";
+import {
+  configForModel,
+  defaultModelEffort,
+  defaultModelThink,
+  ensureGlobalNdxHome,
+} from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import { SessionLogStore } from "./log-store.js";
@@ -444,6 +449,18 @@ export class SessionServer {
           handled: true,
           action: "print",
           output: this.configureModel(execution),
+        };
+      case "effort":
+        return {
+          handled: true,
+          action: "print",
+          output: this.configureEffort(execution),
+        };
+      case "think":
+        return {
+          handled: true,
+          action: "print",
+          output: this.configureThink(execution),
         };
       case "init":
         return {
@@ -901,7 +918,10 @@ export class SessionServer {
     }
     let index = 0;
     if (args[index] !== "effort" && args[index] !== "think") {
-      this.switchSessionModel(session, args[index]);
+      this.switchSessionModel(
+        session,
+        this.resolveModelSelection(session.config, args[index]),
+      );
       index += 1;
     }
     while (index < args.length) {
@@ -927,6 +947,36 @@ export class SessionServer {
     return this.formatModelStatus(session.config);
   }
 
+  private configureEffort(execution: SlashCommandExecution): string {
+    const session = this.sessionForCommand(execution.sessionId);
+    const args = (execution.args ?? "").trim().split(/\s+/).filter(Boolean);
+    const active = session.config.activeModel;
+    if (active.effort === undefined || active.effort.length === 0) {
+      return `model ${active.id ?? active.name} does not support effort`;
+    }
+    if (args.length === 0) {
+      return this.formatEffortSelection(active);
+    }
+    this.setEffort(active, this.resolveEffortSelection(active, args[0]));
+    session.updatedAt = Date.now();
+    return this.formatEffortSelection(active);
+  }
+
+  private configureThink(execution: SlashCommandExecution): string {
+    const session = this.sessionForCommand(execution.sessionId);
+    const args = (execution.args ?? "").trim().split(/\s+/).filter(Boolean);
+    const active = session.config.activeModel;
+    if (active.think === undefined) {
+      return `model ${active.id ?? active.name} does not support think`;
+    }
+    if (args.length === 0) {
+      return this.formatThinkSelection(active);
+    }
+    this.setThink(active, this.resolveThinkSelection(args[0]));
+    session.updatedAt = Date.now();
+    return this.formatThinkSelection(active);
+  }
+
   private sessionForCommand(sessionId: string | undefined): LiveSession {
     const session =
       sessionId === undefined ? undefined : this.sessions.get(sessionId);
@@ -941,6 +991,12 @@ export class SessionServer {
     session.config.model = next.model;
     session.config.activeModel = next.activeModel;
     session.config.activeProvider = next.activeProvider;
+    session.config.activeModel.activeEffort = defaultModelEffort(
+      session.config.activeModel,
+    );
+    session.config.activeModel.activeThink = defaultModelThink(
+      session.config.activeModel,
+    );
   }
 
   private setEffort(model: ModelSettings, effort: string): void {
@@ -967,11 +1023,76 @@ export class SessionServer {
     model.activeThink = value === "on";
   }
 
+  private resolveModelSelection(config: NdxConfig, selection: string): string {
+    const number = Number.parseInt(selection, 10);
+    if (Number.isInteger(number) && String(number) === selection) {
+      const selected = config.modelPools.session[number - 1];
+      if (selected === undefined) {
+        throw new Error(
+          `model number must be 1-${config.modelPools.session.length}`,
+        );
+      }
+      return selected;
+    }
+    return selection;
+  }
+
+  private resolveEffortSelection(
+    model: ModelSettings,
+    selection: string,
+  ): string {
+    const number = Number.parseInt(selection, 10);
+    if (Number.isInteger(number) && String(number) === selection) {
+      const selected = model.effort?.[number - 1];
+      if (selected === undefined) {
+        throw new Error(`effort number must be 1-${model.effort?.length ?? 0}`);
+      }
+      return selected;
+    }
+    return selection;
+  }
+
+  private resolveThinkSelection(selection: string): string {
+    if (selection === "1") {
+      return "on";
+    }
+    if (selection === "2") {
+      return "off";
+    }
+    return selection;
+  }
+
+  private formatEffortSelection(model: ModelSettings): string {
+    const active = model.activeEffort ?? defaultModelEffort(model);
+    const rows = (model.effort ?? []).map((effort, index) => {
+      const current = effort === active ? "*" : " ";
+      return `${index + 1}. ${current} ${effort}`;
+    });
+    return [
+      `effort: ${active ?? "unsupported"}`,
+      "choose effort:",
+      ...rows,
+    ].join("\n");
+  }
+
+  private formatThinkSelection(model: ModelSettings): string {
+    const active = model.activeThink === false ? "off" : "on";
+    return [
+      `think: ${active}`,
+      "choose think mode:",
+      `1. ${active === "on" ? "*" : " "} on`,
+      `2. ${active === "off" ? "*" : " "} off`,
+    ].join("\n");
+  }
+
   private formatModelStatus(config: NdxConfig): string {
     const active = config.activeModel;
+    const sessionModels = new Set(config.modelPools.session);
     const rows = config.models.map((model) => {
       const id = model.id ?? model.name;
       const current = id === config.model ? "*" : " ";
+      const number = config.modelPools.session.indexOf(id);
+      const prefix = number === -1 ? " -" : `${number + 1}.`;
       const effort =
         model.effort === undefined
           ? "effort: unsupported"
@@ -980,7 +1101,8 @@ export class SessionServer {
         model.think === undefined
           ? "think: unsupported"
           : `think: ${model.activeThink === false ? "off" : "on"}`;
-      return `${current} ${id} -> ${model.name} [${effort}; ${think}]`;
+      const scope = sessionModels.has(id) ? "session" : "catalog";
+      return `${prefix} ${current} ${id} -> ${model.name} [${effort}; ${think}; ${scope}]`;
     });
     return [
       `model: ${config.model} -> ${active.name}`,
@@ -988,7 +1110,7 @@ export class SessionServer {
       `effort: ${active.activeEffort ?? "unsupported"}`,
       `think: ${active.think === undefined ? "unsupported" : active.activeThink === false ? "off" : "on"}`,
       "",
-      "usage: /model <id> [effort <value>] [think <on|off>]",
+      "usage: /model <number|id> [effort <value|number>] [think <on|off|1|2>]",
       "       /model effort <value>",
       "       /model think <on|off>",
       "",
