@@ -26,6 +26,7 @@ import type {
 
 const baseConfig: NdxConfig = {
   model: "mock",
+  modelPools: { session: ["mock"], worker: [], reviewer: [] },
   instructions: "test",
   env: {},
   keys: {},
@@ -269,6 +270,69 @@ test("session server owns session events, subscribers, and JSONL persistence", a
     client?.close();
     subscriber?.close();
     await server?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session server assigns session model pool in round-robin order", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-model-pool-"));
+  const globalDir = join(root, "home", ".ndx");
+  const assignedModels: string[] = [];
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    const config: NdxConfig = {
+      ...baseConfig,
+      model: "mock-a",
+      modelPools: {
+        session: ["mock-a", "mock-b"],
+        worker: ["mock-worker"],
+        reviewer: ["mock-reviewer"],
+      },
+      models: [
+        { name: "mock-a", provider: "mock" },
+        { name: "mock-b", provider: "mock" },
+        { name: "mock-worker", provider: "mock" },
+        { name: "mock-reviewer", provider: "mock" },
+      ],
+      activeModel: { name: "mock-a", provider: "mock" },
+    };
+    server = new SessionServer({
+      cwd: root,
+      config: { ...config, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: (runtimeConfig) => {
+        assignedModels.push(runtimeConfig.model);
+        return new MockModelClient();
+      },
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await client.request("initialize");
+
+    const first = await client.request<{ session: { model: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const second = await client.request<{ session: { model: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const third = await client.request<{ session: { model: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+
+    assert.deepEqual(assignedModels, ["mock-a", "mock-b", "mock-a"]);
+    assert.deepEqual(
+      [first.session.model, second.session.model, third.session.model],
+      ["mock-a", "mock-b", "mock-a"],
+    );
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
     rmSync(root, { recursive: true, force: true });
   }
 });

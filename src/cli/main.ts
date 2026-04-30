@@ -190,7 +190,7 @@ function createSessionServer(options: {
     cwd: options.args.cwd,
     config: options.config,
     sources: options.sources,
-    createClient: () => createClient(options.args.mock, options.config),
+    createClient: (config) => createClient(options.args.mock, config),
   });
 }
 

@@ -9,6 +9,9 @@
 - `keys` values must be strings because they are injected into external tool process environments.
 - Provider `key` may be an empty string.
 - Provider `type` is limited to `openai` and `anthropic`.
+- `model` may be a string or an object with `session`, optional `worker`, and optional `reviewer` model pools.
+- `model.session` is required for object form and assigns one model per new session in round-robin order.
+- `model.worker` and `model.reviewer` are parsed and validated only; no runtime dispatch path consumes them yet.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
 - The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
 - Settings files are not generated at startup. If neither `/home/.ndx/settings.json` nor a project `.ndx/settings.json` exists, config loading fails before model selection.

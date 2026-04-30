@@ -113,6 +113,23 @@ node dist/src/cli/main.js "inspect this repository and summarize the test comman
 
 The active provider comes from settings. Empty provider keys are allowed for local OpenAI-compatible servers such as LM Studio.
 
+`model` may be a string or a pool object. String form keeps the legacy single
+model behavior. Object form requires `session` and may declare `worker` and
+`reviewer` placeholders:
+
+```json
+{
+  "model": {
+    "session": ["qwen-main-a", "qwen-main-b"],
+    "worker": ["qwen-worker-a", "qwen-worker-b"],
+    "reviewer": ["qwen-review-a"]
+  }
+}
+```
+
+New sessions use `model.session` in round-robin order. `worker` and `reviewer`
+are validated but are not connected to runtime dispatch yet.
+
 ## Docker
 
 `npm run deploy` builds the Docker image from the current pushed Git branch, not from local source folders. Push the feature branch before running deploy. Compose stores runtime workspace and global settings under `./docker/volume`.

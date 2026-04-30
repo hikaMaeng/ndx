@@ -99,6 +99,11 @@ test("loadConfig cascades global settings, nearest project settings, and global 
 
     const loaded = loadConfig(child, { globalDir });
     assert.equal(loaded.config.model, "project-model");
+    assert.deepEqual(loaded.config.modelPools, {
+      session: ["project-model"],
+      worker: [],
+      reviewer: [],
+    });
     assert.equal(loaded.config.activeProvider.key, "project-key");
     assert.equal(loaded.config.activeProvider.url, "http://project.example/v1");
     assert.deepEqual(loaded.config.env, { A: "1", B: "project", C: "3" });
@@ -110,6 +115,50 @@ test("loadConfig cascades global settings, nearest project settings, and global 
       },
     });
     assert.equal(loaded.sources.length, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("loadConfig accepts model pools for session, worker, and reviewer", () => {
+  const root = tempRoot();
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    const project = join(root, "repo");
+    mkdirSync(globalDir, { recursive: true });
+    mkdirSync(project, { recursive: true });
+
+    writeJson(join(globalDir, "settings.json"), {
+      model: {
+        session: ["session-a", "session-b"],
+        worker: ["worker-a", "worker-b"],
+        reviewer: "reviewer-a",
+      },
+      providers: {
+        provider: {
+          type: "openai",
+          key: "",
+          url: "http://provider.example/v1",
+        },
+      },
+      models: [
+        { name: "session-a", provider: "provider" },
+        { name: "session-b", provider: "provider" },
+        { name: "worker-a", provider: "provider" },
+        { name: "worker-b", provider: "provider" },
+        { name: "reviewer-a", provider: "provider" },
+      ],
+    });
+
+    const loaded = loadConfig(project, { globalDir });
+
+    assert.equal(loaded.config.model, "session-a");
+    assert.deepEqual(loaded.config.modelPools, {
+      session: ["session-a", "session-b"],
+      worker: ["worker-a", "worker-b"],
+      reviewer: ["reviewer-a"],
+    });
+    assert.equal(loaded.config.activeModel.name, "session-a");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -226,6 +226,7 @@ test("OpenAI provider prefers responses and falls back to chat completions on mi
 function configFor(type: "openai" | "anthropic", url: string): NdxConfig {
   return {
     model: "test-model",
+    modelPools: { session: ["test-model"], worker: [], reviewer: [] },
     instructions: "test instructions",
     env: {},
     keys: {},

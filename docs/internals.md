@@ -10,11 +10,13 @@ search rules.
 
 ## Settings Merge
 
-Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` are merged by model name.
+Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, and `reviewer` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` are merged by model name.
 
 ## Active Provider
 
-`finalizeConfig` resolves `model` to one `models[]` entry, then resolves that entry's `provider` against `providers`. Provider type is validated as `openai` or `anthropic`; execution reads URL and key from that resolved provider only.
+`finalizeConfig` normalizes `model` into role pools. A string becomes a single-entry `session` pool. `session` is required; `worker` and `reviewer` are optional placeholders. Every referenced pool entry must exist in `models[]`, and each model's `provider` must exist in `providers`.
+
+The active root config resolves to the first `session` model. `SessionServer` assigns new sessions from the `session` pool in round-robin order, then builds a per-session config with that model's active provider. Restored sessions reuse the model recorded in their persisted `session_configured` event.
 
 `loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global directories and built-in `/core/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
 

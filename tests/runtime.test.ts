@@ -12,6 +12,7 @@ import type { NdxBootstrapReport, NdxConfig } from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
+  modelPools: { session: ["mock"], worker: [], reviewer: [] },
   instructions: "test",
   env: {},
   keys: {},
