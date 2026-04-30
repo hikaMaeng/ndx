@@ -20,7 +20,7 @@ import type {
 
 const baseConfig: NdxConfig = {
   model: "mock",
-  modelPools: { session: ["mock"], worker: [], reviewer: [] },
+  modelPools: { session: ["mock"], worker: [], reviewer: [], custom: {} },
   instructions: "test",
   env: {},
   keys: {},

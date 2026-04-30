@@ -9,9 +9,10 @@
 - `keys` values must be strings because they are injected into external tool process environments.
 - Provider `key` may be an empty string.
 - Provider `type` is limited to `openai` and `anthropic`.
-- `model` may be a string or an object with `session`, optional `worker`, and optional `reviewer` model pools.
-- `model.session` is required for object form and assigns one model per new session in round-robin order.
+- `model` may be a string or an object with `session`, optional `worker`, optional `reviewer`, and optional `custom` model pools.
+- `model.session` is required for object form. Model selection is per provider request in round-robin order.
 - `model.worker` and `model.reviewer` are parsed and validated only; no runtime dispatch path consumes them yet.
+- `model.custom` keys are selected by `@key` in the user prompt. Keys must be non-empty and must not contain whitespace or `@`.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
 - The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
@@ -40,6 +41,8 @@
 
 - Real model execution uses the active model's provider from `settings.json`.
 - OpenAI-compatible execution uses Responses first. `404` and `405` from `/responses` permanently switch that client instance to Chat Completions fallback.
+- OpenAI-compatible Responses execution must not send `previous_response_id`; server-side conversation continuation is intentionally unused.
+- Every model request must include the local client-side conversation stack needed for that request, including prior user turns, assistant text, tool calls, and tool outputs.
 - Anthropic execution uses Messages and converts OpenAI-style function schemas to Anthropic tool schemas.
 - The agent loop only sees normalized function tool calls and `function_call_output` items. Provider-specific content blocks do not leak into `src/agent`.
 - Native Responses-only `namespace`, freeform, local_shell, and image_generation tool types are represented as function-compatible TypeScript contracts.

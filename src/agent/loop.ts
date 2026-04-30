@@ -44,18 +44,17 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
 }
 
 interface AgentLoopState {
-  input: unknown;
-  previousResponseId?: string;
+  input: ModelConversationItem[];
   finalText: string;
 }
 
 type SamplingResult =
   | { needsFollowUp: false }
-  | { needsFollowUp: true; nextInput: unknown };
+  | { needsFollowUp: true; nextInput: ModelConversationItem[] };
 
 function createInitialState(prompt: string): AgentLoopState {
   return {
-    input: undefined,
+    input: [{ type: "message", role: "user", content: prompt }],
     finalText: "",
   };
 }
@@ -66,33 +65,29 @@ async function runSamplingRequest(
   options: AgentRunOptions,
 ): Promise<SamplingResult> {
   throwIfAborted(options.signal);
-  if (state.input === undefined) {
-    state.input = initialModelInput(options.prompt, options.history ?? []);
-  }
-  const response = await options.client.create(
-    state.input,
-    state.previousResponseId,
-    registry.schemas(),
-  );
+  const input = modelInput(state, options.history ?? []);
+  const response = await options.client.create(input, registry.schemas());
   throwIfAborted(options.signal);
   updateStateFromModelResponse(state, response, options);
   if (!modelNeedsFollowUp(response)) {
     return { needsFollowUp: false };
   }
+  const outputs = await executeToolCalls(response.toolCalls, options);
+  state.input.push(...outputs);
   return {
     needsFollowUp: true,
-    nextInput: await executeToolCalls(response.toolCalls, options),
+    nextInput: state.input,
   };
 }
 
-function initialModelInput(
-  prompt: string,
+function modelInput(
+  state: AgentLoopState,
   history: ModelConversationItem[],
-): unknown {
+): ModelConversationItem[] {
   if (history.length === 0) {
-    return prompt;
+    return state.input;
   }
-  return [...history, { type: "message", role: "user", content: prompt }];
+  return [...history, ...state.input];
 }
 
 function updateStateFromModelResponse(
@@ -100,9 +95,19 @@ function updateStateFromModelResponse(
   response: ModelResponse,
   options: AgentRunOptions,
 ): void {
-  state.previousResponseId = response.id ?? state.previousResponseId;
+  if (response.toolCalls.length > 0) {
+    state.input.push({
+      type: "assistant_tool_calls",
+      toolCalls: response.toolCalls,
+    });
+  }
   if (response.text) {
     state.finalText = response.text;
+    state.input.push({
+      type: "message",
+      role: "assistant",
+      content: response.text,
+    });
     options.onEvent?.({ type: "model_text", text: response.text });
   }
   if (response.usage !== undefined) {
@@ -117,7 +122,7 @@ function modelNeedsFollowUp(response: ModelResponse): boolean {
 async function executeToolCalls(
   calls: ModelToolCall[],
   options: AgentRunOptions,
-): Promise<unknown> {
+): Promise<ModelConversationItem[]> {
   throwIfAborted(options.signal);
   const outputs = await Promise.all(
     calls.map((call) => executeToolCall(call, options)),

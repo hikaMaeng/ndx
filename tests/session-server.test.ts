@@ -26,7 +26,7 @@ import type {
 
 const baseConfig: NdxConfig = {
   model: "mock",
-  modelPools: { session: ["mock"], worker: [], reviewer: [] },
+  modelPools: { session: ["mock"], worker: [], reviewer: [], custom: {} },
   instructions: "test",
   env: {},
   keys: {},
@@ -274,7 +274,7 @@ test("session server owns session events, subscribers, and JSONL persistence", a
   }
 });
 
-test("session server assigns session model pool in round-robin order", async () => {
+test("session server keeps sessions on the base config while model routing happens per request", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-model-pool-"));
   const globalDir = join(root, "home", ".ndx");
   const assignedModels: string[] = [];
@@ -289,6 +289,7 @@ test("session server assigns session model pool in round-robin order", async () 
         session: ["mock-a", "mock-b"],
         worker: ["mock-worker"],
         reviewer: ["mock-reviewer"],
+        custom: {},
       },
       models: [
         { name: "mock-a", provider: "mock" },
@@ -325,10 +326,10 @@ test("session server assigns session model pool in round-robin order", async () 
       { cwd: root },
     );
 
-    assert.deepEqual(assignedModels, ["mock-a", "mock-b", "mock-a"]);
+    assert.deepEqual(assignedModels, ["mock-a", "mock-a", "mock-a"]);
     assert.deepEqual(
       [first.session.model, second.session.model, third.session.model],
-      ["mock-a", "mock-b", "mock-a"],
+      ["mock-a", "mock-a", "mock-a"],
     );
   } finally {
     client?.close();

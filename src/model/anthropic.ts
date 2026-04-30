@@ -49,7 +49,6 @@ export class AnthropicMessagesAdapter {
 
   async create(
     input: ModelInput,
-    _previousResponseId?: string,
     tools: unknown[] = [],
   ): Promise<ModelResponse> {
     this.appendInput(input);

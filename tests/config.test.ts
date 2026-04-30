@@ -103,6 +103,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
       session: ["project-model"],
       worker: [],
       reviewer: [],
+      custom: {},
     });
     assert.equal(loaded.config.activeProvider.key, "project-key");
     assert.equal(loaded.config.activeProvider.url, "http://project.example/v1");
@@ -133,6 +134,10 @@ test("loadConfig accepts model pools for session, worker, and reviewer", () => {
         session: ["session-a", "session-b"],
         worker: ["worker-a", "worker-b"],
         reviewer: "reviewer-a",
+        custom: {
+          deep: ["reviewer-a", "session-b"],
+          fast: "session-a",
+        },
       },
       providers: {
         provider: {
@@ -157,6 +162,10 @@ test("loadConfig accepts model pools for session, worker, and reviewer", () => {
       session: ["session-a", "session-b"],
       worker: ["worker-a", "worker-b"],
       reviewer: ["reviewer-a"],
+      custom: {
+        deep: ["reviewer-a", "session-b"],
+        fast: ["session-a"],
+      },
     });
     assert.equal(loaded.config.activeModel.name, "session-a");
   } finally {

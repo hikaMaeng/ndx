@@ -14,13 +14,16 @@ npm run deploy
 - Global plus project settings merge precedence.
 - Global `/home/.ndx/search.json` rule loading.
 - Provider/model resolution from settings.
-- Model pool parsing for `session`, `worker`, and `reviewer`.
-- Session model round-robin assignment across new sessions.
+- Model pool parsing for `session`, `worker`, `reviewer`, and `custom`.
+- Per-request model round-robin routing across the session pool.
+- Custom model pool selection with `@keyword` prompt routing.
+- Session server keeps sessions on the base config while provider routing happens per request.
 - Missing global and project settings fail in the loader without falling back to a default model.
 - TTY setup wizard creates project `.ndx/settings.json` from permission, provider, model, and context answers.
 - Provider type validation for `openai` and `anthropic`.
 - Global `.ndx` bootstrap for missing core directories, built-in core tool package files, and skills directory.
 - OpenAI Responses normalization.
+- OpenAI Responses requests omit `previous_response_id`.
 - OpenAI Responses function tool schema conversion.
 - OpenAI Chat Completions normalization.
 - OpenAI Responses-to-Chat fallback on missing `/responses`.
@@ -46,6 +49,7 @@ npm run deploy
   non-current session deletion.
 - Restore rebuilds provider-facing model conversation history from saved
   runtime events.
+- Agent tool follow-up requests include the full local client-side context stack.
 - Empty sessions stay unnumbered and unpersisted until the first prompt.
 - Session ownership is reclaimed by the last socket server that attempts a prompt.
 - Deleted sessions notify stale socket owners and close the stale server on the

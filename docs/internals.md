@@ -15,21 +15,23 @@ context answers, then the CLI reruns `loadConfig`.
 
 ## Settings Merge
 
-Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, and `reviewer` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` are merged by model name.
+Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` are merged by model name.
 
 ## Active Provider
 
-`finalizeConfig` normalizes `model` into role pools. A string becomes a single-entry `session` pool. `session` is required; `worker` and `reviewer` are optional placeholders. Every referenced pool entry must exist in `models[]`, and each model's `provider` must exist in `providers`.
+`finalizeConfig` normalizes `model` into role pools. A string becomes a single-entry `session` pool. `session` is required; `worker`, `reviewer`, and `custom` are optional. Every referenced pool entry must exist in `models[]`, and each model's `provider` must exist in `providers`.
 
-The active root config resolves to the first `session` model. `SessionServer` assigns new sessions from the `session` pool in round-robin order, then builds a per-session config with that model's active provider. Restored sessions reuse the model recorded in their persisted `session_configured` event.
+The active root config resolves to the first `session` model for display and provider validation. Sessions keep that base config. `RoundRobinModelRouter` chooses the concrete model per provider request, rotating through `model.session` by default and through a `model.custom.<key>` pool when the current user prompt contains `@key`. Tool follow-up requests keep using the last selected pool for that turn.
 
 `loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global directories and built-in `/core/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
 
 ## Model Adapters
 
-`src/model/factory.ts` owns provider selection. The common model contract is the existing `ModelClient` shape: input, optional previous response id, tool schemas, then normalized text/tool calls/usage/raw output.
+`src/model/factory.ts` owns provider selection. The common model contract is the existing `ModelClient` shape: input, tool schemas, then normalized text/tool calls/usage/raw output.
 
-OpenAI provider instances own two adapters. `OpenAiResponsesAdapter` sends `/responses` requests and returns response ids for continuation. If `/responses` returns `404` or `405`, `OpenAiResponsesClient` switches that client instance to `OpenAiChatCompletionsAdapter`, which maintains volatile chat history and maps `function_call_output` items to tool messages.
+`createRoutedModelClient` wraps provider clients with per-request model routing. The router caches one provider client per concrete model so `/responses` fallback state is scoped to that model endpoint while round-robin counters remain shared by the session server's provider client.
+
+OpenAI provider instances own two adapters. `OpenAiResponsesAdapter` sends `/responses` requests without `previous_response_id`. If `/responses` returns `404` or `405`, `OpenAiResponsesClient` switches that client instance to `OpenAiChatCompletionsAdapter`, which maps `function_call_output` items to tool messages.
 
 `AnthropicMessagesAdapter` maintains volatile Messages history, converts function schemas into Anthropic `tools[]`, converts `tool_use` content blocks into normalized `ModelToolCall`s, and converts `function_call_output` items back into `tool_result` user content blocks.
 
@@ -42,10 +44,11 @@ OpenAI provider instances own two adapters. `OpenAiResponsesAdapter` sends `/res
 `src/agent/loop.ts` owns the model/tool loop. `runAgent` builds a
 `ToolRegistry` once per run and passes the registry's Chat
 Completions-compatible schemas to every model call. Registry construction scans
-task, core, project, global, plugin, and MCP layers in priority order. Tool
-outputs use Responses-style `function_call_output` items internally and are
-converted to chat completions `role = "tool"` messages by the OpenAI-compatible
-adapter.
+task, core, project, global, plugin, and MCP layers in priority order. The loop
+keeps a local request stack for the active user turn and sends the full stack on
+every sampling request. Tool outputs use Responses-style
+`function_call_output` items internally and are converted to chat completions
+`role = "tool"` messages by the OpenAI-compatible adapter.
 
 The registry owns only task orchestration tool definitions. Capability tools come from filesystem `tool.json` packages. MCP tools come from project or global settings and are exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
 
