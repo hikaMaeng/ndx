@@ -64,6 +64,25 @@ The command registry is owned by the ndx TypeScript session server.
 | `/debug-m-drop`          | memory maintenance debug command                                       | session built-in |
 | `/debug-m-update`        | memory maintenance debug command                                       | session built-in |
 
+## Implemented Session Commands
+
+`/model` prints the active model ID, provider-facing model name, provider,
+effort, thinking mode, and the configured model catalog for the current live
+session.
+
+```text
+/model
+/model <model-id>
+/model effort <value>
+/model think <on|off>
+/model <model-id> effort <value> think <on|off>
+```
+
+`/model effort` is accepted only when the active model declares an `effort`
+array. `/model think` is accepted only when the active model declares `think`.
+Changing any of these values affects the next provider request and intentionally
+starts a new prefix-cache binding.
+
 ## Discovery Layers
 
 Command names are directory names. Each directory must contain `command.json`.

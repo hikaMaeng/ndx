@@ -6,10 +6,7 @@ export type ModelConversationItem =
   | { type: "assistant_tool_calls"; toolCalls: ModelToolCall[] }
   | { type: "function_call_output"; call_id: string; output: string };
 
-export type ModelInput =
-  | string
-  | ModelConversationItem[]
-  | unknown;
+export type ModelInput = string | ModelConversationItem[] | unknown;
 
 export interface ModelAdapter {
   create(input: ModelInput, tools?: unknown[]): Promise<ModelResponse>;
@@ -20,4 +17,12 @@ export interface ProviderRequestOptions {
   instructions: string;
   apiKey: string;
   baseUrl: string;
+  effort?: string;
+  think?: boolean;
+  limitResponseLength?: number;
+  topK?: number;
+  repeatPenalty?: number;
+  presencePenalty?: number;
+  topP?: number;
+  MinP?: number;
 }

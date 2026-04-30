@@ -197,7 +197,13 @@ test("session server owns session events, subscribers, and JSONL persistence", a
     );
     assert.equal(
       status.output,
-      `server: ndx-ts-session-server\nsession: 1 ${sessionId} (idle)`,
+      [
+        "server: ndx-ts-session-server",
+        `session: 1 ${sessionId} (idle)`,
+        "model: mock (mock)",
+        "effort: unsupported",
+        "think: unsupported",
+      ].join("\n"),
     );
     const events = await client.request<{ handled: true; output: string }>(
       "command/execute",
@@ -293,7 +299,15 @@ test("session server keeps sessions on the base config while model routing happe
       },
       models: [
         { name: "mock-a", provider: "mock" },
-        { name: "mock-b", provider: "mock" },
+        {
+          id: "mock-b",
+          name: "provider-mock-b",
+          provider: "mock",
+          effort: ["low", "medium", "high"],
+          activeEffort: "low",
+          think: true,
+          activeThink: true,
+        },
         { name: "mock-worker", provider: "mock" },
         { name: "mock-reviewer", provider: "mock" },
       ],
@@ -313,24 +327,45 @@ test("session server keeps sessions on the base config while model routing happe
     );
     await client.request("initialize");
 
-    const first = await client.request<{ session: { model: string } }>(
-      "session/start",
-      { cwd: root },
-    );
-    const second = await client.request<{ session: { model: string } }>(
-      "session/start",
-      { cwd: root },
-    );
-    const third = await client.request<{ session: { model: string } }>(
-      "session/start",
-      { cwd: root },
-    );
+    const first = await client.request<{
+      session: { id: string; model: string };
+    }>("session/start", { cwd: root });
+    const second = await client.request<{
+      session: { id: string; model: string };
+    }>("session/start", { cwd: root });
+    const third = await client.request<{
+      session: { id: string; model: string };
+    }>("session/start", { cwd: root });
 
     assert.deepEqual(assignedModels, ["mock-a", "mock-a", "mock-a"]);
     assert.deepEqual(
       [first.session.model, second.session.model, third.session.model],
       ["mock-a", "mock-a", "mock-a"],
     );
+    const switched = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      {
+        name: "model",
+        args: "mock-b effort high think off",
+        sessionId: first.session.id,
+      },
+    );
+    assert.equal(
+      switched.output.includes("model: mock-b -> provider-mock-b"),
+      true,
+    );
+    assert.equal(switched.output.includes("effort: high"), true);
+    assert.equal(switched.output.includes("think: off"), true);
+    const status = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "status", sessionId: first.session.id },
+    );
+    assert.equal(
+      status.output.includes("model: mock-b (provider-mock-b)"),
+      true,
+    );
+    assert.equal(status.output.includes("effort: high"), true);
+    assert.equal(status.output.includes("think: off"), true);
   } finally {
     client?.close();
     await server?.close().catch(() => undefined);

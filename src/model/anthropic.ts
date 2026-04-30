@@ -58,7 +58,7 @@ export class AnthropicMessagesAdapter {
       {
         model: this.options.model,
         system: this.options.instructions,
-        max_tokens: 4096,
+        max_tokens: this.options.limitResponseLength ?? 4096,
         messages: this.messages,
         tools: normalizeAnthropicTools(tools),
       },

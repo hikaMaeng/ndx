@@ -166,18 +166,23 @@ Canonical shape:
       "url": "http://192.168.0.7:12345/v1"
     }
   },
-  "models": [
-    {
-      "name": "qwen-main-a",
+  "models": {
+    "qwen-main-a": {
+      "name": "qwen3.6-35b-a3b:mm",
       "provider": "lmstudio-a",
-      "maxContext": 262000
+      "maxContext": 262000,
+      "effort": ["low", "medium", "high"],
+      "think": true
     },
-    {
-      "name": "qwen-main-b",
+    "qwen-main-b": {
+      "name": "qwen3.6-35b-a3b:mm",
       "provider": "lmstudio-b",
-      "maxContext": 262000
+      "maxContext": 262000,
+      "effort": ["high"],
+      "think": true,
+      "limitResponseLength": 4096
     }
-  ],
+  },
   "permissions": {
     "defaultMode": "danger-full-access"
   },
@@ -191,11 +196,17 @@ Canonical shape:
 ```
 
 `model` may also be a single string for compatibility. A string is normalized to
-`model.session = [value]`. `model.session` is active today and selects one model
-per provider request in round-robin order. `model.custom.<key>` is selected when
-the current user prompt contains `@key`; tool follow-up requests continue
-rotating through that selected pool. `model.worker` and `model.reviewer` are
-validated placeholders for future worker and reviewer runtimes.
+`model.session = [value]`. Pool entries reference model IDs. Legacy `models[]`
+entries use `name` as the ID; object `models` entries use the object key as the
+ID and `name` as the provider-facing model name. The router binds a live session
+to one model per selected pool, preserving prefix-cache locality until an
+explicit model, effort, thinking, or pool change.
+
+Optional model fields are `maxContext`, `effort`, `think`,
+`limitResponseLength`, `topK`, `repeatPenalty`, `presencePenalty`, `topP`, and
+`MinP`. `effort` is the complete supported list for that model ID. `think`
+declares that the model supports live thinking-mode toggles. Unsupported fields
+cannot be changed with `/model`.
 
 `providers.<name>.type` must be `openai` or `anthropic`. `openai` targets OpenAI-compatible servers and prefers the Responses API. `anthropic` targets the Messages API.
 

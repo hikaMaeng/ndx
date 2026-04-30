@@ -10,9 +10,20 @@ export interface ProviderSettings {
 }
 
 export interface ModelSettings {
+  id?: string;
   name: string;
   provider: string;
   maxContext?: number;
+  effort?: string[];
+  activeEffort?: string;
+  think?: boolean;
+  activeThink?: boolean;
+  limitResponseLength?: number;
+  topK?: number;
+  repeatPenalty?: number;
+  presencePenalty?: number;
+  topP?: number;
+  MinP?: number;
 }
 
 export interface ModelPools {

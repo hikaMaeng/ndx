@@ -12,7 +12,7 @@ import {
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
-import { ensureGlobalNdxHome } from "../config/index.js";
+import { configForModel, ensureGlobalNdxHome } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import { SessionLogStore } from "./log-store.js";
@@ -28,6 +28,7 @@ import type {
   ModelClient,
   NdxBootstrapReport,
   NdxConfig,
+  ModelSettings,
 } from "../shared/types.js";
 
 type JsonRpcId = number | string | null;
@@ -437,6 +438,12 @@ export class SessionServer {
           handled: true,
           action: "print",
           output: this.formatCommandStatus(execution.sessionId),
+        };
+      case "model":
+        return {
+          handled: true,
+          action: "print",
+          output: this.configureModel(execution),
         };
       case "init":
         return {
@@ -886,6 +893,110 @@ export class SessionServer {
     };
   }
 
+  private configureModel(execution: SlashCommandExecution): string {
+    const session = this.sessionForCommand(execution.sessionId);
+    const args = (execution.args ?? "").trim().split(/\s+/).filter(Boolean);
+    if (args.length === 0) {
+      return this.formatModelStatus(session.config);
+    }
+    let index = 0;
+    if (args[index] !== "effort" && args[index] !== "think") {
+      this.switchSessionModel(session, args[index]);
+      index += 1;
+    }
+    while (index < args.length) {
+      const key = args[index];
+      const value = args[index + 1];
+      if (key === "effort") {
+        if (value === undefined) {
+          throw new Error("usage: /model effort <value>");
+        }
+        this.setEffort(session.config.activeModel, value);
+        index += 2;
+      } else if (key === "think") {
+        if (value === undefined) {
+          throw new Error("usage: /model think <on|off>");
+        }
+        this.setThink(session.config.activeModel, value);
+        index += 2;
+      } else {
+        throw new Error(`unsupported /model option: ${key}`);
+      }
+    }
+    session.updatedAt = Date.now();
+    return this.formatModelStatus(session.config);
+  }
+
+  private sessionForCommand(sessionId: string | undefined): LiveSession {
+    const session =
+      sessionId === undefined ? undefined : this.sessions.get(sessionId);
+    if (session === undefined) {
+      throw new Error("sessionId is required for /model");
+    }
+    return session;
+  }
+
+  private switchSessionModel(session: LiveSession, model: string): void {
+    const next = configForModel(session.config, model);
+    session.config.model = next.model;
+    session.config.activeModel = next.activeModel;
+    session.config.activeProvider = next.activeProvider;
+  }
+
+  private setEffort(model: ModelSettings, effort: string): void {
+    if (model.effort === undefined || model.effort.length === 0) {
+      throw new Error(
+        `model ${model.id ?? model.name} does not support effort`,
+      );
+    }
+    if (!model.effort.includes(effort)) {
+      throw new Error(
+        `model ${model.id ?? model.name} effort must be one of: ${model.effort.join(", ")}`,
+      );
+    }
+    model.activeEffort = effort;
+  }
+
+  private setThink(model: ModelSettings, value: string): void {
+    if (model.think === undefined) {
+      throw new Error(`model ${model.id ?? model.name} does not support think`);
+    }
+    if (value !== "on" && value !== "off") {
+      throw new Error("think must be on or off");
+    }
+    model.activeThink = value === "on";
+  }
+
+  private formatModelStatus(config: NdxConfig): string {
+    const active = config.activeModel;
+    const rows = config.models.map((model) => {
+      const id = model.id ?? model.name;
+      const current = id === config.model ? "*" : " ";
+      const effort =
+        model.effort === undefined
+          ? "effort: unsupported"
+          : `effort: ${model.activeEffort ?? "unset"} (${model.effort.join(", ")})`;
+      const think =
+        model.think === undefined
+          ? "think: unsupported"
+          : `think: ${model.activeThink === false ? "off" : "on"}`;
+      return `${current} ${id} -> ${model.name} [${effort}; ${think}]`;
+    });
+    return [
+      `model: ${config.model} -> ${active.name}`,
+      `provider: ${active.provider}`,
+      `effort: ${active.activeEffort ?? "unsupported"}`,
+      `think: ${active.think === undefined ? "unsupported" : active.activeThink === false ? "off" : "on"}`,
+      "",
+      "usage: /model <id> [effort <value>] [think <on|off>]",
+      "       /model effort <value>",
+      "       /model think <on|off>",
+      "",
+      "models:",
+      ...rows,
+    ].join("\n");
+  }
+
   private formatCommandStatus(sessionId: string | undefined): string {
     const session =
       sessionId === undefined ? undefined : this.sessions.get(sessionId);
@@ -893,7 +1004,27 @@ export class SessionServer {
       session === undefined
         ? "session: not started"
         : `session: ${session.sequence ?? "empty"} ${session.id} (${session.status})`;
-    return ["server: ndx-ts-session-server", sessionLine].join("\n");
+    const modelLine =
+      session === undefined
+        ? undefined
+        : `model: ${session.config.model} (${session.config.activeModel.name})`;
+    const effortLine =
+      session === undefined
+        ? undefined
+        : `effort: ${session.config.activeModel.activeEffort ?? "unsupported"}`;
+    const thinkLine =
+      session === undefined
+        ? undefined
+        : `think: ${session.config.activeModel.think === undefined ? "unsupported" : session.config.activeModel.activeThink === false ? "off" : "on"}`;
+    return [
+      "server: ndx-ts-session-server",
+      sessionLine,
+      modelLine,
+      effortLine,
+      thinkLine,
+    ]
+      .filter((line) => line !== undefined)
+      .join("\n");
   }
 
   private formatLatestSessionConfigured(sessionId: string | undefined): string {

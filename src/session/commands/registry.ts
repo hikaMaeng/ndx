@@ -32,7 +32,7 @@ export type SlashCommandResult =
   | { handled: false; output: string };
 
 const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
-  builtin("model", "choose what model and reasoning effort to use"),
+  implementedBuiltin("model", "choose what model and reasoning effort to use"),
   builtin(
     "fast",
     "toggle Fast mode to enable fastest inference with increased plan usage",
@@ -181,6 +181,20 @@ function builtin(
     description,
     placement: "session-builtin",
     implemented: false,
+  };
+}
+
+function implementedBuiltin(
+  name: string,
+  description: string,
+  aliases?: string[],
+): SlashCommandDefinition {
+  return {
+    name,
+    aliases,
+    description,
+    placement: "session-builtin",
+    implemented: true,
   };
 }
 
