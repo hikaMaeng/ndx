@@ -15,6 +15,12 @@ export interface ModelSettings {
   maxContext?: number;
 }
 
+export interface ModelPools {
+  session: string[];
+  worker: string[];
+  reviewer: string[];
+}
+
 export interface PermissionSettings {
   defaultMode: string;
 }
@@ -114,6 +120,7 @@ export interface PluginSettings {
 
 export interface NdxConfig {
   model: string;
+  modelPools: ModelPools;
   instructions: string;
   env: EnvMap;
   keys: EnvMap;

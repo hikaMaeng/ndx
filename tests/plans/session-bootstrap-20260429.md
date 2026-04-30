@@ -25,7 +25,7 @@ bootstrap detail is sent to socket clients.
 ## Steps
 
 1. Run `npm test`.
-2. Verify `ensureGlobalNdxHome()` creates missing `settings.json`, `core/`, `core/tools/`, shell tool files, and `skills/`.
+2. Verify `ensureGlobalNdxHome()` creates missing `core/`, `core/tools/`, shell tool files, and `skills/` without generating `settings.json`.
 3. Verify a second bootstrap run reports required elements as `existing`.
 4. Start `SessionServer` with a temporary global `.ndx`.
 5. Send `initialize` and assert the response includes bootstrap detail.

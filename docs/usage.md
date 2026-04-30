@@ -55,10 +55,13 @@ session and writes session JSONL under `/home/.ndx/sessions/ts-server` once the
 first prompt is submitted.
 
 On startup, config loading and the session server both enforce required global
-`.ndx` elements. Missing `settings.json`, `core/`, `core/tools/`, built-in core
-tool package files, and `skills/` are installed before session work begins. The
-socket initialization output includes a bootstrap report showing what was
-installed and what already existed.
+`.ndx` elements. Missing `core/`, `core/tools/`, built-in core tool package
+files, and `skills/` are installed before session work begins. If neither global
+nor project settings exist and the CLI is attached to a TTY, ndx asks for
+permission mode, provider type, provider key, provider URL, model name, and max
+context, then writes project `.ndx/settings.json`. Non-TTY startup still requires
+an existing settings file. The socket initialization output includes a bootstrap
+report showing what was installed and what already existed.
 
 ## Session Server
 
@@ -110,6 +113,23 @@ node dist/src/cli/main.js "inspect this repository and summarize the test comman
 ```
 
 The active provider comes from settings. Empty provider keys are allowed for local OpenAI-compatible servers such as LM Studio.
+
+`model` may be a string or a pool object. String form keeps the legacy single
+model behavior. Object form requires `session` and may declare `worker` and
+`reviewer` placeholders:
+
+```json
+{
+  "model": {
+    "session": ["qwen-main-a", "qwen-main-b"],
+    "worker": ["qwen-worker-a", "qwen-worker-b"],
+    "reviewer": ["qwen-review-a"]
+  }
+}
+```
+
+New sessions use `model.session` in round-robin order. `worker` and `reviewer`
+are validated but are not connected to runtime dispatch yet.
 
 ## Docker
 

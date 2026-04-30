@@ -26,8 +26,9 @@ Verify that startup bootstrap installs built-in capability tools as external
 ## Steps
 
 1. Run `npm test`.
-2. Confirm `ensureGlobalNdxHome()` installs `settings.json`, required
-   directories, and all built-in core tool package manifests/runtimes.
+2. Confirm `ensureGlobalNdxHome()` installs required directories and all
+   built-in core tool package manifests/runtimes without generating
+   `settings.json`.
 3. Confirm `ToolRegistry` exposes bootstrapped core capability tools from the
    `core` external layer.
 4. Confirm `list_dir` and `tool_search` execute through the external manifest

@@ -15,7 +15,8 @@ ndx is a TypeScript-first local coding agent runtime.
 - `keys` entries in settings are injected into shell tool executions.
 - `--mock` runs the full agent/tool loop without a provider key.
 - Real model execution uses the provider declared in settings. OpenAI-compatible providers try Responses first and fall back to Chat Completions when `/responses` is unavailable; Anthropic providers use Messages.
-- Missing global `.ndx` essentials are installed before config loading, including `settings.json` and the core shell tool.
+- Settings may define a `model.session` pool; new sessions receive one model from that pool in round-robin order.
+- Missing global `.ndx` directories and core tools are installed before config loading. If no settings file exists in a TTY CLI run, ndx asks for minimal provider/model settings and writes project `.ndx/settings.json`.
 
 ## Source Of Truth
 

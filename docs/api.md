@@ -117,16 +117,17 @@ same shape on `event.bootstrap`:
   "checkedAt": 1777440000000,
   "elements": [
     {
-      "name": "settings.json",
-      "path": "/home/.ndx/settings.json",
+      "name": "core",
+      "path": "/home/.ndx/core",
       "status": "installed"
     }
   ]
 }
 ```
 
-`status` is either `installed` or `existing`. The session server performs this
-bootstrap check before starting session work.
+`status` is either `installed` or `existing`. Settings files are not included in
+the bootstrap report because startup never generates them. The session server
+performs this bootstrap check before starting session work.
 
 ## Settings
 
@@ -144,18 +145,32 @@ Canonical shape:
 
 ```json
 {
-  "model": "qwen3.6-35b-a3b:tr",
+  "model": {
+    "session": ["qwen-main-a", "qwen-main-b"],
+    "worker": ["qwen-worker-a", "qwen-worker-b"],
+    "reviewer": ["qwen-review-a"]
+  },
   "providers": {
-    "lmstudio": {
+    "lmstudio-a": {
       "type": "openai",
       "key": "",
       "url": "http://192.168.0.6:12345/v1"
+    },
+    "lmstudio-b": {
+      "type": "openai",
+      "key": "",
+      "url": "http://192.168.0.7:12345/v1"
     }
   },
   "models": [
     {
-      "name": "qwen3.6-35b-a3b:tr",
-      "provider": "lmstudio",
+      "name": "qwen-main-a",
+      "provider": "lmstudio-a",
+      "maxContext": 262000
+    },
+    {
+      "name": "qwen-main-b",
+      "provider": "lmstudio-b",
       "maxContext": 262000
     }
   ],
@@ -170,6 +185,11 @@ Canonical shape:
   "keys": {}
 }
 ```
+
+`model` may also be a single string for compatibility. A string is normalized to
+`model.session = [value]`. `model.session` is active today and assigns one model
+per new session in round-robin order. `model.worker` and `model.reviewer` are
+validated placeholders for future worker and reviewer runtimes.
 
 `providers.<name>.type` must be `openai` or `anthropic`. `openai` targets OpenAI-compatible servers and prefers the Responses API. `anthropic` targets the Messages API.
 

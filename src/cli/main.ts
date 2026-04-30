@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
+import { createProjectSettingsWithWizard } from "./settings-wizard.js";
 import {
   CliSessionController,
   interactiveHelp,
@@ -13,7 +14,7 @@ import { createProviderModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
 import { SessionClient } from "../session/client.js";
 import { SessionServer, type SessionServerAddress } from "../session/server.js";
-import type { ModelClient, NdxConfig } from "../shared/types.js";
+import type { LoadedConfig, ModelClient, NdxConfig } from "../shared/types.js";
 
 interface CliArgs {
   cwd: string;
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { config, sources } = loadConfig(args.cwd);
+  const { config, sources } = await loadConfigForCli(args);
   if (sources.length > 0) {
     console.error(`[config] ${sources.join(", ")}`);
   }
@@ -65,6 +66,33 @@ async function main(): Promise<void> {
     await session.startSession();
     await session.runPrompt(prompt);
   });
+}
+
+async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
+  try {
+    return loadConfig(args.cwd);
+  } catch (error) {
+    if (!isMissingSettingsError(error) || !process.stdin.isTTY) {
+      throw error;
+    }
+    const rl = createInterface({ input, output });
+    try {
+      const settingsFile = await createProjectSettingsWithWizard(args.cwd, {
+        question: (prompt) => rl.question(prompt),
+        print: (message) => console.error(message),
+      });
+      console.error(`[config] installed ${settingsFile}`);
+    } finally {
+      rl.close();
+    }
+    return loadConfig(args.cwd);
+  }
+}
+
+function isMissingSettingsError(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.startsWith("missing ndx settings:")
+  );
 }
 
 async function runInteractive(options: {
@@ -190,7 +218,7 @@ function createSessionServer(options: {
     cwd: options.args.cwd,
     config: options.config,
     sources: options.sources,
-    createClient: () => createClient(options.args.mock, options.config),
+    createClient: (config) => createClient(options.args.mock, config),
   });
 }
 

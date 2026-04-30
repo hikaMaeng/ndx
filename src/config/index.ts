@@ -8,6 +8,7 @@ import type {
   McpSettings,
   NdxBootstrapElement,
   NdxBootstrapReport,
+  ModelPools,
   ModelSettings,
   NdxConfig,
   PermissionSettings,
@@ -29,7 +30,7 @@ export interface ConfigLoadOptions {
 }
 
 interface PartialSettings {
-  model?: string;
+  model?: string | PartialModelPools;
   instructions?: string;
   maxTurns?: number;
   shellTimeoutMs?: number;
@@ -43,6 +44,12 @@ interface PartialSettings {
   tools?: Partial<ToolRuntimeSettings>;
   keys?: EnvMap;
   env?: EnvMap;
+}
+
+interface PartialModelPools {
+  session?: string | string[];
+  worker?: string | string[];
+  reviewer?: string | string[];
 }
 
 /** Return the single global ndx configuration directory. */
@@ -69,7 +76,7 @@ export function loadConfig(
   options: ConfigLoadOptions = {},
 ): LoadedConfig {
   const sources: string[] = [];
-  const merged = defaultSettings();
+  const merged = runtimeDefaults();
   const globalDir = resolveGlobalNdxDir(options);
   ensureGlobalNdxHome(globalDir);
   let globalMcp: McpSettings = {};
@@ -89,6 +96,12 @@ export function loadConfig(
     }
     mergeSettings(merged, parsed);
     sources.push(file);
+  }
+
+  if (sources.length === 0) {
+    throw new Error(
+      `missing ndx settings: expected ${configFiles(cwd, options).join(" or ")}`,
+    );
   }
 
   const searchFile = searchRulesFile(options);
@@ -118,7 +131,7 @@ export function searchRulesFile(options: ConfigLoadOptions = {}): string {
   return join(resolveGlobalNdxDir(options), SEARCH_FILE);
 }
 
-/** Install required global .ndx files when they are missing. */
+/** Install required global .ndx directories and core tools when missing. */
 export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
   const elements: NdxBootstrapElement[] = [];
   const globalDirStatus = existsSync(globalDir) ? "existing" : "installed";
@@ -138,16 +151,6 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
       status,
     });
   }
-  const settingsFile = join(globalDir, SETTINGS_FILE);
-  const settingsStatus = existsSync(settingsFile) ? "existing" : "installed";
-  if (!existsSync(settingsFile)) {
-    writeJsonFile(settingsFile, defaultSettings());
-  }
-  elements.push({
-    name: SETTINGS_FILE,
-    path: settingsFile,
-    status: settingsStatus,
-  });
   elements.push(...ensureCoreToolPackages(globalDir));
   return {
     globalDir,
@@ -156,29 +159,13 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
   };
 }
 
-function defaultSettings(): PartialSettings {
+function runtimeDefaults(): PartialSettings {
   return {
-    model: "qwen3.6-35b-a3b:tr",
     instructions:
       "You are ndx, a local coding agent. Prefer concise plans, inspect before editing, and use shell when facts must be verified.",
     maxTurns: 8,
     shellTimeoutMs: 120_000,
-    providers: {
-      lmstudio: {
-        type: "openai",
-        key: "",
-        url: "http://192.168.0.6:12345/v1",
-      },
-    },
-    models: [
-      {
-        name: "qwen3.6-35b-a3b:tr",
-        provider: "lmstudio",
-        maxContext: 262_000,
-      },
-    ],
     permissions: { defaultMode: "danger-full-access" },
-    websearch: { provider: "tavily", apiKey: "" },
     search: {},
     mcp: {},
     plugins: [],
@@ -260,7 +247,7 @@ function findProjectSettingsFile(cwd: string): string | undefined {
 
 function parseSettings(contents: string, file: string): PartialSettings {
   const parsed = parseJsonObject(contents, file) as PartialSettings;
-  assertOptionalString(parsed.model, "model", file);
+  assertOptionalModelSelection(parsed.model, "model", file);
   assertOptionalString(parsed.instructions, "instructions", file);
   assertOptionalInteger(parsed.maxTurns, "maxTurns", file);
   assertOptionalInteger(parsed.shellTimeoutMs, "shellTimeoutMs", file);
@@ -334,6 +321,25 @@ function mergeSettings(target: PartialSettings, source: PartialSettings): void {
   }
 }
 
+export function configForModel(config: NdxConfig, model: string): NdxConfig {
+  const activeModel = config.models.find((entry) => entry.name === model);
+  if (activeModel === undefined) {
+    throw new Error(`model ${model} is not declared in settings.json models`);
+  }
+  const activeProvider = config.providers[activeModel.provider];
+  if (activeProvider === undefined) {
+    throw new Error(
+      `provider ${activeModel.provider} for model ${model} is not declared`,
+    );
+  }
+  return {
+    ...config,
+    model,
+    activeModel,
+    activeProvider,
+  };
+}
+
 function mergeModels(
   existing: ModelSettings[],
   incoming: ModelSettings[],
@@ -355,24 +361,19 @@ function finalizeConfig(
     projectMcp: McpSettings;
   },
 ): NdxConfig {
-  const model = expectString(settings.model, "model");
+  const modelPools = expectModelPools(settings.model, "model");
+  const model = modelPools.session[0];
   const providers = settings.providers ?? {};
   const models = settings.models ?? [];
-  const activeModel = models.find((entry) => entry.name === model);
-  if (activeModel === undefined) {
-    throw new Error(`model ${model} is not declared in settings.json models`);
-  }
-  const activeProvider = providers[activeModel.provider];
-  if (activeProvider === undefined) {
-    throw new Error(
-      `provider ${activeModel.provider} for model ${model} is not declared`,
-    );
-  }
+  validateModelPools(modelPools, models, providers);
+  const activeModel = expectDeclaredModel(model, models);
+  const activeProvider = expectDeclaredProvider(model, activeModel, providers);
 
   const keys = settings.keys ?? {};
   const env = { ...keys, ...(settings.env ?? {}) };
   return {
     model,
+    modelPools,
     instructions: expectString(settings.instructions, "instructions"),
     env,
     keys,
@@ -400,6 +401,56 @@ function finalizeConfig(
       projectNdxDir: runtime.projectNdxDir,
     },
   };
+}
+
+function assertOptionalModelSelection(
+  value: unknown,
+  field: string,
+  file: string,
+): void {
+  if (value === undefined || typeof value === "string") {
+    return;
+  }
+  if (!isObject(value)) {
+    throw new Error(
+      `${field} in ${file} must be a string or model pool object`,
+    );
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "session" && key !== "worker" && key !== "reviewer") {
+      throw new Error(`${field}.${key} in ${file} is not supported`);
+    }
+  }
+  assertModelPoolValue(value.session, `${field}.session`, file, true);
+  assertModelPoolValue(value.worker, `${field}.worker`, file, false);
+  assertModelPoolValue(value.reviewer, `${field}.reviewer`, file, false);
+}
+
+function assertModelPoolValue(
+  value: unknown,
+  field: string,
+  file: string,
+  required: boolean,
+): void {
+  if (value === undefined) {
+    if (required) {
+      throw new Error(`${field} in ${file} must be defined`);
+    }
+    return;
+  }
+  if (typeof value === "string" && value.length > 0) {
+    return;
+  }
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "string" && item.length > 0)
+  ) {
+    return;
+  }
+  throw new Error(
+    `${field} in ${file} must be a string or non-empty array of strings`,
+  );
 }
 
 function assertMcp(mcp: McpSettings | undefined, file: string): void {
@@ -605,6 +656,87 @@ function expectString(value: unknown, field: string): string {
     throw new Error(`${field} must be a string`);
   }
   return value;
+}
+
+function expectModelPools(value: unknown, field: string): ModelPools {
+  if (typeof value === "string") {
+    if (value.length === 0) {
+      throw new Error(`${field} must not be empty`);
+    }
+    return { session: [value], worker: [], reviewer: [] };
+  }
+  if (isObject(value)) {
+    return {
+      session: expectModelPoolValue(value.session, `${field}.session`, true),
+      worker: expectModelPoolValue(value.worker, `${field}.worker`, false),
+      reviewer: expectModelPoolValue(
+        value.reviewer,
+        `${field}.reviewer`,
+        false,
+      ),
+    };
+  }
+  throw new Error(`${field} must be a string or model pool object`);
+}
+
+function expectModelPoolValue(
+  value: unknown,
+  field: string,
+  required: boolean,
+): string[] {
+  if (value === undefined) {
+    if (required) {
+      throw new Error(`${field} must be defined`);
+    }
+    return [];
+  }
+  if (typeof value === "string" && value.length > 0) {
+    return [value];
+  }
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "string" && item.length > 0)
+  ) {
+    return value;
+  }
+  throw new Error(`${field} must be a string or non-empty array of strings`);
+}
+
+function validateModelPools(
+  pools: ModelPools,
+  models: ModelSettings[],
+  providers: Record<string, ProviderSettings>,
+): void {
+  for (const model of [...pools.session, ...pools.worker, ...pools.reviewer]) {
+    const activeModel = expectDeclaredModel(model, models);
+    expectDeclaredProvider(model, activeModel, providers);
+  }
+}
+
+function expectDeclaredModel(
+  model: string,
+  models: ModelSettings[],
+): ModelSettings {
+  const activeModel = models.find((entry) => entry.name === model);
+  if (activeModel === undefined) {
+    throw new Error(`model ${model} is not declared in settings.json models`);
+  }
+  return activeModel;
+}
+
+function expectDeclaredProvider(
+  model: string,
+  activeModel: ModelSettings,
+  providers: Record<string, ProviderSettings>,
+): ProviderSettings {
+  const activeProvider = providers[activeModel.provider];
+  if (activeProvider === undefined) {
+    throw new Error(
+      `provider ${activeModel.provider} for model ${model} is not declared`,
+    );
+  }
+  return activeProvider;
 }
 
 function expectNumber(value: unknown, field: string): number {

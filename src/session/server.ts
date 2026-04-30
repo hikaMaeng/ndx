@@ -12,7 +12,7 @@ import {
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
-import { ensureGlobalNdxHome } from "../config/index.js";
+import { configForModel, ensureGlobalNdxHome } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import { SessionLogStore } from "./log-store.js";
@@ -58,7 +58,7 @@ export interface SessionServerOptions {
   cwd: string;
   config: NdxConfig;
   sources?: string[];
-  createClient: () => ModelClient;
+  createClient: (config: NdxConfig) => ModelClient;
   persistenceDir?: string;
 }
 
@@ -72,6 +72,7 @@ export interface SessionServerAddress {
 interface LiveSession {
   id: string;
   cwd: string;
+  config: NdxConfig;
   runtime: AgentRuntime;
   events: RuntimeEvent[];
   pendingEvents: RuntimeEvent[];
@@ -118,6 +119,7 @@ export class SessionServer {
   private readonly store: SessionLogStore;
   private readonly bootstrap: NdxBootstrapReport;
   private readonly serverId = randomUUID();
+  private nextSessionModelIndex = 0;
   private closing = false;
 
   constructor(options: SessionServerOptions) {
@@ -131,6 +133,24 @@ export class SessionServer {
     this.server.on("upgrade", (request, socket) => {
       this.handleUpgrade(request, socket as Socket);
     });
+  }
+
+  private nextSessionConfig(): NdxConfig {
+    const pool = this.options.config.modelPools.session;
+    const model = pool[this.nextSessionModelIndex % pool.length];
+    this.nextSessionModelIndex += 1;
+    return configForModel(this.options.config, model);
+  }
+
+  private configForPersistedSession(session: PersistedSessionState): NdxConfig {
+    const configured = session.events.find(
+      (event) => event.msg.type === "session_configured",
+    );
+    const model =
+      configured?.msg.type === "session_configured"
+        ? configured.msg.model
+        : this.options.config.model;
+    return configForModel(this.options.config, model);
   }
 
   listen(port = 0, host = "127.0.0.1"): Promise<SessionServerAddress> {
@@ -297,10 +317,11 @@ export class SessionServer {
     params: unknown,
   ): Promise<unknown> {
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
+    const config = this.nextSessionConfig();
     const runtime = new AgentRuntime({
       cwd,
-      config: this.options.config,
-      client: this.options.createClient(),
+      config,
+      client: this.options.createClient(config),
       sources: this.options.sources,
       bootstrap: this.bootstrap,
     });
@@ -308,6 +329,7 @@ export class SessionServer {
     const session: LiveSession = {
       id: runtime.sessionId,
       cwd,
+      config,
       runtime,
       events: [],
       pendingEvents: [],
@@ -726,10 +748,11 @@ export class SessionServer {
     if (persisted === undefined) {
       throw new Error(`unknown session: ${selector}`);
     }
+    const config = this.configForPersistedSession(persisted);
     const runtime = new AgentRuntime({
       cwd: persisted.cwd,
-      config: this.options.config,
-      client: this.options.createClient(),
+      config,
+      client: this.options.createClient(config),
       sessionId: persisted.id,
       history: conversationHistoryFromRuntimeEvents(persisted.events),
       sources: this.options.sources,
@@ -738,6 +761,7 @@ export class SessionServer {
     const liveSession: LiveSession = {
       id: persisted.id,
       cwd: persisted.cwd,
+      config,
       runtime,
       events: persisted.events,
       pendingEvents: [],
@@ -864,7 +888,7 @@ export class SessionServer {
       sessionId: session.id,
       cwd: session.cwd,
       status: session.status,
-      model: this.options.config.model,
+      model: session.config.model,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
       number: session.sequence,
@@ -1106,13 +1130,15 @@ export class SessionServer {
       this.acquireOwnership(session);
       return session;
     }
+    const config = this.configForPersistedSession(persisted);
     const reloaded: LiveSession = {
       id: persisted.id,
       cwd: persisted.cwd,
+      config,
       runtime: new AgentRuntime({
         cwd: persisted.cwd,
-        config: this.options.config,
-        client: this.options.createClient(),
+        config,
+        client: this.options.createClient(config),
         sessionId: persisted.id,
         history: conversationHistoryFromRuntimeEvents(persisted.events),
         sources: this.options.sources,
