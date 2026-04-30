@@ -10,6 +10,10 @@ ndx is a TypeScript-first local coding agent runtime.
 - `ndx` opens an interactive prompt when run without arguments from a TTY.
 - Interactive slash commands are session-server controls exposed through `command/list` and `command/execute`.
 - `/home/.ndx/settings.json` is the fixed global settings path.
+- `/home/.ndx/sessions` is the default session origin; optional global
+  `sessionPath` overrides only the session origin.
+- Session files are partitioned by user, year, month, and session UUID. Omitted
+  user is `defaultUser`.
 - Project-local settings are discovered from the nearest `.ndx/settings.json` ancestor.
 - `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
 - `keys` entries in settings are injected into shell tool executions.

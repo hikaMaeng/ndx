@@ -1,5 +1,5 @@
 import { appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 interface WriteMessage {
   type: "write";
@@ -24,9 +24,10 @@ async function handleMessage(message: unknown): Promise<void> {
     return;
   }
   try {
-    await mkdir(message.job.dir, { recursive: true });
+    const file = join(message.job.dir, `${message.job.threadId}.jsonl`);
+    await mkdir(dirname(file), { recursive: true });
     await appendFile(
-      join(message.job.dir, `${message.job.threadId}.jsonl`),
+      file,
       `${JSON.stringify({
         ...message.job.record,
         persistedAt: Date.now(),

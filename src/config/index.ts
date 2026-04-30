@@ -31,6 +31,7 @@ export interface ConfigLoadOptions {
 
 interface PartialSettings {
   model?: string | PartialModelPools;
+  sessionPath?: string;
   instructions?: string;
   maxTurns?: number;
   shellTimeoutMs?: number;
@@ -253,6 +254,7 @@ function findProjectSettingsFile(cwd: string): string | undefined {
 function parseSettings(contents: string, file: string): PartialSettings {
   const parsed = parseJsonObject(contents, file) as PartialSettings;
   assertOptionalModelSelection(parsed.model, "model", file);
+  assertOptionalString(parsed.sessionPath, "sessionPath", file);
   assertOptionalString(parsed.instructions, "instructions", file);
   assertOptionalInteger(parsed.maxTurns, "maxTurns", file);
   assertOptionalInteger(parsed.shellTimeoutMs, "shellTimeoutMs", file);
@@ -281,6 +283,9 @@ function parseJsonObject(contents: string, file: string): JsonObject {
 function mergeSettings(target: PartialSettings, source: PartialSettings): void {
   if (source.model !== undefined) {
     target.model = source.model;
+  }
+  if (source.sessionPath !== undefined) {
+    target.sessionPath = source.sessionPath;
   }
   if (source.instructions !== undefined) {
     target.instructions = source.instructions;
@@ -444,6 +449,9 @@ function finalizeConfig(
     },
     paths: {
       globalDir: runtime.globalDir,
+      sessionDir: resolve(
+        settings.sessionPath ?? join(runtime.globalDir, "sessions"),
+      ),
       projectDir: runtime.projectDir,
       projectNdxDir: runtime.projectNdxDir,
     },
