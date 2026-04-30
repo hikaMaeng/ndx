@@ -55,10 +55,12 @@ session and writes session JSONL under `/home/.ndx/sessions/ts-server` once the
 first prompt is submitted.
 
 On startup, config loading and the session server both enforce required global
-`.ndx` elements. Missing `settings.json`, `core/`, `core/tools/`, built-in core
-tool package files, and `skills/` are installed before session work begins. The
-socket initialization output includes a bootstrap report showing what was
-installed and what already existed.
+`.ndx` elements. Missing `core/`, `core/tools/`, built-in core tool package
+files, and `skills/` are installed before session work begins. `settings.json`
+is not generated; create `/home/.ndx/settings.json` or a project
+`.ndx/settings.json` before running against a real provider. The socket
+initialization output includes a bootstrap report showing what was installed and
+what already existed.
 
 ## Session Server
 

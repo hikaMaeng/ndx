@@ -69,7 +69,7 @@ export function loadConfig(
   options: ConfigLoadOptions = {},
 ): LoadedConfig {
   const sources: string[] = [];
-  const merged = defaultSettings();
+  const merged = runtimeDefaults();
   const globalDir = resolveGlobalNdxDir(options);
   ensureGlobalNdxHome(globalDir);
   let globalMcp: McpSettings = {};
@@ -89,6 +89,12 @@ export function loadConfig(
     }
     mergeSettings(merged, parsed);
     sources.push(file);
+  }
+
+  if (sources.length === 0) {
+    throw new Error(
+      `missing ndx settings: expected ${configFiles(cwd, options).join(" or ")}`,
+    );
   }
 
   const searchFile = searchRulesFile(options);
@@ -118,7 +124,7 @@ export function searchRulesFile(options: ConfigLoadOptions = {}): string {
   return join(resolveGlobalNdxDir(options), SEARCH_FILE);
 }
 
-/** Install required global .ndx files when they are missing. */
+/** Install required global .ndx directories and core tools when missing. */
 export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
   const elements: NdxBootstrapElement[] = [];
   const globalDirStatus = existsSync(globalDir) ? "existing" : "installed";
@@ -138,16 +144,6 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
       status,
     });
   }
-  const settingsFile = join(globalDir, SETTINGS_FILE);
-  const settingsStatus = existsSync(settingsFile) ? "existing" : "installed";
-  if (!existsSync(settingsFile)) {
-    writeJsonFile(settingsFile, defaultSettings());
-  }
-  elements.push({
-    name: SETTINGS_FILE,
-    path: settingsFile,
-    status: settingsStatus,
-  });
   elements.push(...ensureCoreToolPackages(globalDir));
   return {
     globalDir,
@@ -156,29 +152,13 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
   };
 }
 
-function defaultSettings(): PartialSettings {
+function runtimeDefaults(): PartialSettings {
   return {
-    model: "qwen3.6-35b-a3b:tr",
     instructions:
       "You are ndx, a local coding agent. Prefer concise plans, inspect before editing, and use shell when facts must be verified.",
     maxTurns: 8,
     shellTimeoutMs: 120_000,
-    providers: {
-      lmstudio: {
-        type: "openai",
-        key: "",
-        url: "http://192.168.0.6:12345/v1",
-      },
-    },
-    models: [
-      {
-        name: "qwen3.6-35b-a3b:tr",
-        provider: "lmstudio",
-        maxContext: 262_000,
-      },
-    ],
     permissions: { defaultMode: "danger-full-access" },
-    websearch: { provider: "tavily", apiKey: "" },
     search: {},
     mcp: {},
     plugins: [],

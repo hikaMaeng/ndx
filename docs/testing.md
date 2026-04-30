@@ -14,8 +14,9 @@ npm run deploy
 - Global plus project settings merge precedence.
 - Global `/home/.ndx/search.json` rule loading.
 - Provider/model resolution from settings.
+- Missing global and project settings fail without falling back to a default model.
 - Provider type validation for `openai` and `anthropic`.
-- Global `.ndx` bootstrap for missing `settings.json`, core directories, built-in core tool package files, and skills directory.
+- Global `.ndx` bootstrap for missing core directories, built-in core tool package files, and skills directory.
 - OpenAI Responses normalization.
 - OpenAI Responses function tool schema conversion.
 - OpenAI Chat Completions normalization.

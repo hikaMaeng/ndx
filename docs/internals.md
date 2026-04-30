@@ -4,8 +4,9 @@
 
 `src/config/index.ts` owns config loading. `configFiles(cwd)` returns
 `/home/.ndx/settings.json` followed by the nearest ancestor `.ndx/settings.json`
-when present. `loadConfig(cwd)` reads those JSON files in order, merges them,
-then loads `/home/.ndx/search.json` as search rules.
+when present. `loadConfig(cwd)` reads existing JSON files in order, merges them,
+fails if neither settings file exists, then loads `/home/.ndx/search.json` as
+search rules.
 
 ## Settings Merge
 
@@ -15,7 +16,7 @@ Scalar fields such as `model`, `instructions`, `maxTurns`, and `shellTimeoutMs` 
 
 `finalizeConfig` resolves `model` to one `models[]` entry, then resolves that entry's `provider` against `providers`. Provider type is validated as `openai` or `anthropic`; execution reads URL and key from that resolved provider only.
 
-`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global defaults only: `settings.json`, required directories, and the built-in `/core/tools` packages. Existing files are left untouched so local secrets and custom core tools are not overwritten.
+`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global directories and built-in `/core/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
 
 ## Model Adapters
 

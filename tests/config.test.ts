@@ -135,13 +135,30 @@ test("configFiles returns only global and nearest project settings", () => {
   }
 });
 
-test("ensureGlobalNdxHome installs missing settings and core tool packages", () => {
+test("loadConfig fails when no global or project settings exist", () => {
+  const root = tempRoot();
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    const project = join(root, "repo");
+    mkdirSync(project, { recursive: true });
+
+    assert.throws(
+      () => loadConfig(project, { globalDir }),
+      /missing ndx settings: expected .*settings\.json/,
+    );
+    assert.equal(existsSync(join(globalDir, "settings.json")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ensureGlobalNdxHome installs core directories and tool packages", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
     const report = ensureGlobalNdxHome(globalDir);
 
-    assert.equal(existsSync(join(globalDir, "settings.json")), true);
+    assert.equal(existsSync(join(globalDir, "settings.json")), false);
     assert.equal(existsSync(join(globalDir, "core")), true);
     assert.equal(existsSync(join(globalDir, "skills")), true);
     assert.equal(
@@ -172,13 +189,6 @@ test("ensureGlobalNdxHome installs missing settings and core tool packages", () 
       );
     }
     assert.equal(report.globalDir, globalDir);
-    assert.equal(
-      report.elements.some(
-        (element) =>
-          element.name === "settings.json" && element.status === "installed",
-      ),
-      true,
-    );
     assert.equal(
       report.elements.some(
         (element) =>

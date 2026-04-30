@@ -10,7 +10,8 @@
 - Provider `key` may be an empty string.
 - Provider `type` is limited to `openai` and `anthropic`.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
-- The global `.ndx` directory is self-healing at startup for required defaults: missing `settings.json`, required directories, and built-in `/core/tools` packages are installed before config parsing continues.
+- The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
+- Settings files are not generated at startup. If neither `/home/.ndx/settings.json` nor a project `.ndx/settings.json` exists, config loading fails before model selection.
 
 ## Search
 

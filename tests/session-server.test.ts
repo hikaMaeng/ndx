@@ -103,12 +103,12 @@ test("session server owns session events, subscribers, and JSONL persistence", a
     }>("initialize");
     await subscriber.request("initialize");
     assert.equal(initialize.bootstrap.globalDir, globalDir);
-    assert.equal(existsSync(join(globalDir, "settings.json")), true);
+    assert.equal(existsSync(join(globalDir, "settings.json")), false);
     assert.equal(existsSync(join(globalDir, "skills")), true);
     assert.equal(
       initialize.bootstrap.elements.some(
         (element) =>
-          element.name === "settings.json" && element.status === "installed",
+          element.name === "skills" && element.status === "installed",
       ),
       true,
     );

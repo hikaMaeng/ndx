@@ -117,16 +117,17 @@ same shape on `event.bootstrap`:
   "checkedAt": 1777440000000,
   "elements": [
     {
-      "name": "settings.json",
-      "path": "/home/.ndx/settings.json",
+      "name": "core",
+      "path": "/home/.ndx/core",
       "status": "installed"
     }
   ]
 }
 ```
 
-`status` is either `installed` or `existing`. The session server performs this
-bootstrap check before starting session work.
+`status` is either `installed` or `existing`. Settings files are not included in
+the bootstrap report because startup never generates them. The session server
+performs this bootstrap check before starting session work.
 
 ## Settings
 
