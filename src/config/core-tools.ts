@@ -45,8 +45,14 @@ const cwd = resolve(String(args.cwd ?? request.cwd ?? process.env.NDX_TOOL_CWD ?
 const timeoutMs = Number.isInteger(args.timeoutMs) ? args.timeoutMs : 120000;
 const shell = process.platform === "win32" ? "cmd.exe" : "/bin/bash";
 const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-lc", command];
+const sandbox = process.env.NDX_SANDBOX_CONTAINER ?? "";
+const sandboxCwd = toSandboxPath(cwd);
+const commandExec = sandbox.length > 0 ? "docker" : shell;
+const commandArgs = sandbox.length > 0
+  ? ["exec", "-w", sandboxCwd, sandbox, "/bin/bash", "-lc", command]
+  : shellArgs;
 const result = await new Promise((resolveResult, reject) => {
-  const child = spawn(shell, shellArgs, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(commandExec, commandArgs, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   let timedOut = false;
@@ -61,10 +67,18 @@ const result = await new Promise((resolveResult, reject) => {
   child.on("error", reject);
   child.on("close", (exitCode) => {
     clearTimeout(timer);
-    resolveResult({ command, cwd, exitCode, stdout, stderr, timedOut });
+    resolveResult({ command, cwd: sandbox.length > 0 ? sandboxCwd : cwd, exitCode, stdout, stderr, timedOut });
   });
 });
 process.stdout.write(JSON.stringify(result) + "\n");
+function toSandboxPath(path) {
+  const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
+  const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  if (hostRoot.length === 0) return process.env.NDX_SANDBOX_CWD ?? path;
+  if (path === hostRoot) return sandboxRoot;
+  if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
+  return process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+}
 `,
   },
   {
@@ -82,8 +96,12 @@ ${READ_STDIN}
 const request = await readRequest();
 const input = String((request.arguments ?? {}).input ?? "");
 const cwd = request.cwd ?? process.env.NDX_TOOL_CWD ?? process.cwd();
+const sandbox = process.env.NDX_SANDBOX_CONTAINER ?? "";
+const sandboxCwd = toSandboxPath(cwd);
 const result = await new Promise((resolveResult, reject) => {
-  const child = spawn("apply_patch", [], { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+  const child = sandbox.length > 0
+    ? spawn("docker", ["exec", "-i", "-w", sandboxCwd, sandbox, "apply_patch"], { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] })
+    : spawn("apply_patch", [], { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.setEncoding("utf8");
@@ -95,6 +113,14 @@ const result = await new Promise((resolveResult, reject) => {
   child.stdin.end(input);
 });
 process.stdout.write(JSON.stringify(result) + "\n");
+function toSandboxPath(path) {
+  const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
+  const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  if (hostRoot.length === 0) return process.env.NDX_SANDBOX_CWD ?? path;
+  if (path === hostRoot) return sandboxRoot;
+  if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
+  return process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+}
 `,
   },
   {

@@ -52,18 +52,17 @@ ndx [SERVER_ADDRESS]
 ```
 
 `SERVER_ADDRESS` is optional and defaults to `127.0.0.1:45123`. The host CLI
-connects to that ndx server first. If the socket is not reachable, it writes
-managed compose state under the user `.ndx/system` directory, starts Docker, and
-then connects over WebSocket.
+connects to that ndx server first. If the socket is not reachable, it reports
+the miss, starts a local default server at the default address, and then
+connects over WebSocket.
 
-The current folder is the project folder. The Docker fallback bind-mounts that
-project folder at the same absolute path inside the container, bind-mounts the
-user `.ndx` directory to `/home/.ndx`, and bind-mounts
-`/var/run/docker.sock`.
+The current folder is the project folder. Docker is used only after the server
+is running, as a per-workspace sandbox for shell-like tools with the project
+mounted at `/workspace`.
 
-Use `NDX_DOCKER_IMAGE` to override the Docker image. Use `NDX_CLI_STATE_DIR` to
-move host CLI app state. Host CLI login state is not stored in `/home/.ndx` or
-project `.ndx`.
+Use `NDX_SANDBOX_IMAGE` to override the sandbox image for explicit verification.
+Use `NDX_CLI_STATE_DIR` to move host CLI app state. Host CLI login state is not
+stored in `/home/.ndx` or project `.ndx`.
 
 ## Mock Agent
 
@@ -232,16 +231,19 @@ remote inference server restarts.
 
 ## Docker
 
-`npm run deploy` builds the Docker image from the current pushed Git branch, not from local source folders. Push the feature branch before running deploy. Compose stores runtime workspace and global settings under `./docker/volume`. The deploy mock agent starts from `/opt/ndx` so it can read the cloned project settings, then writes `/workspace/tmp/ndx-docker-verify.txt` to prove the workspace bind mount.
+`npm run deploy` builds and tests the TypeScript server locally, removes prior
+compose containers, rebuilds the `ndx-sandbox` Docker image, starts the sandbox
+with `./docker/volume/workspace` mounted at `/workspace`, writes
+`/workspace/tmp/ndx-docker-verify.txt`, and tears compose down.
 
 ```bash
 npm run deploy
 ```
 
-Build another branch explicitly with:
+Build the sandbox image explicitly with:
 
 ```bash
-NDX_GIT_REF=codex/example-feature docker compose build --no-cache ndx-agent
+docker compose build --no-cache ndx-sandbox
 ```
 
 ## Local OpenAI-Compatible Model
@@ -250,33 +252,29 @@ This repository does not ship a project `.ndx/settings.json` with a default
 real model. If neither `/home/.ndx/settings.json` nor a project settings file is
 found, interactive CLI startup uses the settings wizard to create one.
 
-Start the container. The default service starts `ndxserver` immediately and
-publishes both service ports in mock mode so service wiring can be verified
-without installing a real model configuration:
+Start the local server with `ndx` or `ndx serve`. The default compose service
+starts only the tool sandbox; it does not publish ndx service ports:
 
 - WebSocket JSON-RPC: `ws://127.0.0.1:45123`
 - Dashboard HTTP: `http://127.0.0.1:45124`
 
 ```bash
-docker compose up -d --build ndx-agent
-docker compose logs --tail 80 ndx-agent
-docker compose exec ndx-agent ndx --mock "간단히 준비 완료라고 응답해"
-```
-
-Override the host ports or advertised URLs with environment variables:
-
-```bash
-NDX_SOCKET_PORT=55123 \
-NDX_DASHBOARD_PORT=55124 \
-NDX_PUBLIC_SOCKET_URL=ws://127.0.0.1:55123 \
-NDX_PUBLIC_DASHBOARD_URL=http://127.0.0.1:55124 \
-docker compose up -d --build ndx-agent
-```
-
-Docker Desktop Exec tab also works after the container is running. Open the `ndx-agent` container and run:
-
-```bash
+docker compose up -d --build ndx-sandbox
+docker compose exec -T ndx-sandbox bash -lc "pwd"
 ndx
+```
+
+Override the sandbox image for verification with:
+
+```bash
+NDX_SANDBOX_IMAGE=hika00/ndx-sandbox:0.1.0 ndx
+```
+
+Docker Desktop Exec tab also works after the container is running. Open the
+`ndx-sandbox` container and run:
+
+```bash
+bash
 ```
 
 That opens the ndx prompt. Submit tasks at `ndx>`, use `/help` for local commands, and `/exit` to leave. You can still run one-shot prompts with:
@@ -285,16 +283,7 @@ That opens the ndx prompt. Submit tasks at `ndx>`, use `/help` for local command
 ndx "원하는 작업"
 ```
 
-The default compose service stays alive by running `ndxserver --mock` for
-`/workspace`. It does not copy repository settings into `/home/.ndx`; real model
-settings remain owned by the normal global/project settings cascade and the
-interactive wizard. Files created by the agent persist in
-`./docker/volume/workspace`, and global settings persist in
-`./docker/volume/home-ndx`.
-
-Compose uses the image default command. Container startup logs include image
-provenance lines prefixed with `[ndx-image]`. Those lines record the package
-version, GitHub remote, `NDX_GIT_REF`, cloned commit SHA, branch, commit date,
-commit subject, Node version, and Yarn version. Startup logs also include
-`[ndx-service]` lines for the socket bind address, dashboard bind address,
-advertised socket URL, advertised dashboard URL, and runtime cwd.
+The default compose service stays alive with `sleep infinity`. It does not copy
+repository settings into `/home/.ndx`; real model settings remain owned by the
+normal global/project settings cascade and the interactive wizard. Files created
+by sandbox commands persist in `./docker/volume/workspace`.

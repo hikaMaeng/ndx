@@ -264,6 +264,7 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
     args.interactive && process.stdin.isTTY
       ? createInterface({ input, output })
       : undefined;
+  let localServer: SessionServer | undefined;
   try {
     const workspaceDir =
       rl === undefined ? args.cwd : await selectWorkspaceDir(args.cwd, rl);
@@ -273,7 +274,24 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
       serverUrl: args.serverUrl,
       print: (message) => console.error(message),
     });
-    const client = await SessionClient.connect(state.socketUrl);
+    let socketUrl = state.socketUrl;
+    if (!state.reachable) {
+      const loaded = await loadConfigForCli({ ...args, cwd: workspaceDir });
+      localServer = new SessionServer({
+        cwd: workspaceDir,
+        config: loaded.config,
+        sources: loaded.sources,
+        createClient: (config) => createClient(args.mock, config),
+        requireDockerSandbox: true,
+      });
+      const address = await localServer.listen(45123, "127.0.0.1", 45124);
+      socketUrl = address.url;
+      console.error(`[session-server] ${address.url}`);
+      if (address.dashboardUrl !== undefined) {
+        console.error(`[dashboard] ${address.dashboardUrl}`);
+      }
+    }
+    const client = await SessionClient.connect(socketUrl);
     try {
       const session = new CliSessionController({
         client,
@@ -312,6 +330,7 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
     }
   } finally {
     rl?.close();
+    await localServer?.close();
   }
 }
 
@@ -423,6 +442,10 @@ function createSessionServer(options: {
     sources: options.sources,
     createClient: (config) =>
       providerClient ?? createClient(options.args.mock, config),
+    requireDockerSandbox:
+      options.args.mode === "serve" &&
+      !options.args.mock &&
+      process.env.NDX_REQUIRE_DOCKER_SANDBOX !== "0",
   });
 }
 

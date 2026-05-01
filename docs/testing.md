@@ -79,16 +79,12 @@ npm run deploy
 - `session_detached` record after clients disconnect without an explicit session close command.
 - Multiple WebSocket clients subscribed to the same live session.
 - Provider error classification for non-retryable and retryable failures.
-- Docker remote-clone build using the selected `NDX_GIT_REF` branch.
-- Docker workspace, global settings, and Docker socket bind mounts.
-- Docker build, in-container tests, and in-container mock agent execution.
-- Deploy verification uses non-interactive `docker compose run -T` so test and
-  mock-agent containers exit cleanly even though the service keeps `tty: true`
-  for manual use.
-- Compose startup verification should run `docker compose up -d ndx-agent`,
-  inspect `[ndx-image]` and `[ndx-service]` log lines, confirm the service is
-  healthy, fetch the dashboard through the published host port, and connect a
-  client through the published WebSocket port.
+- Docker sandbox image build and `/workspace` bind mount behavior.
+- Deploy verification uses non-interactive `docker compose exec -T` for sandbox
+  shell execution.
+- Server startup verification should run the local server, confirm it logs in
+  before initialization, fetch the dashboard through the local dashboard port,
+  and verify that shell-like tools execute through the pinned Docker sandbox.
 - Repository hygiene checks keep the root package as the only package and keep
   generated dependency, build, and Docker runtime state out of tracked source.
 - Yarn Plug'n'Play with the global cache enabled is the package-install

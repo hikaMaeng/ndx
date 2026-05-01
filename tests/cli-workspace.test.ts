@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MockModelClient } from "../src/model/mock-client.js";
 import { SessionServer } from "../src/session/server.js";
+import {
+  dockerSandboxState,
+  hostPathToSandboxPath,
+} from "../src/session/docker-sandbox.js";
 import type { NdxConfig } from "../src/shared/types.js";
 import {
   ensureManagedServer,
@@ -63,10 +67,10 @@ test("server address argument defaults to localhost port 45123", () => {
   assert.equal(normalizeSocketUrl("ws://127.0.0.1"), "ws://127.0.0.1:45123");
 });
 
-test("managed server bootstrap writes project-path compose fallback", async () => {
+test("managed server fallback reports local sandbox metadata without compose", async () => {
   const projectDir = mkdtempSync(join(tmpdir(), "ndx-project-"));
-  const previousImage = process.env.NDX_DOCKER_IMAGE;
-  process.env.NDX_DOCKER_IMAGE = "ndx-agent:test";
+  const previousImage = process.env.NDX_SANDBOX_IMAGE;
+  process.env.NDX_SANDBOX_IMAGE = "hika00/ndx-sandbox:test";
   try {
     const state = await ensureManagedServer({
       cwd: projectDir,
@@ -77,21 +81,14 @@ test("managed server bootstrap writes project-path compose fallback", async () =
 
     assert.equal(state.workspaceDir, projectDir);
     assert.equal(state.socketUrl, "ws://127.0.0.1:9");
-    assert.equal(state.image, "ndx-agent:test");
-    assert.equal(existsSync(state.composeFile), true);
-    const compose = readFileSync(state.composeFile, "utf8");
-    assert.equal(compose.includes("ndxserver"), true);
-    assert.equal(compose.includes("--mock"), true);
-    assert.equal(compose.includes(projectDir), true);
-    assert.equal(compose.includes("target: /workspace"), true);
-    assert.equal(compose.includes("/var/run/docker.sock"), true);
-    assert.equal(compose.includes(state.homeDir), true);
-    assert.equal(compose.includes("target: /home/.ndx"), true);
+    assert.equal(state.image, "hika00/ndx-sandbox:test");
+    assert.equal(state.reachable, false);
+    assert.equal(existsSync(state.composeFile), false);
   } finally {
     if (previousImage === undefined) {
-      delete process.env.NDX_DOCKER_IMAGE;
+      delete process.env.NDX_SANDBOX_IMAGE;
     } else {
-      process.env.NDX_DOCKER_IMAGE = previousImage;
+      process.env.NDX_SANDBOX_IMAGE = previousImage;
     }
     rmSync(projectDir, { recursive: true, force: true });
   }
@@ -117,9 +114,26 @@ test("managed server attaches to the requested socket before Docker fallback", a
     });
 
     assert.equal(state.socketUrl, address.url);
+    assert.equal(state.reachable, true);
     assert.equal(existsSync(state.composeFile), false);
   } finally {
     await server?.close();
     rmSync(projectDir, { recursive: true, force: true });
   }
+});
+
+test("docker sandbox state is stable per workspace and maps host paths", () => {
+  const state = dockerSandboxState({
+    workspaceDir: "/tmp/project-a",
+    image: "hika00/ndx-sandbox:test",
+  });
+
+  assert.equal(state.image, "hika00/ndx-sandbox:test");
+  assert.equal(state.containerName.startsWith("ndx-sandbox-"), true);
+  assert.equal(hostPathToSandboxPath(state, "/tmp/project-a"), "/workspace");
+  assert.equal(
+    hostPathToSandboxPath(state, "/tmp/project-a/src/index.ts"),
+    "/workspace/src/index.ts",
+  );
+  assert.equal(hostPathToSandboxPath(state, "/tmp/other"), "/workspace");
 });

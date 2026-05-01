@@ -153,4 +153,7 @@ authenticated WebSocket JSON-RPC.
 
 ## Docker Context
 
-Docker build does not copy source folders from the local build context. The Dockerfile installs Git, clones `https://github.com/hikaMaeng/ndx.git` at `NDX_GIT_REF` into `/opt/ndx`, then installs dependencies and builds inside the cloned checkout. Compose mounts `./docker/volume/workspace` to `/workspace` and `./docker/volume/home-ndx` to `/home/.ndx` for runtime state.
+Docker build creates only the tool sandbox image. It installs the shell/runtime
+utilities needed by core external tools and keeps `/workspace` as the mounted
+project directory. Compose mounts `./docker/volume/workspace` to `/workspace`.
+The ndx server is a local process and owns session state outside Docker.

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { join, resolve } from "node:path";
 import { SessionClient } from "../session/client.js";
+import { defaultDockerSandboxImage } from "../session/docker-sandbox.js";
 
 export interface ManagedServerState {
   workspaceDir: string;
@@ -16,6 +16,7 @@ export interface ManagedServerState {
   homeDir: string;
   systemDir: string;
   mock: boolean;
+  reachable: boolean;
 }
 
 export interface ManagedServerOptions {
@@ -26,13 +27,10 @@ export interface ManagedServerOptions {
   manageDocker?: boolean;
 }
 
-const DEFAULT_IMAGE = "hika00/ndx:latest";
 const DEFAULT_SOCKET_PORT = 45123;
 const DEFAULT_DASHBOARD_PORT = 45124;
-const CONTAINER_NDX_HOME = "/home/.ndx";
-const CONTAINER_WORKSPACE_DIR = "/workspace";
 
-/** Attach to the requested ndx server, or start the Docker-managed fallback. */
+/** Attach to the requested ndx server, returning fallback metadata on miss. */
 export async function ensureManagedServer(
   options: ManagedServerOptions,
 ): Promise<ManagedServerState> {
@@ -42,20 +40,13 @@ export async function ensureManagedServer(
   const state = createManagedServerState(workspaceDir, socketUrl);
 
   if (await canConnect(socketUrl)) {
-    return state;
+    return { ...state, reachable: true };
   }
 
-  writeComposeFile(state);
-  if (options.manageDocker === false) {
-    return state;
-  }
-
-  print(`[server] starting ${socketUrl}`);
-  await composeUp(state.composeFile);
-  if (await canConnect(socketUrl)) {
-    return state;
-  }
-  throw new Error(`ndx server is not reachable at ${socketUrl}`);
+  print(
+    `[server] ${socketUrl} is not reachable; starting local default server`,
+  );
+  return { ...state, reachable: false };
 }
 
 export function normalizeSocketUrl(value: string | undefined): string {
@@ -96,10 +87,11 @@ function createManagedServerState(
     dashboardUrl: `http://127.0.0.1:${resolvedDashboardPort}`,
     socketPort,
     dashboardPort: resolvedDashboardPort,
-    image: process.env.NDX_DOCKER_IMAGE ?? DEFAULT_IMAGE,
+    image: defaultDockerSandboxImage(),
     homeDir,
     systemDir,
     mock,
+    reachable: false,
   };
 }
 
@@ -112,52 +104,14 @@ function portFromSocketUrl(socketUrl: string): number {
   return port;
 }
 
-function writeComposeFile(state: ManagedServerState): void {
-  mkdirSync(dirname(state.composeFile), { recursive: true });
-  mkdirSync(state.homeDir, { recursive: true });
-  mkdirSync(state.systemDir, { recursive: true });
-  writeFileSync(
-    state.composeFile,
-    [
-      "services:",
-      "  ndx-agent:",
-      `    image: ${JSON.stringify(state.image)}`,
-      `    working_dir: ${CONTAINER_WORKSPACE_DIR}`,
-      "    command:",
-      "      - ndxserver",
-      ...(state.mock ? ["      - --mock"] : []),
-      "      - --cwd",
-      `      - ${CONTAINER_WORKSPACE_DIR}`,
-      "      - --listen",
-      "      - 0.0.0.0:45123",
-      "      - --dashboard-listen",
-      "      - 0.0.0.0:45124",
-      "    environment:",
-      "      HOME: /home",
-      "    ports:",
-      `      - \"127.0.0.1:${state.socketPort}:45123\"`,
-      `      - \"127.0.0.1:${state.dashboardPort}:45124\"`,
-      "    volumes:",
-      "      - type: bind",
-      `        source: ${JSON.stringify(state.workspaceDir)}`,
-      `        target: ${CONTAINER_WORKSPACE_DIR}`,
-      "      - type: bind",
-      `        source: ${JSON.stringify(state.homeDir)}`,
-      `        target: ${CONTAINER_NDX_HOME}`,
-      "      - type: bind",
-      "        source: /var/run/docker.sock",
-      "        target: /var/run/docker.sock",
-      "    stdin_open: true",
-      "    tty: true",
-      "",
-    ].join("\n"),
-  );
-}
-
-async function canConnect(url: string): Promise<boolean> {
+export async function canConnect(url: string): Promise<boolean> {
   try {
     const client = await SessionClient.connect(url);
     try {
+      await client.request("account/login", {
+        username: "defaultUser",
+        password: "",
+      });
       const initialize = await client.request<{ server?: unknown }>(
         "initialize",
       );
@@ -168,22 +122,4 @@ async function canConnect(url: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-async function composeUp(composeFile: string): Promise<void> {
-  await run("docker", ["compose", "-f", composeFile, "up", "-d"]);
-}
-
-async function run(command: string, args: string[]): Promise<void> {
-  await new Promise<void>((resolveRun, reject) => {
-    const child = spawn(command, args, { stdio: "inherit" });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolveRun();
-        return;
-      }
-      reject(new Error(`${command} ${args.join(" ")} exited with ${code}`));
-    });
-  });
 }

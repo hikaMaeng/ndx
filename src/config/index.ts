@@ -234,7 +234,10 @@ function ensureCoreToolPackage(
     status: manifestStatus,
   });
   const runtimeStatus = existsSync(runtimeFile) ? "existing" : "installed";
-  if (!existsSync(runtimeFile)) {
+  if (
+    !existsSync(runtimeFile) ||
+    readFileSync(runtimeFile, "utf8") !== `${tool.runtime}\n`
+  ) {
     writeFileSync(runtimeFile, `${tool.runtime}\n`);
   }
   elements.push({
@@ -466,6 +469,7 @@ function finalizeConfig(
     plugins: settings.plugins ?? [],
     tools: {
       imageGeneration: settings.tools?.imageGeneration ?? false,
+      dockerSandboxImage: settings.tools?.dockerSandboxImage,
     },
     paths: {
       globalDir: runtime.globalDir,
@@ -615,6 +619,11 @@ function assertTools(
   ) {
     throw new Error(`tools.imageGeneration in ${file} must be a boolean`);
   }
+  assertOptionalString(
+    tools.dockerSandboxImage,
+    "tools.dockerSandboxImage",
+    file,
+  );
 }
 
 function assertProviders(

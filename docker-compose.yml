@@ -1,33 +1,11 @@
 services:
-  ndx-agent:
+  ndx-sandbox:
     build:
       context: .
-      args:
-        NDX_GIT_REF: ${NDX_GIT_REF:-main}
-    image: ndx-agent:local
+    image: ${NDX_SANDBOX_IMAGE:-hika00/ndx-sandbox:0.1.0}
     working_dir: /workspace
-    environment:
-      NDX_SOCKET_HOST: 0.0.0.0
-      NDX_SOCKET_PORT: ${NDX_SOCKET_PORT:-45123}
-      NDX_DASHBOARD_HOST: 0.0.0.0
-      NDX_DASHBOARD_PORT: ${NDX_DASHBOARD_PORT:-45124}
-      NDX_PUBLIC_SOCKET_URL: ${NDX_PUBLIC_SOCKET_URL:-ws://127.0.0.1:45123}
-      NDX_PUBLIC_DASHBOARD_URL: ${NDX_PUBLIC_DASHBOARD_URL:-http://127.0.0.1:45124}
-    ports:
-      - "${NDX_SOCKET_PORT:-45123}:${NDX_SOCKET_PORT:-45123}"
-      - "${NDX_DASHBOARD_PORT:-45124}:${NDX_DASHBOARD_PORT:-45124}"
+    command: ["sleep", "infinity"]
     volumes:
       - ./docker/volume/workspace:/workspace
-      - ./docker/volume/home-ndx:/home/.ndx
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "node -e \"fetch('http://127.0.0.1:' + (process.env.NDX_DASHBOARD_PORT || '45124') + '/dashboard').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\"",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
     stdin_open: true
     tty: true

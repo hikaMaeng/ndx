@@ -98,13 +98,13 @@ test("session server owns session events, subscribers, and SQLite persistence", 
       subscriberNotifications.push(notification),
     );
 
+    await loginClient(client);
     const initialize = await client.request<{
       bootstrap: {
         globalDir: string;
         elements: Array<{ name: string; status: string; path: string }>;
       };
     }>("initialize");
-    await loginClient(client);
     await initializeAndLoginClient(subscriber);
     const createdProject = await client.request<{
       project: { name: string; cwd: string };
@@ -511,7 +511,7 @@ test("session server exposes account methods, client identity, and dashboard pla
     assert.equal(html.includes('role="status"'), true);
 
     client = await SessionClient.connect(address.url);
-    await client.request("initialize");
+    assert.equal(await client.request("project/list"), null);
     const created = await client.request<{
       username: string;
     }>("account/create", {
@@ -584,7 +584,6 @@ test("session server creates social login accounts", async () => {
     });
     const address = await server.listen(0, "127.0.0.1");
     client = await SessionClient.connect(address.url);
-    await client.request("initialize");
     const login = await client.request<{
       username: string;
       clientId: string;
@@ -1111,8 +1110,8 @@ function waitForMethod(
 }
 
 async function initializeAndLoginClient(client: SessionClient): Promise<void> {
-  await client.request("initialize");
   await loginClient(client);
+  await client.request("initialize");
 }
 
 async function loginClient(client: SessionClient): Promise<void> {

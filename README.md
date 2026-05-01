@@ -26,9 +26,9 @@ ndx [SERVER_ADDRESS]
 
 `SERVER_ADDRESS` is the only `ndx` startup argument. It defaults to
 `127.0.0.1:45123`. The CLI connects to that server first; if it is not
-reachable, it starts the Docker-managed fallback for the current project folder
-and then reconnects. Use `--mock` for local source-tree development without
-Docker.
+reachable, it reports the miss, starts a local default server at the default
+address, logs in, and continues with project/session selection. Docker is used
+only as the per-workspace tool sandbox, not as the server process.
 
 Use a real model by configuring provider settings in `.ndx/settings.json` or
 local global `/home/.ndx/settings.json`.
@@ -39,7 +39,10 @@ local global `/home/.ndx/settings.json`.
 npm run deploy
 ```
 
-The deploy script builds TypeScript locally, then builds the Docker image by cloning the current pushed Git branch selected by `NDX_GIT_REF`, runs tests in Docker, and executes the mock agent through the shell tool. Runtime workspace and global settings are bind-mounted under `./docker/volume`.
+The deploy script builds and tests TypeScript locally, removes prior compose
+containers, rebuilds the pinned tool-sandbox image, starts it with
+`./docker/volume/workspace` mounted at `/workspace`, verifies shell execution,
+and tears compose down.
 
 `ndx serve` and `ndxserver` expose an authenticated WebSocket socket port plus
 an unauthenticated dashboard HTTP port. Accounts, social account links, and

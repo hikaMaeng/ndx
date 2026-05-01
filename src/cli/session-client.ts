@@ -134,9 +134,9 @@ export class CliSessionController {
   }
 
   async initialize(): Promise<void> {
+    await this.loginWithStoredIdentity(this.login);
     this.initializeResult =
       await this.client.request<InitializeResult>("initialize");
-    await this.loginWithStoredIdentity(this.login);
     this.printError(formatInitializeResult(this.initializeResult));
   }
 

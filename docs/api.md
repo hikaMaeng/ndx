@@ -12,11 +12,12 @@ ndx --mock [--cwd PATH] [prompt]
 
 `ndx` is the host CLI. Its only startup argument is `SERVER_ADDRESS`, which
 defaults to `127.0.0.1:45123`. The CLI connects to that server first. If no
-server is reachable, it asks for a workspace folder, starts the Docker-managed
-server with that folder mounted at `/workspace`, logs in over the socket, asks
-for a project under `/workspace`, and then shows session choices. `--mock` keeps
-the source-tree development path and starts an embedded loopback server. `ndx
-serve` and `ndxserver` keep the session server open for other clients.
+server is reachable, it reports the miss, asks for a workspace folder, starts a
+local default server at `127.0.0.1:45123`, logs in over the socket, asks for a
+project under the workspace, and then shows session choices. Docker is only the
+tool sandbox. `--mock` keeps the source-tree development path and starts an
+embedded loopback server. `ndx serve` and `ndxserver` keep the session server
+open for other clients.
 
 Interactive slash commands are session-server controls. The CLI parses the
 leading slash and sends `command/execute`; command text is not appended to model
@@ -51,9 +52,9 @@ The session server is a WebSocket JSON-RPC endpoint. It owns live session state,
 event fan-out, and SQLite persistence. Clients send requests and receive
 notifications; they are not authoritative session stores.
 The server also starts a separate HTTP dashboard listener. Socket methods other
-than `initialize`, `account/create`, `account/login`, and
-`account/socialLogin` require successful account login on that WebSocket
-connection.
+than `account/create`, `account/login`, and `account/socialLogin` require
+successful account login on that WebSocket connection. Unauthenticated
+non-login methods are ignored.
 
 Requests:
 
@@ -144,10 +145,10 @@ Files:
 The last-login value is independent from `clientId`. Each CLI process still
 creates its own runtime `clientId`; the stored login only chooses the `userId`.
 
-Managed Docker compose files are generated under `/home/.ndx/system/managed`.
-They are keyed by the selected workspace folder. The host CLI does not discover
-servers from stored workspace records; it only probes the requested server
-address.
+The host CLI no longer generates Docker compose files for the server. If the
+requested server is unavailable, it starts a local server process. The server
+itself creates or reuses a per-workspace Docker sandbox container for
+shell-like tools.
 
 HTTP `GET /` and `GET /dashboard` on the dashboard port return a minimal
 dashboard placeholder. The dashboard has no authentication or authorization.

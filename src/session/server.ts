@@ -26,10 +26,15 @@ import {
 import type { RuntimeEvent, RuntimeEventMsg } from "../shared/protocol.js";
 import type {
   ModelClient,
+  ModelSettings,
   NdxBootstrapReport,
   NdxConfig,
-  ModelSettings,
 } from "../shared/types.js";
+import {
+  ensureDockerSandbox,
+  hostPathToSandboxPath,
+  type DockerSandboxState,
+} from "./docker-sandbox.js";
 
 type JsonRpcId = number | string | null;
 
@@ -58,6 +63,8 @@ export interface SessionServerOptions {
   createClient: (config: NdxConfig) => ModelClient;
   dataDir?: string;
   persistenceDir?: string;
+  requireDockerSandbox?: boolean;
+  dockerSandboxImage?: string;
 }
 
 /** Concrete loopback address chosen by the session server listener. */
@@ -127,6 +134,7 @@ export class SessionServer {
   private readonly store: SqliteSessionStore;
   private readonly bootstrap: NdxBootstrapReport;
   private readonly serverId = randomUUID();
+  private readonly sandboxes = new Map<string, DockerSandboxState>();
   private closing = false;
 
   constructor(options: SessionServerOptions) {
@@ -192,6 +200,9 @@ export class SessionServer {
     dashboardPort = 0,
     dashboardHost = host,
   ): Promise<SessionServerAddress> {
+    if (this.options.requireDockerSandbox === true) {
+      await this.ensureWorkspaceSandbox(this.options.cwd);
+    }
     const socket = await listenHttp(this.server, port, host, "session server");
     const dashboard = await listenHttp(
       this.dashboardServer,
@@ -311,7 +322,7 @@ export class SessionServer {
     request: JsonRpcRequest,
   ): Promise<unknown> {
     if (!isPublicMethod(request.method) && !connection.authenticated) {
-      throw new Error("socket authentication is required");
+      return null;
     }
     switch (request.method) {
       case "initialize":
@@ -388,7 +399,12 @@ export class SessionServer {
   ): Promise<unknown> {
     const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
-    const config = this.nextSessionConfig();
+    const sandbox = await this.ensureWorkspaceSandbox(cwd);
+    const config = this.configWithSandbox(
+      this.nextSessionConfig(),
+      sandbox,
+      cwd,
+    );
     const runtime = new AgentRuntime({
       cwd,
       config,
@@ -537,6 +553,47 @@ export class SessionServer {
     const cwd = join(root, name);
     mkdirSync(cwd, { recursive: true });
     return { project: { name, cwd } };
+  }
+
+  private async ensureWorkspaceSandbox(
+    cwd: string,
+  ): Promise<DockerSandboxState | undefined> {
+    if (this.options.requireDockerSandbox !== true) {
+      return undefined;
+    }
+    const workspaceDir = resolve(cwd);
+    const existing = this.sandboxes.get(workspaceDir);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const sandbox = await ensureDockerSandbox({
+      workspaceDir,
+      image:
+        this.options.dockerSandboxImage ??
+        this.options.config.tools.dockerSandboxImage,
+    });
+    this.sandboxes.set(workspaceDir, sandbox);
+    return sandbox;
+  }
+
+  private configWithSandbox(
+    config: NdxConfig,
+    sandbox: DockerSandboxState | undefined,
+    cwd: string,
+  ): NdxConfig {
+    if (sandbox === undefined) {
+      return config;
+    }
+    return {
+      ...config,
+      env: {
+        ...config.env,
+        NDX_SANDBOX_CONTAINER: sandbox.containerName,
+        NDX_SANDBOX_HOST_WORKSPACE: sandbox.workspaceDir,
+        NDX_SANDBOX_WORKSPACE: sandbox.containerWorkspaceDir,
+        NDX_SANDBOX_CWD: hostPathToSandboxPath(sandbox, cwd),
+      },
+    };
   }
 
   private async subscribeSession(
@@ -1681,7 +1738,6 @@ function isFileSystemError(error: unknown, code: string): boolean {
 
 function isPublicMethod(method: string | undefined): boolean {
   return (
-    method === "initialize" ||
     method === "account/create" ||
     method === "account/login" ||
     method === "account/socialLogin"

@@ -13,9 +13,9 @@ ndx is a TypeScript-first local coding agent runtime.
   `127.0.0.1:45123`.
 - `ndx` first connects to that server unless `--mock`, `--connect`, `serve`,
   `ndxserver`, or `NDX_EMBEDDED_SERVER=1` is used.
-- If no server is reachable, `ndx` writes managed compose state under the user
-  `.ndx/system` directory, starts Docker with the current folder as the project
-  folder, and then connects.
+- If no server is reachable, `ndx` reports the miss, starts a local default
+  server at the default address, logs in, and then connects through the normal
+  session flow.
 - Interactive slash commands are session-server controls exposed through `command/list` and `command/execute`.
 - User `.ndx/settings.json` is the global settings path.
 - User `.ndx/system` is the default SQLite and code-managed system directory;
@@ -27,11 +27,14 @@ ndx is a TypeScript-first local coding agent runtime.
   single value shared by CLI instances and is separate from `/home/.ndx` and
   project `.ndx`.
 - The server exposes a WebSocket socket port and a separate dashboard HTTP
-  port. The dashboard has no auth; the socket requires account login after
-  public initialization/account methods.
+  port. The dashboard has no auth; the socket ignores non-login methods until
+  account login succeeds.
 - Project-local settings are discovered from the nearest `.ndx/settings.json` ancestor.
 - `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
 - `keys` entries in settings are injected into shell tool executions.
+- Docker is a per-workspace tool sandbox only. The server is a local process
+  and depends on the pinned sandbox image `hika00/ndx-sandbox:0.1.0` for
+  shell-like tool execution.
 - `--mock` runs the full agent/tool loop without a provider key.
 - Real model execution uses the provider declared in settings. OpenAI-compatible providers try Responses first and fall back to Chat Completions when `/responses` is unavailable; Anthropic providers use Messages.
 - Provider requests never depend on server-side response continuation state. The agent sends the local client-side conversation stack on every model request and does not send `previous_response_id`.

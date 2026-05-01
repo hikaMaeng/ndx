@@ -30,7 +30,7 @@ test("CLI session controller initializes socket, starts session, and renders sta
 
   assert.deepEqual(
     transport.requests.map((request) => request.method),
-    ["initialize", "account/login", "session/start", "command/execute"],
+    ["account/login", "initialize", "session/start", "command/execute"],
   );
   assert.deepEqual(status, { handled: true, shouldExit: false });
   assert.equal(
