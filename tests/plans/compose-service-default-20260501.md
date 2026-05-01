@@ -17,8 +17,8 @@ and remains reachable through the host-published ports.
 6. Inspect `docker compose logs --tail 120 ndx-agent`.
 7. Run `docker compose ps`.
 8. Fetch `http://127.0.0.1:45124/dashboard`.
-9. Connect through `ws://127.0.0.1:45123` with
-   `node dist/src/cli/main.js --connect ws://127.0.0.1:45123 "..."`.
+9. Connect through `ws://127.0.0.1:45123` from inside the service container
+   with `ndx --mock --connect ws://127.0.0.1:45123 "..."`.
 10. Run `docker compose down --remove-orphans`.
 
 ## Expected Results
@@ -26,8 +26,8 @@ and remains reachable through the host-published ports.
 - Compose config contains published socket and dashboard ports.
 - Startup logs include `[ndx-image]` provenance and `[ndx-service]` bind/URL
   lines.
-- On an empty `/home/.ndx` compose volume, startup installs the repository's
-  non-secret default settings before launching the server.
+- On an empty `/home/.ndx` compose volume, startup does not copy repository
+  settings; the default service uses `--mock` for compose wiring verification.
 - The service process is `ndxserver`, not `sleep infinity`.
 - Dashboard locator contract is reachable through the published dashboard port.
 - A CLI client can connect through the published socket port.

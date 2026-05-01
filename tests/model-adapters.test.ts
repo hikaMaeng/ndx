@@ -100,7 +100,7 @@ test("converts chat-compatible function tools for OpenAI responses", () => {
 test("model request options expose effort, thinking, and sampling parameters", () => {
   assert.deepEqual(
     optionalProviderParameters({
-      model: "qwen",
+      model: "local-model",
       instructions: "test",
       apiKey: "",
       baseUrl: "http://localhost/v1",

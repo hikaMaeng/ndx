@@ -30,11 +30,6 @@ WORKDIR /workspace
 
 CMD set -eu; \
     cd /opt/ndx; \
-    mkdir -p /home/.ndx; \
-    if [ ! -f /home/.ndx/settings.json ] && [ -f /opt/ndx/.ndx/settings.json ]; then \
-        cp /opt/ndx/.ndx/settings.json /home/.ndx/settings.json; \
-        echo "[ndx-service] installed_global_settings=/home/.ndx/settings.json"; \
-    fi; \
     echo "[ndx-image] package=$(node -p "const p=require('./package.json'); p.name + '@' + p.version")"; \
     echo "[ndx-image] git_remote=https://github.com/hikaMaeng/ndx.git"; \
     echo "[ndx-image] git_ref=${NDX_GIT_REF}"; \
@@ -47,4 +42,4 @@ CMD set -eu; \
     echo "[ndx-service] socket_url=${NDX_PUBLIC_SOCKET_URL}"; \
     echo "[ndx-service] dashboard_url=${NDX_PUBLIC_DASHBOARD_URL}"; \
     echo "[ndx-service] cwd=/workspace"; \
-    exec ndxserver --cwd /workspace --listen "${NDX_SOCKET_HOST}:${NDX_SOCKET_PORT}" --dashboard-listen "${NDX_DASHBOARD_HOST}:${NDX_DASHBOARD_PORT}"
+    exec ndxserver --mock --cwd /workspace --listen "${NDX_SOCKET_HOST}:${NDX_SOCKET_PORT}" --dashboard-listen "${NDX_DASHBOARD_HOST}:${NDX_DASHBOARD_PORT}"

@@ -13,7 +13,7 @@ test("settings wizard creates project settings that loadConfig can read", async 
     "1",
     "",
     "http://127.0.0.1:12345/v1",
-    "qwen-local",
+    "local-model",
     "262000",
   ];
   const printed: string[] = [];
@@ -29,12 +29,12 @@ test("settings wizard creates project settings that loadConfig can read", async 
       models?: Array<{ name?: string; maxContext?: number }>;
     };
 
-    assert.equal(settings.model, "qwen-local");
+    assert.equal(settings.model, "local-model");
     assert.equal(settings.permissions?.defaultMode, "workspace-write");
     assert.equal(settings.providers?.default?.type, "openai");
     assert.equal(settings.providers?.default?.key, "");
     assert.equal(settings.providers?.default?.url, "http://127.0.0.1:12345/v1");
-    assert.equal(settings.models?.[0]?.name, "qwen-local");
+    assert.equal(settings.models?.[0]?.name, "local-model");
     assert.equal(settings.models?.[0]?.maxContext, 262000);
     assert.equal(
       printed.some((line) => line.includes("creating project settings")),
@@ -42,7 +42,7 @@ test("settings wizard creates project settings that loadConfig can read", async 
     );
 
     const loaded = loadConfig(root, { globalDir: join(root, "home", ".ndx") });
-    assert.equal(loaded.config.model, "qwen-local");
+    assert.equal(loaded.config.model, "local-model");
     assert.equal(loaded.config.activeProvider.url, "http://127.0.0.1:12345/v1");
   } finally {
     rmSync(root, { recursive: true, force: true });

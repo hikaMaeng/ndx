@@ -46,7 +46,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
       model: "global-model",
       sessionPath: join(root, "custom-sessions"),
       providers: {
-        lmstudio: {
+        localOpenAi: {
           type: "openai",
           key: "",
           url: "http://global.example/v1",
@@ -55,7 +55,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
       models: [
         {
           name: "global-model",
-          provider: "lmstudio",
+          provider: "localOpenAi",
           maxContext: 100,
         },
       ],
@@ -74,7 +74,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
     writeJson(join(project, ".ndx", "settings.json"), {
       model: "project-model",
       providers: {
-        lmstudio: {
+        localOpenAi: {
           type: "openai",
           key: "project-key",
           url: "http://project.example/v1",
@@ -83,7 +83,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
       models: [
         {
           name: "project-model",
-          provider: "lmstudio",
+          provider: "localOpenAi",
           maxContext: 200,
         },
       ],
@@ -188,7 +188,7 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
         session: ["fast-local", "deep-local"],
       },
       providers: {
-        lmstudio: {
+        localOpenAi: {
           type: "openai",
           key: "",
           url: "http://provider.example/v1",
@@ -196,8 +196,8 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
       },
       models: {
         "fast-local": {
-          name: "qwen3.6-35b-a3b:mm",
-          provider: "lmstudio",
+          name: "local-model-high",
+          provider: "localOpenAi",
           maxContext: 262000,
           effort: ["low", "medium", "high"],
           think: true,
@@ -209,8 +209,8 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
           MinP: 0.05,
         },
         "deep-local": {
-          name: "qwen3.6-35b-a3b:mm",
-          provider: "lmstudio",
+          name: "local-model-high",
+          provider: "localOpenAi",
           effort: ["high"],
           think: true,
         },
@@ -221,7 +221,7 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
 
     assert.equal(loaded.config.model, "fast-local");
     assert.equal(loaded.config.activeModel.id, "fast-local");
-    assert.equal(loaded.config.activeModel.name, "qwen3.6-35b-a3b:mm");
+    assert.equal(loaded.config.activeModel.name, "local-model-high");
     assert.equal(loaded.config.activeModel.activeEffort, "medium");
     assert.equal(loaded.config.activeModel.activeThink, true);
     assert.equal(loaded.config.activeModel.limitResponseLength, 2048);

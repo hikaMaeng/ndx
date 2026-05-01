@@ -76,6 +76,12 @@ async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
   try {
     return loadConfig(args.cwd);
   } catch (error) {
+    if (args.mock && isMissingSettingsError(error)) {
+      return {
+        config: mockConfig(args.cwd),
+        sources: ["mock defaults (--mock, no settings found)"],
+      };
+    }
     if (!isMissingSettingsError(error) || !process.stdin.isTTY) {
       throw error;
     }
@@ -97,6 +103,58 @@ function isMissingSettingsError(error: unknown): boolean {
   return (
     error instanceof Error && error.message.startsWith("missing ndx settings:")
   );
+}
+
+function mockConfig(cwd: string): NdxConfig {
+  return {
+    model: "mock",
+    modelPools: { session: ["mock"], worker: [], reviewer: [], custom: {} },
+    instructions:
+      "You are ndx, a local coding agent. Prefer concise plans, inspect before editing, and use shell when facts must be verified.",
+    env: {},
+    keys: {},
+    maxTurns: 8,
+    shellTimeoutMs: 120_000,
+    providers: {
+      mock: {
+        type: "openai",
+        key: "",
+        url: "http://localhost/v1",
+      },
+    },
+    models: [
+      {
+        name: "mock",
+        provider: "mock",
+      },
+    ],
+    activeModel: {
+      name: "mock",
+      provider: "mock",
+    },
+    activeProvider: {
+      type: "openai",
+      key: "",
+      url: "http://localhost/v1",
+    },
+    permissions: {
+      defaultMode: "danger-full-access",
+    },
+    websearch: {},
+    search: {},
+    mcp: {},
+    globalMcp: {},
+    projectMcp: {},
+    plugins: [],
+    tools: { imageGeneration: false },
+    paths: {
+      globalDir: "/home/.ndx",
+      dataDir: "/home/.ndx-data",
+      sessionDir: "/home/.ndx-data",
+      projectDir: cwd,
+      projectNdxDir: resolve(cwd, ".ndx"),
+    },
+  };
 }
 
 async function runInteractive(options: {
@@ -346,7 +404,7 @@ function printInteractiveHeader(config: NdxConfig): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, logs in with account credentials, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, logs in with account credentials, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 
