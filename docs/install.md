@@ -25,6 +25,13 @@ npm install -g @neurondev/ndx
 ndx
 ```
 
+Before public npm release, install from the Verdaccio registry:
+
+```bash
+npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
+ndx
+```
+
 Source-tree development can bypass workspace Docker:
 
 ```bash

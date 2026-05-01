@@ -48,11 +48,11 @@ npm run deploy
 - Runtime interrupt event contract.
 - CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
 - CLI `/login` default-user switching and shared login-store update.
-- Managed Docker bootstrap compose-state generation under `.ndx/system/managed`
-  without placing CLI login state in project `.ndx`.
-- Managed startup probes the requested ndx socket before invoking Docker and
-  verifies `initialize.server` is `ndx-ts-session-server`.
-- Interactive managed startup asks for a workspace folder only when Docker
+- Managed startup reports local sandbox metadata without generating server
+  compose state.
+- Managed startup probes the requested ndx socket before starting the local
+  fallback server and verifies `initialize.server` is `ndx-ts-session-server`.
+- Interactive managed startup asks for a workspace folder only when local
   fallback is needed, then project selection uses a subfolder of that workspace.
 - Session server project listing and project folder creation.
 - WebSocket session server request/notification flow.
