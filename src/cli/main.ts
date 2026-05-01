@@ -148,6 +148,7 @@ async function runServer(options: {
   sources: string[];
 }): Promise<void> {
   const server = createSessionServer(options);
+  printWelcomeLogo();
   const address = await listen(
     server,
     options.args.listen,
