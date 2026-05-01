@@ -24,10 +24,11 @@ npm install -g @neurondev/ndx
 ndx
 ```
 
-The host CLI looks for a workspace-managed Docker session server. If none is
-reachable, it asks a short numbered setup question, writes compose state for the
-current folder, starts the container, then connects. Use `--mock` for local
-source-tree development without Docker.
+The host CLI first probes saved workspace socket URLs for an ndx session server.
+Inside the standard container workspace it also probes `ws://127.0.0.1:45123`.
+Only when no server socket is reachable does it ask the setup question and start
+the Docker-managed fallback. Use `--mock` for local source-tree development
+without Docker.
 
 Use a real model by configuring provider settings in `.ndx/settings.json` or
 local global `/home/.ndx/settings.json`.

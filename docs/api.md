@@ -140,6 +140,13 @@ Files:
 The last-login value is independent from `clientId`. Each CLI process still
 creates its own runtime `clientId`; the stored login only chooses the `userId`.
 
+Managed workspace startup treats these files as socket discovery records first.
+It probes every stored record for the current resolved workspace root and accepts
+only sockets whose `initialize` response identifies `ndx-ts-session-server`.
+For `/workspace`, it also probes `ws://127.0.0.1:45123` as the standard
+in-container server socket. Docker compose startup is a fallback after socket
+discovery fails.
+
 HTTP `GET /` and `GET /dashboard` on the dashboard port return a minimal
 dashboard placeholder. The dashboard has no authentication or authorization.
 The agent service remains socket-first; this page is only an admin UI anchor

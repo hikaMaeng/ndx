@@ -51,9 +51,12 @@ cd /path/to/workspace
 ndx
 ```
 
-The host CLI searches CLI app state for a reachable workspace-managed Docker
-server. If none exists, it asks a numbered setup question, writes compose state
-for the current folder, starts the container, then connects over WebSocket.
+The host CLI searches CLI app state for reachable workspace socket URLs before
+starting any container. In the standard container workspace `/workspace`, it
+also probes `ws://127.0.0.1:45123` so Docker Desktop Exec and in-container shells
+can attach to the already-running `ndxserver` without invoking Docker. If no
+server socket is reachable, it asks a numbered setup question, writes compose
+state for the current folder, starts the container, then connects over WebSocket.
 The first setup uses the current folder as `/workspace`, bind-mounts
 workspace-local `.ndx/home` to `/home/.ndx`, and bind-mounts `.ndx/data` to
 `/home/.ndx-data`.

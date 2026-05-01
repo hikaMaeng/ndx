@@ -50,6 +50,8 @@ npm run deploy
 - CLI `/login` default-user switching and shared login-store update.
 - Workspace-managed Docker bootstrap compose-state generation without placing
   CLI login state in project `.ndx`.
+- Managed workspace startup probes reachable ndx socket state before invoking
+  Docker and verifies `initialize.server` is `ndx-ts-session-server`.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
 - Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.

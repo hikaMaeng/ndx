@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   writeFileSync,
@@ -32,6 +33,8 @@ export interface WorkspaceBootstrapOptions {
 }
 
 const DEFAULT_IMAGE = "hika00/ndx:latest";
+const DEFAULT_CONTAINER_SOCKET_PORT = 45123;
+const DEFAULT_CONTAINER_DASHBOARD_PORT = 45124;
 
 /** Ensure a host CLI has a workspace-managed Docker session server to attach to. */
 export async function ensureWorkspaceServer(
@@ -39,9 +42,10 @@ export async function ensureWorkspaceServer(
 ): Promise<WorkspaceState> {
   const root = resolve(options.cwd);
   const print = options.print ?? console.error;
-  const existing = readWorkspaceState(root);
-  if (existing !== undefined && (await canConnect(existing.socketUrl))) {
-    return existing;
+  const existing = firstWorkspaceState(root);
+  const reachable = await findReachableWorkspaceServer(root);
+  if (reachable !== undefined) {
+    return reachable;
   }
   if (existing !== undefined && options.manageDocker !== false) {
     await composeUp(existing.composeFile);
@@ -61,6 +65,77 @@ export async function ensureWorkspaceServer(
 export function workspaceStateFile(root: string): string {
   const key = createHash("sha256").update(resolve(root)).digest("hex");
   return join(resolveCliStateDir(), "workspaces", `${key}.json`);
+}
+
+function firstWorkspaceState(root: string): WorkspaceState | undefined {
+  return readWorkspaceStateFile(workspaceStateFile(root));
+}
+
+async function findReachableWorkspaceServer(
+  root: string,
+): Promise<WorkspaceState | undefined> {
+  for (const state of workspaceStateCandidates(root)) {
+    if (await canConnect(state.socketUrl)) {
+      return state;
+    }
+  }
+  return undefined;
+}
+
+function workspaceStateCandidates(root: string): WorkspaceState[] {
+  const normalizedRoot = resolve(root);
+  const candidates: WorkspaceState[] = [];
+  const seen = new Set<string>();
+  const add = (state: WorkspaceState | undefined): void => {
+    if (state === undefined || resolve(state.root) !== normalizedRoot) {
+      return;
+    }
+    if (seen.has(state.socketUrl)) {
+      return;
+    }
+    seen.add(state.socketUrl);
+    candidates.push(state);
+  };
+
+  add(firstWorkspaceState(normalizedRoot));
+  for (const state of readWorkspaceStates()) {
+    add(state);
+  }
+  if (normalizedRoot === "/workspace") {
+    add(defaultContainerWorkspaceState(normalizedRoot));
+  }
+  return candidates;
+}
+
+function readWorkspaceStates(): WorkspaceState[] {
+  const workspaceDir = join(resolveCliStateDir(), "workspaces");
+  let entries: string[];
+  try {
+    entries = readdirSync(workspaceDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+  return entries
+    .filter((entry) => entry.endsWith(".json"))
+    .map((entry) => readWorkspaceStateFile(join(workspaceDir, entry)))
+    .filter((state): state is WorkspaceState => state !== undefined);
+}
+
+function defaultContainerWorkspaceState(root: string): WorkspaceState {
+  return {
+    root,
+    composeFile: join(root, ".ndx", "managed", "docker-compose.yml"),
+    socketUrl: `ws://127.0.0.1:${DEFAULT_CONTAINER_SOCKET_PORT}`,
+    dashboardUrl: `http://127.0.0.1:${DEFAULT_CONTAINER_DASHBOARD_PORT}`,
+    socketPort: DEFAULT_CONTAINER_SOCKET_PORT,
+    dashboardPort: DEFAULT_CONTAINER_DASHBOARD_PORT,
+    image: process.env.NDX_DOCKER_IMAGE ?? DEFAULT_IMAGE,
+    mock: false,
+    updatedAt: Date.now(),
+  };
 }
 
 async function createWorkspaceState(
@@ -101,15 +176,19 @@ async function createWorkspaceState(
   return state;
 }
 
-function readWorkspaceState(root: string): WorkspaceState | undefined {
+function readWorkspaceStateFile(file: string): WorkspaceState | undefined {
   try {
-    const parsed = JSON.parse(
-      readFileSync(workspaceStateFile(root), "utf8"),
-    ) as WorkspaceState;
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as WorkspaceState;
     if (
       typeof parsed.root === "string" &&
       typeof parsed.composeFile === "string" &&
-      typeof parsed.socketUrl === "string"
+      typeof parsed.socketUrl === "string" &&
+      typeof parsed.dashboardUrl === "string" &&
+      typeof parsed.socketPort === "number" &&
+      typeof parsed.dashboardPort === "number" &&
+      typeof parsed.image === "string" &&
+      typeof parsed.mock === "boolean" &&
+      typeof parsed.updatedAt === "number"
     ) {
       return parsed;
     }
@@ -186,11 +265,13 @@ async function canConnect(url: string): Promise<boolean> {
   try {
     const client = await SessionClient.connect(url);
     try {
-      await client.request("initialize");
+      const initialize = await client.request<{ server?: unknown }>(
+        "initialize",
+      );
+      return initialize.server === "ndx-ts-session-server";
     } finally {
       client.close();
     }
-    return true;
   } catch {
     return false;
   }
