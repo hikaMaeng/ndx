@@ -21,14 +21,14 @@ and third-party trees are intentionally not part of this workspace.
 
 ```bash
 npm install -g @neurondev/ndx
-ndx
+ndx [SERVER_ADDRESS]
 ```
 
-The host CLI first probes saved workspace socket URLs for an ndx session server.
-Inside the standard container workspace it also probes `ws://127.0.0.1:45123`.
-Only when no server socket is reachable does it ask the setup question and start
-the Docker-managed fallback. Use `--mock` for local source-tree development
-without Docker.
+`SERVER_ADDRESS` is the only `ndx` startup argument. It defaults to
+`127.0.0.1:45123`. The CLI connects to that server first; if it is not
+reachable, it starts the Docker-managed fallback for the current project folder
+and then reconnects. Use `--mock` for local source-tree development without
+Docker.
 
 Use a real model by configuring provider settings in `.ndx/settings.json` or
 local global `/home/.ndx/settings.json`.
@@ -43,8 +43,9 @@ The deploy script builds TypeScript locally, then builds the Docker image by clo
 
 `ndx serve` and `ndxserver` expose an authenticated WebSocket socket port plus
 an unauthenticated dashboard HTTP port. Accounts, social account links, and
-sessions are stored in SQLite at `/home/.ndx-data/ndx.sqlite` by default. Host
-CLI last-login state is stored in the CLI app-state directory, not in `.ndx`.
+sessions are stored in SQLite under the user `.ndx/system` directory by default.
+Host CLI last-login state is stored in the CLI app-state directory, not in
+`.ndx`.
 
 ## License
 

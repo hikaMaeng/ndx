@@ -47,19 +47,19 @@ Plugin and capability tools are filesystem packages, not settings entries. Put e
 
 ```bash
 npm install -g @neurondev/ndx
-cd /path/to/workspace
-ndx
+cd /path/to/project
+ndx [SERVER_ADDRESS]
 ```
 
-The host CLI searches CLI app state for reachable workspace socket URLs before
-starting any container. In the standard container workspace `/workspace`, it
-also probes `ws://127.0.0.1:45123` so Docker Desktop Exec and in-container shells
-can attach to the already-running `ndxserver` without invoking Docker. If no
-server socket is reachable, it asks a numbered setup question, writes compose
-state for the current folder, starts the container, then connects over WebSocket.
-The first setup uses the current folder as `/workspace`, bind-mounts
-workspace-local `.ndx/home` to `/home/.ndx`, and bind-mounts `.ndx/data` to
-`/home/.ndx-data`.
+`SERVER_ADDRESS` is optional and defaults to `127.0.0.1:45123`. The host CLI
+connects to that ndx server first. If the socket is not reachable, it writes
+managed compose state under the user `.ndx/system` directory, starts Docker, and
+then connects over WebSocket.
+
+The current folder is the project folder. The Docker fallback bind-mounts that
+project folder at the same absolute path inside the container, bind-mounts the
+user `.ndx` directory to `/home/.ndx`, and bind-mounts
+`/var/run/docker.sock`.
 
 Use `NDX_DOCKER_IMAGE` to override the Docker image. Use `NDX_CLI_STATE_DIR` to
 move host CLI app state. Host CLI login state is not stored in `/home/.ndx` or
@@ -75,18 +75,18 @@ NDX_EMBEDDED_SERVER=1 node dist/src/cli/main.js --mock "create a file named tmp/
 connects over WebSocket, sends `initialize`, logs in from CLI app state or
 `defaultUser`, starts a session, and sends the prompt as a user turn. The server
 owns the live session and writes accounts plus sessions to
-`/home/.ndx-data/ndx.sqlite` once the first prompt is submitted. Set optional
+`/home/.ndx/system/ndx.sqlite` once the first prompt is submitted. Set optional
 `dataPath` in settings to move the SQLite data directory; legacy `sessionPath`
 is treated as the same data-directory override.
 
 On startup, config loading and the session server both enforce required global
-`.ndx` elements. Missing `core/`, `core/tools/`, built-in core tool package
-files, and `skills/` are installed before session work begins. If neither global
-nor project settings exist and the CLI is attached to a TTY, ndx asks for
-permission mode, provider type, provider key, provider URL, model name, and max
-context, then writes project `.ndx/settings.json`. Non-TTY startup still requires
-an existing settings file. The socket initialization output includes a bootstrap
-report showing what was installed and what already existed.
+`.ndx` elements. Missing `system/core/`, `system/core/tools/`, built-in core tool
+package files, and `system/skills/` are installed before session work begins. If
+neither global nor project settings exist and the CLI is attached to a TTY, ndx
+asks for permission mode, provider type, provider key, provider URL, model name,
+and max context, then writes project `.ndx/settings.json`. Non-TTY startup still
+requires an existing settings file. The socket initialization output includes a
+bootstrap report showing what was installed and what already existed.
 
 ## Session Server
 

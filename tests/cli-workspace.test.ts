@@ -1,22 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MockModelClient } from "../src/model/mock-client.js";
 import { SessionServer } from "../src/session/server.js";
 import type { NdxConfig } from "../src/shared/types.js";
 import {
-  ensureWorkspaceServer,
-  type WorkspaceState,
-  workspaceStateFile,
+  ensureManagedServer,
+  normalizeSocketUrl,
 } from "../src/cli/workspace.js";
 
 const baseConfig: NdxConfig = {
@@ -64,114 +56,70 @@ const baseConfig: NdxConfig = {
   },
 };
 
-test("workspace bootstrap creates compose state without using .ndx for CLI login", async () => {
-  const root = mkdtempSync(join(tmpdir(), "ndx-workspace-"));
-  const stateDir = mkdtempSync(join(tmpdir(), "ndx-cli-state-"));
-  const previousState = process.env.NDX_CLI_STATE_DIR;
+test("server address argument defaults to localhost port 45123", () => {
+  assert.equal(normalizeSocketUrl(undefined), "ws://127.0.0.1:45123");
+  assert.equal(normalizeSocketUrl("127.0.0.1"), "ws://127.0.0.1:45123");
+  assert.equal(normalizeSocketUrl("127.0.0.1:55123"), "ws://127.0.0.1:55123");
+  assert.equal(normalizeSocketUrl("ws://127.0.0.1"), "ws://127.0.0.1:45123");
+});
+
+test("managed server bootstrap writes project-path compose fallback", async () => {
+  const projectDir = mkdtempSync(join(tmpdir(), "ndx-project-"));
   const previousImage = process.env.NDX_DOCKER_IMAGE;
-  process.env.NDX_CLI_STATE_DIR = stateDir;
   process.env.NDX_DOCKER_IMAGE = "ndx-agent:test";
   try {
-    const state = await ensureWorkspaceServer({
-      cwd: root,
+    const state = await ensureManagedServer({
+      cwd: projectDir,
+      serverUrl: "127.0.0.1:9",
       manageDocker: false,
       print: () => undefined,
     });
 
-    assert.equal(state.root, root);
+    assert.equal(state.workspaceDir, projectDir);
+    assert.equal(state.socketUrl, "ws://127.0.0.1:9");
     assert.equal(state.image, "ndx-agent:test");
-    assert.equal(state.mock, true);
     assert.equal(existsSync(state.composeFile), true);
-    assert.equal(existsSync(workspaceStateFile(root)), true);
-    assert.equal(existsSync(join(root, ".ndx", "settings.json")), true);
     const compose = readFileSync(state.composeFile, "utf8");
     assert.equal(compose.includes("ndxserver"), true);
     assert.equal(compose.includes("--mock"), true);
-    assert.equal(compose.includes(`${state.socketPort}:45123`), true);
-    assert.equal(compose.includes(`${root}`), true);
-    assert.equal(
-      workspaceStateFile(root).startsWith(join(stateDir, "workspaces")),
-      true,
-    );
+    assert.equal(compose.includes(projectDir), true);
+    assert.equal(compose.includes("target: /workspace"), true);
+    assert.equal(compose.includes("/var/run/docker.sock"), true);
+    assert.equal(compose.includes(state.homeDir), true);
+    assert.equal(compose.includes("target: /home/.ndx"), true);
   } finally {
-    if (previousState === undefined) {
-      delete process.env.NDX_CLI_STATE_DIR;
-    } else {
-      process.env.NDX_CLI_STATE_DIR = previousState;
-    }
     if (previousImage === undefined) {
       delete process.env.NDX_DOCKER_IMAGE;
     } else {
       process.env.NDX_DOCKER_IMAGE = previousImage;
     }
-    rmSync(root, { recursive: true, force: true });
-    rmSync(stateDir, { recursive: true, force: true });
+    rmSync(projectDir, { recursive: true, force: true });
   }
 });
 
-test("workspace bootstrap finds a live socket state before trying Docker", async () => {
-  const root = mkdtempSync(join(tmpdir(), "ndx-workspace-"));
-  const stateDir = mkdtempSync(join(tmpdir(), "ndx-cli-state-"));
-  const globalDir = join(root, "home", ".ndx");
-  const previousState = process.env.NDX_CLI_STATE_DIR;
-  process.env.NDX_CLI_STATE_DIR = stateDir;
+test("managed server attaches to the requested socket before Docker fallback", async () => {
+  const projectDir = mkdtempSync(join(tmpdir(), "ndx-project-"));
+  const globalDir = join(projectDir, "home", ".ndx");
   let server: SessionServer | undefined;
   try {
     server = new SessionServer({
-      cwd: root,
+      cwd: projectDir,
       config: { ...baseConfig, paths: { globalDir } },
       sources: [],
       createClient: () => new MockModelClient(),
-      persistenceDir: join(root, "data"),
+      persistenceDir: join(projectDir, "data"),
     });
     const address = await server.listen(0, "127.0.0.1");
-    const livePort = Number(new URL(address.url).port);
-    const staleState = workspaceState(root, "ws://127.0.0.1:9", 9);
-    const liveState = workspaceState(root, address.url, livePort);
-
-    mkdirSync(join(stateDir, "workspaces"), { recursive: true });
-    writeFileSync(
-      workspaceStateFile(root),
-      `${JSON.stringify(staleState, null, 2)}\n`,
-    );
-    writeFileSync(
-      join(stateDir, "workspaces", "alternate-live.json"),
-      `${JSON.stringify(liveState, null, 2)}\n`,
-    );
-
-    const state = await ensureWorkspaceServer({
-      cwd: root,
+    const state = await ensureManagedServer({
+      cwd: projectDir,
+      serverUrl: address.url,
       print: () => undefined,
     });
 
     assert.equal(state.socketUrl, address.url);
-    assert.equal(state.socketPort, livePort);
+    assert.equal(existsSync(state.composeFile), false);
   } finally {
     await server?.close();
-    if (previousState === undefined) {
-      delete process.env.NDX_CLI_STATE_DIR;
-    } else {
-      process.env.NDX_CLI_STATE_DIR = previousState;
-    }
-    rmSync(root, { recursive: true, force: true });
-    rmSync(stateDir, { recursive: true, force: true });
+    rmSync(projectDir, { recursive: true, force: true });
   }
 });
-
-function workspaceState(
-  root: string,
-  socketUrl: string,
-  socketPort: number,
-): WorkspaceState {
-  return {
-    root,
-    composeFile: join(root, ".ndx", "managed", "docker-compose.yml"),
-    socketUrl,
-    dashboardUrl: "http://127.0.0.1:45124",
-    socketPort,
-    dashboardPort: 45124,
-    image: "ndx-agent:test",
-    mock: true,
-    updatedAt: Date.now(),
-  };
-}

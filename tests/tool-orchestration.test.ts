@@ -169,15 +169,15 @@ function createToolFixture(): ToolFixture {
   const globalDir = join(root, "home", ".ndx");
   const projectNdxDir = join(root, "repo", ".ndx");
   const logPath = join(root, "tool-log.jsonl");
-  writeTimedTool(join(globalDir, "core", "tools", "parallel_a"), logPath, 160);
-  writeTimedTool(join(globalDir, "core", "tools", "parallel_b"), logPath, 160);
-  writeTimedTool(join(globalDir, "core", "tools", "serial_first"), logPath, 20);
+  writeTimedTool(join(globalDir, "system", "core", "tools", "parallel_a"), logPath, 160);
+  writeTimedTool(join(globalDir, "system", "core", "tools", "parallel_b"), logPath, 160);
+  writeTimedTool(join(globalDir, "system", "core", "tools", "serial_first"), logPath, 20);
   writeTimedTool(
-    join(globalDir, "core", "tools", "serial_second"),
+    join(globalDir, "system", "core", "tools", "serial_second"),
     logPath,
     20,
   );
-  writeEchoTool(join(globalDir, "core", "tools", "direct_echo"));
+  writeEchoTool(join(globalDir, "system", "core", "tools", "direct_echo"));
   const mcpServerPath = join(root, "mcp-server.mjs");
   writeMcpServer(mcpServerPath);
   const mcpServer = {

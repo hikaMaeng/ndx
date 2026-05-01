@@ -28,27 +28,28 @@ except for the two `.gitkeep` directory anchors.
 ## Runtime Flow
 
 1. CLI resolves `cwd` and reads existing `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` directories and core tools. In TTY CLI runs with no settings, the CLI asks setup questions, writes project `.ndx/settings.json`, then reloads config.
-2. Host CLI startup resolves CLI app state, probes saved workspace socket URLs,
-   and attaches to the first reachable ndx WebSocket session server. In the
-   standard container workspace `/workspace`, it also probes
-   `ws://127.0.0.1:45123` before any Docker command. If no socket is reachable,
-   it creates compose state for the current folder, starts the container, and
-   then connects. `--mock` and `NDX_EMBEDDED_SERVER=1` keep the source-tree
-   embedded loopback path.
-3. Session server startup re-checks required global `.ndx` elements and installs any missing core directories, core tool package files, and skills directory before accepting session work.
-4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
-5. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
-6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-7. The session server stores accounts, social account links, sessions, request
+2. Host CLI startup probes the requested server address, defaulting to
+   `127.0.0.1:45123`. If no socket is reachable, it asks for a workspace folder,
+   writes compose state under `/home/.ndx/system/managed`, starts Docker with
+   that folder mounted at `/workspace`, and then connects. `--mock` and
+   `NDX_EMBEDDED_SERVER=1` keep the source-tree embedded loopback path.
+3. After socket initialization and login, the CLI asks the server for projects
+   under the workspace root. The selected project subfolder becomes the session
+   `cwd`; the user can also create a new project folder.
+4. Session server startup re-checks required global `.ndx/system` elements and installs any missing core directories, core tool package files, and skills directory before accepting session work.
+5. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
+6. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
+7. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
+8. The session server stores accounts, social account links, sessions, request
    records, runtime events, notifications, and ownership in SQLite under the
    configured data directory.
-8. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
-9. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
-10. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
-11. Function schemas from that registry are sent to the model.
-12. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
-13. Filesystem tools are executed from their `tool.json` command process. MCP tools are executed through the configured MCP stdio command. Task tools run inside the worker.
-14. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
+9. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
+10. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
+11. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
+12. Function schemas from that registry are sent to the model.
+13. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
+14. Filesystem tools are executed from their `tool.json` command process. MCP tools are executed through the configured MCP stdio command. Task tools run inside the worker.
+15. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
 
 ## Model Routing And Context
 
@@ -102,15 +103,15 @@ Client programs must not maintain authoritative live session or persistence stat
 - runtime notification formatting for human output
 
 The CLI does not persist live session state. Host CLI app state persists only
-last-login and workspace server connection metadata; `/home/.ndx` and project
-`.ndx` remain agent runtime configuration.
+last-login metadata; `/home/.ndx` and project `.ndx` remain agent runtime
+configuration.
 
 ## SQLite Persistence
 
 The session server opens `<dataDir>/ndx.sqlite` through `SqliteSessionStore`.
-The default data directory is `/home/.ndx-data`; settings may define
+The default data directory is `/home/.ndx/system`; settings may define
 `dataPath`, and legacy `sessionPath` is treated as a data-directory override.
-`/home/.ndx` bootstrap state remains code-managed and is not stored in SQLite.
+`/home/.ndx/system` bootstrap state remains code-managed and is not stored in SQLite.
 
 SQLite tables own users, OAuth account links, projects, sessions, session
 events, and session owners. `defaultUser` with an empty password is created on

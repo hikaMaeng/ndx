@@ -60,7 +60,7 @@ test("runtime emits session, turn, tool, and completion events", async () => {
   const events: RuntimeEvent[] = [];
   try {
     const globalDir = join(root, "home", ".ndx");
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     const runtime = new AgentRuntime({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },

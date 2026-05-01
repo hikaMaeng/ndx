@@ -306,7 +306,7 @@ class FakeTransport implements CliSessionTransport {
       return {
         username: "defaultUser",
         clientId: cliIdentity.clientId,
-        sessionRoot: "/home/.ndx-data",
+        sessionRoot: "/home/.ndx/system",
       } as T;
     }
     if (method === "session/start") {

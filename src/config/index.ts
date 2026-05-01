@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import type {
   EnvMap,
@@ -20,11 +21,11 @@ import type {
 } from "../shared/types.js";
 import { CORE_TOOL_PACKAGES, type CoreToolPackage } from "./core-tools.js";
 
-const DEFAULT_GLOBAL_NDX_DIR = "/home/.ndx";
-const DEFAULT_DATA_DIR = "/home/.ndx-data";
+const DEFAULT_GLOBAL_NDX_DIR = join(homedir(), ".ndx");
 const CONFIG_DIR = ".ndx";
 const SETTINGS_FILE = "settings.json";
 const SEARCH_FILE = "search.json";
+const SYSTEM_DIR = "system";
 
 export interface ConfigLoadOptions {
   globalDir?: string;
@@ -139,6 +140,11 @@ export function searchRulesFile(options: ConfigLoadOptions = {}): string {
   return join(resolveGlobalNdxDir(options), SEARCH_FILE);
 }
 
+/** Return the code-managed ndx system directory below the global home. */
+export function systemDir(globalDir: string): string {
+  return join(globalDir, SYSTEM_DIR);
+}
+
 /** Install required global .ndx directories and core tools when missing. */
 export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
   const elements: NdxBootstrapElement[] = [];
@@ -149,7 +155,12 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
     path: globalDir,
     status: globalDirStatus,
   });
-  for (const directory of ["core", "core/tools", "skills"]) {
+  for (const directory of [
+    SYSTEM_DIR,
+    join(SYSTEM_DIR, "core"),
+    join(SYSTEM_DIR, "core", "tools"),
+    join(SYSTEM_DIR, "skills"),
+  ]) {
     const path = join(globalDir, directory);
     const status = existsSync(path) ? "existing" : "installed";
     mkdirSync(path, { recursive: true });
@@ -194,7 +205,7 @@ function ensureCoreToolPackage(
   tool: CoreToolPackage,
 ): NdxBootstrapElement[] {
   const elements: NdxBootstrapElement[] = [];
-  const toolDir = join(globalDir, "core", "tools", tool.name);
+  const toolDir = join(systemDir(globalDir), "core", "tools", tool.name);
   const manifestFile = join(toolDir, "tool.json");
   const runtimeFile = join(toolDir, "tool.mjs");
   const toolDirStatus = existsSync(toolDir) ? "existing" : "installed";
@@ -430,7 +441,7 @@ function finalizeConfig(
   const keys = settings.keys ?? {};
   const env = { ...keys, ...(settings.env ?? {}) };
   const dataDir = resolve(
-    settings.dataPath ?? settings.sessionPath ?? DEFAULT_DATA_DIR,
+    settings.dataPath ?? settings.sessionPath ?? systemDir(runtime.globalDir),
   );
   return {
     model,

@@ -3,17 +3,20 @@
 ## CLI
 
 ```bash
-ndx [--mock] [--cwd PATH] [prompt]
+ndx [SERVER_ADDRESS]
 ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]
 ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]
 ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]
+ndx --mock [--cwd PATH] [prompt]
 ```
 
-`ndx` is the host CLI. By default it finds or creates a workspace-managed Docker
-session server for the current `cwd`, logs in over the socket, then sends
-requests to it. `--mock` keeps the source-tree development path and starts an
-embedded loopback server. `ndx serve` and `ndxserver` keep the session server
-open for other clients.
+`ndx` is the host CLI. Its only startup argument is `SERVER_ADDRESS`, which
+defaults to `127.0.0.1:45123`. The CLI connects to that server first. If no
+server is reachable, it asks for a workspace folder, starts the Docker-managed
+server with that folder mounted at `/workspace`, logs in over the socket, asks
+for a project under `/workspace`, and then shows session choices. `--mock` keeps
+the source-tree development path and starts an embedded loopback server. `ndx
+serve` and `ndxserver` keep the session server open for other clients.
 
 Interactive slash commands are session-server controls. The CLI parses the
 leading slash and sends `command/execute`; command text is not appended to model
@@ -35,7 +38,7 @@ context.
 ## Options
 
 - `--mock`: use deterministic local model behavior. No network or provider key required.
-- `--cwd PATH`: workspace directory used by project settings discovery and shell commands.
+- `--cwd PATH`: server or mock-mode working directory used by project settings discovery and shell commands.
 - `--listen HOST:PORT`: bind address for `ndx serve`. The default is `127.0.0.1:0`.
 - `--dashboard-listen HOST:PORT`: bind address for the dashboard HTTP listener in server mode. The default is `127.0.0.1:0`.
 - `--connect ws://HOST:PORT`: send the prompt to an existing session server.
@@ -63,6 +66,8 @@ Requests:
 | `account/socialLogin`      | `{ provider, subject?, accessToken, refreshToken?, clientId? }` | `{ username, clientId, sessionRoot, provider, created }` |
 | `account/delete`           | `{ username }`                                                  | `{ username, deleted }`                                  |
 | `account/changePassword`   | `{ username, oldPassword?, newPassword }`                       | `{ username, updatedAt }`                                |
+| `project/list`             | none                                                            | `{ root, projects }`                                     |
+| `project/create`           | `{ name }`                                                      | `{ project }`                                            |
 | `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`                 | command result                                           |
 | `session/start`            | `{ cwd?, user?, clientId? }`                                    | `{ session }`                                            |
 | `session/list`             | `{ cwd?, user?, clientId? }`                                    | `{ sessions }`                                           |
@@ -91,7 +96,7 @@ Notifications:
 - `error`
 
 Server records are stored in `<dataDir>/ndx.sqlite`. The default data directory
-is `/home/.ndx-data`; settings may define `dataPath`, and legacy `sessionPath`
+is `/home/.ndx/system`; settings may define `dataPath`, and legacy `sessionPath`
 is treated as a data-directory override. Social login validates the access token
 against the provider profile endpoint, uses `provider:subject` as the server
 `userId`, creates the account on first login, and reuses it on later logins.
@@ -132,20 +137,17 @@ otherwise `~/.local/state/ndx`.
 
 Files:
 
-| File                       | Purpose                                                                                    |
-| -------------------------- | ------------------------------------------------------------------------------------------ |
-| `auth.json`                | Single shared last-login value for all host CLI instances.                                 |
-| `workspaces/<sha256>.json` | Workspace root, compose file path, socket URL, dashboard URL, ports, image, and mock flag. |
+| File        | Purpose                                                    |
+| ----------- | ---------------------------------------------------------- |
+| `auth.json` | Single shared last-login value for all host CLI instances. |
 
 The last-login value is independent from `clientId`. Each CLI process still
 creates its own runtime `clientId`; the stored login only chooses the `userId`.
 
-Managed workspace startup treats these files as socket discovery records first.
-It probes every stored record for the current resolved workspace root and accepts
-only sockets whose `initialize` response identifies `ndx-ts-session-server`.
-For `/workspace`, it also probes `ws://127.0.0.1:45123` as the standard
-in-container server socket. Docker compose startup is a fallback after socket
-discovery fails.
+Managed Docker compose files are generated under `/home/.ndx/system/managed`.
+They are keyed by the selected workspace folder. The host CLI does not discover
+servers from stored workspace records; it only probes the requested server
+address.
 
 HTTP `GET /` and `GET /dashboard` on the dashboard port return a minimal
 dashboard placeholder. The dashboard has no authentication or authorization.
@@ -161,8 +163,8 @@ same shape on `event.bootstrap`:
   "checkedAt": 1777440000000,
   "elements": [
     {
-      "name": "core",
-      "path": "/home/.ndx/core",
+      "name": "system/core",
+      "path": "/home/.ndx/system/core",
       "status": "installed"
     }
   ]
@@ -296,7 +298,7 @@ At turn startup the registry scans every layer in fixed priority order. First ma
 | Priority | Layer          | Source path                                                   |
 | -------- | -------------- | ------------------------------------------------------------- |
 | 0        | task           | Agent-owned task orchestration tools only.                    |
-| 1        | core           | `/home/.ndx/core/tools`                                       |
+| 1        | core           | `/home/.ndx/system/core/tools`                                |
 | 2        | project        | `<project>/.ndx/tools`                                        |
 | 3        | global         | `/home/.ndx/tools`                                            |
 | 4        | project plugin | `<project>/.ndx/plugins/<plugin>/tools`                       |
@@ -306,7 +308,7 @@ At turn startup the registry scans every layer in fixed priority order. First ma
 
 Only task orchestration tools are agent-owned: `update_plan`, `request_user_input`, multi-agent task tools, and agent-job task tools. Shell, filesystem, patch, web, media, plugin, and other capability tools must be external `tool.json` packages.
 
-Startup bootstraps the built-in core capability packages under `/home/.ndx/core/tools`: `shell`, `apply_patch`, `list_dir`, `view_image`, `web_search`, `image_generation`, `tool_suggest`, `tool_search`, and `request_permissions`.
+Startup bootstraps the built-in core capability packages under `/home/.ndx/system/core/tools`: `shell`, `apply_patch`, `list_dir`, `view_image`, `web_search`, `image_generation`, `tool_suggest`, `tool_search`, and `request_permissions`.
 
 ## `tool.json`
 

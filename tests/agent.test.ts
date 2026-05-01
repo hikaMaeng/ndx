@@ -68,7 +68,7 @@ test("mock agent exercises shell tool and completes", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-agent-"));
   try {
     const globalDir = join(root, "home", ".ndx");
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     const target = join(root, "tmp", "verify.txt");
     const result = await runAgent({
       cwd: root,
@@ -88,7 +88,7 @@ test("agent sends full client-side context after tool calls", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-agent-context-stack-"));
   try {
     const globalDir = join(root, "home", ".ndx");
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     const client = new CapturingToolLoopClient();
 
     const result = await runAgent({
@@ -148,7 +148,7 @@ test("agent abort signal propagates to external tool processes", async () => {
     const abortedPath = join(root, "tool-aborted.txt");
     const readyPath = join(root, "tool-ready.txt");
     writeAbortAwareTool(
-      join(globalDir, "core", "tools", "slow_tool"),
+      join(globalDir, "system", "core", "tools", "slow_tool"),
       readyPath,
       abortedPath,
     );

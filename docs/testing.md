@@ -48,10 +48,13 @@ npm run deploy
 - Runtime interrupt event contract.
 - CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
 - CLI `/login` default-user switching and shared login-store update.
-- Workspace-managed Docker bootstrap compose-state generation without placing
-  CLI login state in project `.ndx`.
-- Managed workspace startup probes reachable ndx socket state before invoking
-  Docker and verifies `initialize.server` is `ndx-ts-session-server`.
+- Managed Docker bootstrap compose-state generation under `.ndx/system/managed`
+  without placing CLI login state in project `.ndx`.
+- Managed startup probes the requested ndx socket before invoking Docker and
+  verifies `initialize.server` is `ndx-ts-session-server`.
+- Interactive managed startup asks for a workspace folder only when Docker
+  fallback is needed, then project selection uses a subfolder of that workspace.
+- Session server project listing and project folder creation.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
 - Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.
@@ -77,7 +80,7 @@ npm run deploy
 - Multiple WebSocket clients subscribed to the same live session.
 - Provider error classification for non-retryable and retryable failures.
 - Docker remote-clone build using the selected `NDX_GIT_REF` branch.
-- Docker workspace and global settings bind mounts under `./docker/volume`.
+- Docker workspace, global settings, and Docker socket bind mounts.
 - Docker build, in-container tests, and in-container mock agent execution.
 - Deploy verification uses non-interactive `docker compose run -T` so test and
   mock-agent containers exit cleanly even though the service keeps `tty: true`

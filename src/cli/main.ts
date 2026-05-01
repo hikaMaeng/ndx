@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
@@ -10,7 +11,7 @@ import {
   interactiveHelp,
   printWelcomeLogo,
 } from "./session-client.js";
-import { ensureWorkspaceServer } from "./workspace.js";
+import { ensureManagedServer, normalizeSocketUrl } from "./workspace.js";
 import { loadConfig } from "../config/index.js";
 import { createRoutedModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
@@ -25,6 +26,7 @@ interface CliArgs {
   listen: string;
   dashboardListen: string;
   connectUrl?: string;
+  serverUrl?: string;
   prompt?: string;
   interactive: boolean;
   help: boolean;
@@ -117,6 +119,8 @@ function isMissingSettingsError(error: unknown): boolean {
 }
 
 function mockConfig(cwd: string): NdxConfig {
+  const globalDir = resolve(homedir(), ".ndx");
+  const dataDir = resolve(globalDir, "system");
   return {
     model: "mock",
     modelPools: { session: ["mock"], worker: [], reviewer: [], custom: {} },
@@ -159,9 +163,9 @@ function mockConfig(cwd: string): NdxConfig {
     plugins: [],
     tools: { imageGeneration: false },
     paths: {
-      globalDir: "/home/.ndx",
-      dataDir: "/home/.ndx-data",
-      sessionDir: "/home/.ndx-data",
+      globalDir,
+      dataDir,
+      sessionDir: dataDir,
       projectDir: cwd,
       projectNdxDir: resolve(cwd, ".ndx"),
     },
@@ -261,9 +265,12 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
       ? createInterface({ input, output })
       : undefined;
   try {
-    const state = await ensureWorkspaceServer({
+    const workspaceDir =
+      rl === undefined ? args.cwd : await selectWorkspaceDir(args.cwd, rl);
+    const state = await ensureManagedServer({
       cwd: args.cwd,
-      question: rl === undefined ? undefined : (prompt) => rl.question(prompt),
+      workspaceDir,
+      serverUrl: args.serverUrl,
       print: (message) => console.error(message),
     });
     const client = await SessionClient.connect(state.socketUrl);
@@ -277,6 +284,7 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
       });
       await session.initialize();
       if (args.interactive) {
+        await selectProject(session, requireReadline(rl));
         await selectInitialSession(session, requireReadline(rl));
         while (true) {
           const prompt = (await requireReadline(rl).question("ndx> ")).trim();
@@ -305,6 +313,63 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
   } finally {
     rl?.close();
   }
+}
+
+async function selectWorkspaceDir(
+  defaultDir: string,
+  rl: ReturnType<typeof createInterface>,
+): Promise<string> {
+  const answer = (
+    await rl.question(`workspace folder [${defaultDir}]: `)
+  ).trim();
+  return answer.length === 0 ? defaultDir : resolve(answer);
+}
+
+async function selectProject(
+  session: CliSessionController,
+  rl: ReturnType<typeof createInterface>,
+): Promise<void> {
+  while (true) {
+    const { root, projects } = await session.listProjects();
+    console.log(formatProjectChoices(root, projects));
+    const answer = (await rl.question("project> ")).trim();
+    if (answer.length === 0 && projects.length > 0) {
+      session.selectProject(projects[0].cwd);
+      return;
+    }
+    if (answer === "new" || answer === "+") {
+      const name = (await rl.question("project name> ")).trim();
+      if (name.length === 0) {
+        continue;
+      }
+      session.selectProject((await session.createProject(name)).cwd);
+      return;
+    }
+    const index = Number.parseInt(answer, 10);
+    if (Number.isInteger(index) && index >= 1 && index <= projects.length) {
+      session.selectProject(projects[index - 1].cwd);
+      return;
+    }
+    console.log(
+      "choose a project number, + for new project, or Enter for the first project",
+    );
+  }
+}
+
+function formatProjectChoices(
+  root: string,
+  projects: Array<{ name: string; cwd: string }>,
+): string {
+  const lines = [`projects under ${root}`];
+  if (projects.length === 0) {
+    lines.push("no projects yet");
+  } else {
+    projects.forEach((project, index) => {
+      lines.push(`${index + 1}. ${project.name}`);
+    });
+  }
+  lines.push("+. new project");
+  return lines.join("\n");
 }
 
 async function selectInitialSession(
@@ -414,11 +479,11 @@ function parseArgs(argv: string[], invokedAsServer = false): CliArgs {
   let listenAddress = "127.0.0.1:0";
   let dashboardListenAddress = "127.0.0.1:0";
   let connectUrl: string | undefined;
-  const prompt: string[] = [];
+  const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "serve" && prompt.length === 0) {
+    if (arg === "serve" && positional.length === 0) {
       mode = "serve";
     } else if (arg === "--cwd") {
       const next = argv[++i];
@@ -452,11 +517,18 @@ function parseArgs(argv: string[], invokedAsServer = false): CliArgs {
     } else if (arg === "--version" || arg === "-V") {
       version = true;
     } else if (arg !== undefined) {
-      prompt.push(arg);
+      positional.push(arg);
     }
   }
 
-  const joinedPrompt = prompt.join(" ").trim();
+  const joinedPrompt = positional.join(" ").trim();
+  const serverUrl =
+    mode === "run" && !mock && positional.length > 0
+      ? normalizeSocketUrl(positional[0])
+      : undefined;
+  if (mode === "run" && !mock && positional.length > 1) {
+    throw new Error("ndx accepts at most one server address argument");
+  }
   return {
     cwd,
     mock,
@@ -464,11 +536,16 @@ function parseArgs(argv: string[], invokedAsServer = false): CliArgs {
     listen: listenAddress,
     dashboardListen: dashboardListenAddress,
     connectUrl,
+    serverUrl,
     help,
     version,
-    prompt: joinedPrompt.length > 0 ? joinedPrompt : undefined,
-    interactive:
-      mode === "run" && joinedPrompt.length === 0 && process.stdin.isTTY,
+    prompt:
+      mode === "run" && !mock
+        ? undefined
+        : joinedPrompt.length > 0
+          ? joinedPrompt
+          : undefined,
+    interactive: mode === "run" && !mock && process.stdin.isTTY,
   };
 }
 
@@ -484,7 +561,7 @@ function printInteractiveHeader(config: NdxConfig): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, logs in with account credentials, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx asks for a workspace folder, starts Docker with that folder mounted at /workspace, logs in, asks for a project under /workspace, then shows session choices.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, logs in with account credentials, selects a project, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, project listing, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 

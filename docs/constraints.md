@@ -3,7 +3,7 @@
 ## Config
 
 - Global settings path is fixed at `/home/.ndx/settings.json`.
-- The data directory is `/home/.ndx-data` unless settings define optional
+- The data directory is `/home/.ndx/system` unless settings define optional
   `dataPath`. Legacy `sessionPath` is accepted as a data-directory override.
 - Account, project, session, event, and ownership records are stored in
   `<dataDir>/ndx.sqlite`; omitted user means `defaultUser`.
@@ -23,8 +23,8 @@
   effort entry. A model with `think` starts with thinking mode on. Explicit
   model changes reset both controls to those defaults.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
-- The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
-- `/home/.ndx` bootstrap information remains code-managed and is not stored in SQLite.
+- The global `.ndx/system` directory is self-healing at startup for required directories and built-in `/system/core/tools` packages.
+- `/home/.ndx/system` bootstrap information remains code-managed and is not stored in SQLite.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
 
 ## Host CLI State
@@ -32,7 +32,7 @@
 - Host CLI app state is separate from `/home/.ndx` and project `.ndx`.
 - `NDX_CLI_STATE_DIR` overrides the app-state directory.
 - `auth.json` contains one shared last-login value for all host CLI instances.
-- `workspaces/<sha256>.json` contains workspace server connection metadata.
+- Managed Docker compose files live under `/home/.ndx/system/managed`.
 - `clientId` is never persisted as the last-login identity; each CLI or plugin
   runtime instance owns its own client id.
 

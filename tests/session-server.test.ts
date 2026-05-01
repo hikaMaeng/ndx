@@ -82,7 +82,7 @@ test("session server owns session events, subscribers, and SQLite persistence", 
   let subscriber: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     server = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -106,13 +106,29 @@ test("session server owns session events, subscribers, and SQLite persistence", 
     }>("initialize");
     await loginClient(client);
     await initializeAndLoginClient(subscriber);
+    const createdProject = await client.request<{
+      project: { name: string; cwd: string };
+    }>("project/create", { name: "project-a" });
+    const listedProjects = await client.request<{
+      root: string;
+      projects: Array<{ name: string; cwd: string }>;
+    }>("project/list");
+    assert.equal(createdProject.project.cwd, join(root, "project-a"));
+    assert.equal(
+      listedProjects.projects.some(
+        (project) =>
+          project.name === "project-a" &&
+          project.cwd === join(root, "project-a"),
+      ),
+      true,
+    );
     assert.equal(initialize.bootstrap.globalDir, globalDir);
     assert.equal(existsSync(join(globalDir, "settings.json")), false);
-    assert.equal(existsSync(join(globalDir, "skills")), true);
+    assert.equal(existsSync(join(globalDir, "system", "skills")), true);
     assert.equal(
       initialize.bootstrap.elements.some(
         (element) =>
-          element.name === "skills" && element.status === "installed",
+          element.name === "system/skills" && element.status === "installed",
       ),
       true,
     );
@@ -178,7 +194,7 @@ test("session server owns session events, subscribers, and SQLite persistence", 
       assert.equal(configured.bootstrap.globalDir, globalDir);
       assert.equal(
         configured.bootstrap.elements.some(
-          (element) => element.name === "skills",
+          (element) => element.name === "system/skills",
         ),
         true,
       );
@@ -613,7 +629,7 @@ test("session server restores a saved workspace session by id or number", async 
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -717,7 +733,7 @@ test("session server deletes non-current workspace sessions and ends stale owner
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -800,7 +816,7 @@ test("session ownership uses last prompt attempt across socket servers", async (
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -877,7 +893,7 @@ test("session ownership discards in-flight output from a previous socket server"
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -1022,7 +1038,7 @@ test("session ownership is tracked in SQLite across socket servers", async () =>
   let lockReleaser: ChildProcess | undefined;
 
   try {
-    writeShellTool(join(globalDir, "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
