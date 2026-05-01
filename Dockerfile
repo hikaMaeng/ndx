@@ -17,7 +17,8 @@ RUN corepack enable \
     && mkdir -p /home/.ndx /workspace \
     && pnpm build \
     && chmod +x dist/src/cli/main.js \
-    && ln -sf /opt/ndx/dist/src/cli/main.js /usr/local/bin/ndx
+    && ln -sf /opt/ndx/dist/src/cli/main.js /usr/local/bin/ndx \
+    && ln -sf /opt/ndx/dist/src/cli/main.js /usr/local/bin/ndxserver
 
 WORKDIR /workspace
 

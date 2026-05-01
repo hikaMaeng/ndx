@@ -4,14 +4,15 @@
 
 ```bash
 ndx [--mock] [--cwd PATH] [prompt]
-ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]
+ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]
+ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]
 ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]
 ```
 
 `ndx` without a prompt on a TTY opens the interactive `ndx>` prompt. Normal
-one-shot and interactive modes start an embedded loopback session server, then
-send socket requests to it. `ndx serve` keeps the session server open for other
-clients.
+one-shot and interactive modes start an embedded loopback session server, log in
+over the socket, then send requests to it. `ndx serve` and `ndxserver` keep the
+session server open for other clients.
 
 Interactive slash commands are session-server controls. The CLI parses the
 leading slash and sends `command/execute`; command text is not appended to model
@@ -34,6 +35,7 @@ context.
 - `--mock`: use deterministic local model behavior. No network or provider key required.
 - `--cwd PATH`: workspace directory used by project settings discovery and shell commands.
 - `--listen HOST:PORT`: bind address for `ndx serve`. The default is `127.0.0.1:0`.
+- `--dashboard-listen HOST:PORT`: bind address for the dashboard HTTP listener in server mode. The default is `127.0.0.1:0`.
 - `--connect ws://HOST:PORT`: send the prompt to an existing session server.
 - `--help`: print CLI help.
 - `--version`: print package version.
@@ -41,8 +43,11 @@ context.
 ## Session Server API
 
 The session server is a WebSocket JSON-RPC endpoint. It owns live session state,
-event fan-out, and JSONL persistence. Clients send requests and receive
+event fan-out, and SQLite persistence. Clients send requests and receive
 notifications; they are not authoritative session stores.
+The server also starts a separate HTTP dashboard listener. Socket methods other
+than `initialize`, `account/create`, and `account/login` require successful
+account login on that WebSocket connection.
 
 Requests:
 
@@ -81,23 +86,22 @@ Notifications:
 - `warning`
 - `error`
 
-Server JSONL records are queued by the session server and written by a child
-writer process to `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionId>.jsonl`.
-`sessionOrigin` is `/home/.ndx/sessions` unless global settings define
-`sessionPath`. Records include `persistedAt` and `writerPid`. Empty sessions are
-not persisted and do not receive workspace numbers. The first user prompt assigns the next
+Server records are stored in `<dataDir>/ndx.sqlite`. The default data directory
+is `/home/.ndx-data`; settings may define `dataPath`, and legacy `sessionPath`
+is treated as a data-directory override. Empty sessions are not persisted and do
+not receive workspace numbers. The first user prompt assigns the next
 monotonically increasing number for that resolved `cwd`, changes the title from
-`empty` to a shortened prompt prefix, and writes `session_started`.
+`empty` to a shortened prompt prefix, and stores `session_started`.
 
-`session/list` scans persisted JSONL files plus live server memory, filters by
+`session/list` scans SQLite records plus live server memory, filters by
 the requested user and `cwd`, and returns workspace sequence numbers. If no
 user is supplied, `defaultUser` is used. `/session` prints `0. new session`
 plus the same numbered view. `session/restore` and
 `/restoreSession` accept either the full session id or the workspace number.
 Restored sessions reuse the original session id and append new records to the
-original JSONL file. `/deleteSession` lists sessions for the same `cwd`, omits
-the current session, accepts Enter as cancel, and removes the selected JSONL and
-owner files.
+same SQLite session. `/deleteSession` lists sessions for the same `cwd`, omits
+the current session, accepts Enter as cancel, and marks the selected session
+deleted.
 
 Restore also replays prior turns into model context. Runtime events are
 converted back into provider-facing conversation items: `turn_started` becomes a
@@ -105,18 +109,18 @@ user message, `agent_message` and `turn_complete` become assistant messages,
 and prior `tool_call`/`tool_result` pairs are restored with stable synthetic
 call ids.
 
-Session ownership is tracked in a separate owner file per session. A socket
-server claims ownership before processing a prompt. If another server has taken
+Session ownership is tracked in SQLite. A socket server claims ownership before
+processing a prompt. If another server has taken
 ownership, the next prompt reloads persisted state before continuing. At turn
 completion, a server also checks ownership; if ownership changed mid-turn, it
 discards stale live output, reloads persisted state, and reclaims ownership.
-If the JSONL for the held session disappeared because another server deleted
-it, the stale owner sends `session/deleted`, closes its sockets, and terminates
-the server.
+If the SQLite session was marked deleted by another server, the stale owner
+sends `session/deleted`, closes its sockets, and terminates the server.
 
-HTTP `GET /` and `GET /dashboard` return a minimal dashboard placeholder. The
-agent service remains socket-first; this page is only an admin UI anchor until a
-real dashboard is implemented.
+HTTP `GET /` and `GET /dashboard` on the dashboard port return a minimal
+dashboard placeholder. The dashboard has no authentication or authorization.
+The agent service remains socket-first; this page is only an admin UI anchor
+until a real dashboard is implemented.
 
 `initialize` returns `bootstrap`, and `session/configured` includes the
 same shape on `event.bootstrap`:
@@ -164,7 +168,7 @@ Canonical shape:
       "fast": "qwen-main-a"
     }
   },
-  "sessionPath": "/mnt/state/ndx-sessions",
+  "dataPath": "/mnt/state/ndx-data",
   "providers": {
     "lmstudio-a": {
       "type": "openai",

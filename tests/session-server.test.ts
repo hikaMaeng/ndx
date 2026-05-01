@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
@@ -70,7 +71,7 @@ const baseConfig: NdxConfig = {
   },
 };
 
-test("session server owns session events, subscribers, and JSONL persistence", async () => {
+test("session server owns session events, subscribers, and SQLite persistence", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-server-"));
   const globalDir = join(root, "home", ".ndx");
   const persistenceDir = join(root, "server-sessions");
@@ -103,7 +104,8 @@ test("session server owns session events, subscribers, and JSONL persistence", a
         elements: Array<{ name: string; status: string; path: string }>;
       };
     }>("initialize");
-    await subscriber.request("initialize");
+    await loginClient(client);
+    await initializeAndLoginClient(subscriber);
     assert.equal(initialize.bootstrap.globalDir, globalDir);
     assert.equal(existsSync(join(globalDir, "settings.json")), false);
     assert.equal(existsSync(join(globalDir, "skills")), true);
@@ -239,24 +241,8 @@ test("session server owns session events, subscribers, and JSONL persistence", a
     }>("command/execute", { name: "restoreSession", args: "1", cwd: root });
     assert.equal(restoredByNumber.session.id, sessionId);
 
-    const logFile = sessionLogFile(persistenceDir, sessionId);
-    assert.equal(existsSync(logFile), true);
-    let records = readJsonl(logFile);
-    const started = records.find((record) => record.type === "session_started");
-    const createdAt =
-      typeof started?.createdAt === "number" ? started.createdAt : Date.now();
-    const created = new Date(createdAt);
-    assert.equal(
-      logFile.includes(
-        join(
-          "defaultUser",
-          String(created.getUTCFullYear()).padStart(4, "0"),
-          String(created.getUTCMonth() + 1).padStart(2, "0"),
-          `${sessionId}.jsonl`,
-        ),
-      ),
-      true,
-    );
+    assert.equal(existsSync(join(persistenceDir, "ndx.sqlite")), true);
+    let records = readSqliteRecords(persistenceDir, sessionId);
     assert.equal(
       records.some((record) => record.type === "session_started"),
       true,
@@ -269,19 +255,12 @@ test("session server owns session events, subscribers, and JSONL persistence", a
       records.some((record) => record.type === "notification"),
       true,
     );
-    assert.equal(
-      records.every(
-        (record) =>
-          typeof record.writerPid === "number" &&
-          record.writerPid !== process.pid,
-      ),
-      true,
-    );
 
     client.close();
     subscriber.close();
-    records = await waitForLogRecord(
-      logFile,
+    records = await waitForSqliteRecord(
+      persistenceDir,
+      sessionId,
       (record) => record.type === "session_detached",
     );
     assert.equal(
@@ -331,7 +310,7 @@ test("session server keeps sessions on the base config while model routing happe
     };
     server = new SessionServer({
       cwd: root,
-      config: { ...config, paths: { globalDir } },
+      config: { ...config, paths: { globalDir, dataDir: join(root, "data") } },
       sources: [join(globalDir, "settings.json")],
       createClient: (runtimeConfig) => {
         assignedModels.push(runtimeConfig.model);
@@ -341,7 +320,7 @@ test("session server keeps sessions on the base config while model routing happe
     client = await SessionClient.connect(
       (await server.listen(0, "127.0.0.1")).url,
     );
-    await client.request("initialize");
+    await initializeAndLoginClient(client);
 
     const first = await client.request<{
       session: { id: string; model: string };
@@ -498,12 +477,15 @@ test("session server exposes account methods, client identity, and dashboard pla
   try {
     server = new SessionServer({
       cwd: root,
-      config: { ...baseConfig, paths: { globalDir } },
+      config: {
+        ...baseConfig,
+        paths: { globalDir, dataDir: join(root, "data") },
+      },
       sources: [join(globalDir, "settings.json")],
       createClient: () => new MockModelClient(),
     });
     const address = await server.listen(0, "127.0.0.1");
-    const dashboard = await fetch(`http://${address.host}:${address.port}/`);
+    const dashboard = await fetch(address.dashboardUrl ?? "");
     assert.equal(dashboard.status, 200);
     const html = await dashboard.text();
     assert.equal(
@@ -533,7 +515,7 @@ test("session server exposes account methods, client identity, and dashboard pla
     assert.deepEqual(login, {
       username: "alice",
       clientId: "cli-run-1",
-      sessionRoot: join(globalDir, "sessions"),
+      sessionRoot: join(root, "data"),
     });
     const start = await client.request<{
       session: { user: string; clientIds: string[] };
@@ -576,7 +558,7 @@ test("session server restores a saved workspace session by id or number", async 
     });
     const firstAddress = await firstServer.listen(0, "127.0.0.1");
     firstClient = await SessionClient.connect(firstAddress.url);
-    await firstClient.request("initialize");
+    await initializeAndLoginClient(firstClient);
     const startResponse = await firstClient.request<{
       session: { id: string };
     }>("session/start", { cwd: root });
@@ -600,7 +582,7 @@ test("session server restores a saved workspace session by id or number", async 
     });
     const secondAddress = await secondServer.listen(0, "127.0.0.1");
     secondClient = await SessionClient.connect(secondAddress.url);
-    await secondClient.request("initialize");
+    await initializeAndLoginClient(secondClient);
 
     const listResponse = await secondClient.request<{
       sessions: Array<{
@@ -642,9 +624,7 @@ test("session server restores a saved workspace session by id or number", async 
       ["first turn", "mock agent completed", "second turn"],
     );
 
-    const records = readJsonl(
-      sessionLogFile(persistenceDir, originalSessionId),
-    );
+    const records = readSqliteRecords(persistenceDir, originalSessionId);
     assert.equal(
       records.some((record) => record.type === "session_restored"),
       true,
@@ -693,8 +673,8 @@ test("session server deletes non-current workspace sessions and ends stale owner
     secondClient = await SessionClient.connect(
       (await secondServer.listen(0, "127.0.0.1")).url,
     );
-    await firstClient.request("initialize");
-    await secondClient.request("initialize");
+    await initializeAndLoginClient(firstClient);
+    await initializeAndLoginClient(secondClient);
 
     const startResponse = await firstClient.request<{
       session: { id: string };
@@ -776,8 +756,8 @@ test("session ownership uses last prompt attempt across socket servers", async (
     secondClient = await SessionClient.connect(
       (await secondServer.listen(0, "127.0.0.1")).url,
     );
-    await firstClient.request("initialize");
-    await secondClient.request("initialize");
+    await initializeAndLoginClient(firstClient);
+    await initializeAndLoginClient(secondClient);
 
     const startResponse = await firstClient.request<{
       session: { id: string };
@@ -807,7 +787,7 @@ test("session ownership uses last prompt attempt across socket servers", async (
     await secondCompleted;
     await firstServer.flushPersistence();
 
-    const records = readJsonl(sessionLogFile(persistenceDir, sessionId));
+    const records = readSqliteRecords(persistenceDir, sessionId);
     assert.equal(
       records.filter((record) => record.type === "turn_start_requested").length,
       2,
@@ -856,11 +836,11 @@ test("session ownership discards in-flight output from a previous socket server"
       "connecting second race client",
     );
     await withTimeout(
-      firstClient.request("initialize"),
+      initializeAndLoginClient(firstClient),
       "initializing first race client",
     );
     await withTimeout(
-      secondClient.request("initialize"),
+      initializeAndLoginClient(secondClient),
       "initializing second race client",
     );
 
@@ -919,7 +899,7 @@ test("session ownership discards in-flight output from a previous socket server"
     await withTimeout(ownershipChanged, "waiting for stale owner notification");
     await withTimeout(firstServer.flushPersistence(), "flushing first server");
 
-    const records = readJsonl(sessionLogFile(persistenceDir, sessionId));
+    const records = readSqliteRecords(persistenceDir, sessionId);
     const runtimeMessages = records
       .filter((record) => record.type === "runtime_event")
       .map((record) => (record.event as { msg?: unknown }).msg)
@@ -966,7 +946,7 @@ test("session ownership discards in-flight output from a previous socket server"
   }
 });
 
-test("session ownership waits and retries while the owner file is locked", async () => {
+test("session ownership is tracked in SQLite across socket servers", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-owner-lock-"));
   const globalDir = join(root, "home", ".ndx");
   const persistenceDir = join(root, "server-sessions");
@@ -998,8 +978,8 @@ test("session ownership waits and retries while the owner file is locked", async
     secondClient = await SessionClient.connect(
       (await secondServer.listen(0, "127.0.0.1")).url,
     );
-    await firstClient.request("initialize");
-    await secondClient.request("initialize");
+    await initializeAndLoginClient(firstClient);
+    await initializeAndLoginClient(secondClient);
 
     const startResponse = await firstClient.request<{
       session: { id: string };
@@ -1013,25 +993,14 @@ test("session ownership waits and retries while the owner file is locked", async
     await completed;
     await firstServer.flushPersistence();
 
-    const lockDir = join(persistenceDir, "owners", `${sessionId}.json.lock`);
-    mkdirSync(lockDir, { recursive: true });
-    lockReleaser = spawn(process.execPath, [
-      "-e",
-      `setTimeout(() => require("node:fs").rmSync(${JSON.stringify(lockDir)}, { recursive: true, force: true }), 80)`,
-    ]);
-    const startedAt = Date.now();
     const restoreResponse = await secondClient.request<{
       session: { id: string; sequence: number };
     }>("session/restore", { cwd: root, selector: "1" });
-    const waitedMs = Date.now() - startedAt;
-    const releaseExitCode = await waitForProcess(lockReleaser);
-    lockReleaser = undefined;
 
-    assert.equal(releaseExitCode, 0);
     assert.equal(restoreResponse.session.id, sessionId);
-    assert.ok(
-      waitedMs >= 40,
-      `expected restore to wait for owner lock contention, waited ${waitedMs}ms`,
+    assert.equal(
+      readSqliteOwner(persistenceDir, sessionId) !== undefined,
+      true,
     );
   } finally {
     if (lockReleaser !== undefined) {
@@ -1057,6 +1026,19 @@ function waitForMethod(
         resolve(notification);
       }
     });
+  });
+}
+
+async function initializeAndLoginClient(client: SessionClient): Promise<void> {
+  await client.request("initialize");
+  await loginClient(client);
+}
+
+async function loginClient(client: SessionClient): Promise<void> {
+  await client.request("account/login", {
+    username: "defaultUser",
+    password: "",
+    clientId: "test-client",
   });
 }
 
@@ -1092,6 +1074,80 @@ async function waitForLogRecord(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert.fail(`timed out waiting for log record in ${file}`);
+}
+
+async function waitForSqliteRecord(
+  dataDir: string,
+  sessionId: string,
+  predicate: (record: Record<string, unknown>) => boolean,
+): Promise<Array<Record<string, unknown>>> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const records = readSqliteRecords(dataDir, sessionId);
+    if (records.some(predicate)) {
+      return records;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`timed out waiting for sqlite record for ${sessionId}`);
+}
+
+function readSqliteRecords(
+  dataDir: string,
+  sessionId: string,
+): Array<Record<string, unknown>> {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { all(...values: unknown[]): unknown[] };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return db
+      .prepare(
+        "select payload_json as payload from session_events where session_id = ? order by id asc",
+      )
+      .all(sessionId)
+      .map((row) => JSON.parse((row as { payload: string }).payload));
+  } finally {
+    db.close();
+  }
+}
+
+function readSqliteOwner(
+  dataDir: string,
+  sessionId: string,
+): string | undefined {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { get(...values: unknown[]): unknown };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    const row = db
+      .prepare(
+        "select server_id as serverId from session_owners where session_id = ?",
+      )
+      .get(sessionId) as { serverId?: unknown } | undefined;
+    return typeof row?.serverId === "string" ? row.serverId : undefined;
+  } finally {
+    db.close();
+  }
 }
 
 function readJsonl(file: string): Array<Record<string, unknown>> {
