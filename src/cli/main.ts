@@ -76,11 +76,7 @@ async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
   try {
     return loadConfig(args.cwd);
   } catch (error) {
-    if (
-      args.mock &&
-      isMissingSettingsError(error) &&
-      !process.stdin.isTTY
-    ) {
+    if (args.mock && isMissingSettingsError(error)) {
       return {
         config: mockConfig(args.cwd),
         sources: ["mock defaults (--mock, no settings found)"],
