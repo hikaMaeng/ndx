@@ -20,6 +20,11 @@ tool registry, worker process launcher, built-in task tools, external `tool.json
 adapter, and MCP adapter used by session turns. There is no top-level `src/tools`
 domain.
 
+The repository is a single root package. It does not carry legacy upstream SDK,
+Bazel, devcontainer, release, or third-party trees. Runtime state belongs under
+`docker/volume` during compose runs and is kept out of the tracked source tree
+except for the two `.gitkeep` directory anchors.
+
 ## Runtime Flow
 
 1. CLI resolves `cwd` and reads existing `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` directories and core tools. In TTY CLI runs with no settings, the CLI asks setup questions, writes project `.ndx/settings.json`, then reloads config.
@@ -135,4 +140,4 @@ verification.
 
 ## Docker Flow
 
-`npm run deploy` builds locally, removes previous compose containers, passes the current Git branch as `NDX_GIT_REF`, builds `ndx-agent` with `--no-cache` by cloning that remote branch into `/opt/ndx`, runs tests in the image from `/opt/ndx`, runs a mock agent command against the `/workspace` volume, then tears compose down.
+`npm run deploy` builds locally, removes previous compose containers, passes the current Git branch as `NDX_GIT_REF`, builds `ndx-agent` with `--no-cache` by cloning that remote branch into `/opt/ndx`, runs tests in the image from `/opt/ndx`, runs a mock agent from `/opt/ndx` that writes `/workspace/tmp/ndx-docker-verify.txt`, then tears compose down.

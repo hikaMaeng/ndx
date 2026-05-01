@@ -74,6 +74,10 @@ npm run deploy
 - Docker workspace and global settings bind mounts under `./docker/volume`.
 - Docker build, in-container tests, and in-container mock agent execution.
 - Deploy verification uses non-interactive `docker compose run -T` so test and mock-agent containers exit cleanly even though the service keeps `tty: true` for manual use.
+- Repository hygiene checks keep the root package as the only package and keep
+  generated dependency, build, and Docker runtime state out of tracked source.
+- Yarn Plug'n'Play with the global cache enabled is the package-install
+  contract; workspace `node_modules` directories are not expected.
 
 ## Browser Verification
 

@@ -1,9 +1,9 @@
 .git
 node_modules
+.yarn
+.pnp.*
 dist
-codex-rs
-codex-cli
-sdk
-third_party
-target
+docker/volume
+.env
+.vscode
 .DS_Store

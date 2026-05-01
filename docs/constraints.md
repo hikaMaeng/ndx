@@ -27,6 +27,16 @@
 - `/home/.ndx` bootstrap information remains code-managed and is not stored in SQLite.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
 
+## Repository Shape
+
+- The root package is the only package in this repository.
+- Source, tests, docs, and Docker deploy files are the maintained workspace
+  boundary.
+- SDK, Bazel, devcontainer, release-announcement, and third-party vendor trees
+  are not part of the maintained ndx TypeScript workspace.
+- `docker/volume` may contain local runtime output, but only `.gitkeep` anchors
+  are tracked there.
+
 ## Server Ports And Auth
 
 - `ndx serve` and `ndxserver` expose two ports: WebSocket JSON-RPC and HTTP dashboard.

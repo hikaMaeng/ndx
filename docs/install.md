@@ -13,7 +13,7 @@
 ```bash
 git clone https://github.com/hikaMaeng/ndx.git
 cd ndx
-pnpm install
+yarn install --immutable
 npm run build
 npm test
 ```

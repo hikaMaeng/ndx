@@ -1,25 +1,17 @@
-# deps
-# Node.js dependencies
+# dependencies
 node_modules
-.pnpm-store
-.pnpm-debug.log
-
-# Keep pnpm-lock.yaml
-!pnpm-lock.yaml
+.yarn/*
+!.yarn/patches/
+!.yarn/plugins/
+!.yarn/releases/
+!.yarn/sdks/
+!.yarn/versions/
+.pnp.*
 
 # build
 dist/
-bazel-*
-user.bazelrc
 build/
 out/
-storybook-static/
-
-# ignore README for publishing
-codex-cli/README.md
-
-# ignore Nix derivation results
-result
 
 # editor
 .vscode/
@@ -52,14 +44,9 @@ yarn-error.log*
 # env
 .env*
 !.env.example
-.venv/
 
 # package
 *.tgz
-
-# ci
-.vercel/
-.netlify/
 
 # patches
 apply_patch/
@@ -75,23 +62,6 @@ personal/
 Thumbs.db
 Icon?
 .Spotlight-V100/
-
-# Unwanted package managers
-.yarn/
-yarn.lock
-
-# release
-package.json-e
-session.ts-e
-CHANGELOG.ignore.md
-
-# nix related
-.direnv
-.envrc
-
-# Python bytecode files
-__pycache__/
-*.pyc
 
 # docker local volumes
 docker/volume/workspace/*

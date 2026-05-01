@@ -13,13 +13,15 @@ ndx is a TypeScript-first local coding agent derived from openai/codex.
 ## Status
 
 The upstream Codex import is preserved on the local `origin` branch at `09f931e`.
-Active development is on the TypeScript CLI in `src/`.
+Active development is the root TypeScript package in `src/`, `tests/`, `docs/`,
+and the Docker deploy flow. Legacy upstream SDK, Bazel, devcontainer, release,
+and third-party trees are intentionally not part of this workspace.
 
 ## Quick Start
 
 ```bash
-pnpm install
-npm test
+yarn install --immutable
+yarn test
 node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text verified"
 ```
 
