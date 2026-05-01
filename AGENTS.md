@@ -16,9 +16,9 @@ flow.
 
 ## Build And Test
 
-- Install dependencies with `pnpm install`.
-- Build with `npm run build`.
-- Test with `npm test`.
+- Install dependencies with `yarn install --immutable`.
+- Build with `yarn build`.
+- Test with `yarn test`.
 - Deploy verification uses `npm run deploy`.
 
 ## Documentation

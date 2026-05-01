@@ -13,9 +13,9 @@ RUN echo "Building ndx from https://github.com/hikaMaeng/ndx.git@${NDX_GIT_REF}"
 WORKDIR /opt/ndx
 
 RUN corepack enable \
-    && pnpm install --frozen-lockfile \
+    && yarn install --immutable \
     && mkdir -p /home/.ndx /workspace \
-    && pnpm build \
+    && yarn build \
     && chmod +x dist/src/cli/main.js \
     && ln -sf /opt/ndx/dist/src/cli/main.js /usr/local/bin/ndx \
     && ln -sf /opt/ndx/dist/src/cli/main.js /usr/local/bin/ndxserver
@@ -30,5 +30,5 @@ CMD set -eu; \
     echo "[ndx-image] git_commit=$(git rev-parse HEAD)"; \
     echo "[ndx-image] git_branch=$(git branch --show-current)"; \
     git --no-pager log -1 --format='[ndx-image] git_commit_date=%cI%n[ndx-image] git_subject=%s'; \
-    echo "[ndx-image] node=$(node --version) pnpm=$(pnpm --version)"; \
+    echo "[ndx-image] node=$(node --version) yarn=$(yarn --version)"; \
     exec sleep infinity

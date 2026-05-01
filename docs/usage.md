@@ -3,10 +3,11 @@
 ## Install
 
 ```bash
-pnpm install --registry=https://registry.npmjs.org
+yarn install --immutable
 ```
 
-The explicit registry is useful when local Verdaccio is unavailable.
+Yarn runs in Plug'n'Play mode with the global cache enabled, so installs do not
+create a workspace `node_modules` tree.
 
 ## Build And Test
 
@@ -194,7 +195,7 @@ remote inference server restarts.
 
 ## Docker
 
-`npm run deploy` builds the Docker image from the current pushed Git branch, not from local source folders. Push the feature branch before running deploy. Compose stores runtime workspace and global settings under `./docker/volume`.
+`npm run deploy` builds the Docker image from the current pushed Git branch, not from local source folders. Push the feature branch before running deploy. Compose stores runtime workspace and global settings under `./docker/volume`. The deploy mock agent starts from `/opt/ndx` so it can read the cloned project settings, then writes `/workspace/tmp/ndx-docker-verify.txt` to prove the workspace bind mount.
 
 ```bash
 npm run deploy
@@ -238,4 +239,4 @@ The default compose service stays alive with `sleep infinity` so interactive exe
 Compose uses the image default command. Container startup logs include image
 provenance lines prefixed with `[ndx-image]`. Those lines record the package
 version, GitHub remote, `NDX_GIT_REF`, cloned commit SHA, branch, commit date,
-commit subject, Node version, and pnpm version.
+commit subject, Node version, and Yarn version.
