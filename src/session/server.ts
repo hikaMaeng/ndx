@@ -1,17 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Socket } from "node:net";
-import { basename, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   configForModel,
   defaultModelEffort,
@@ -20,7 +10,11 @@ import {
 } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
-import { SessionLogStore, type SessionLogRecord } from "./log-store.js";
+import {
+  SqliteSessionStore,
+  type StoredSession,
+  type StoredSessionListEntry,
+} from "./sqlite-store.js";
 import {
   BUILT_IN_SLASH_COMMANDS,
   formatSlashCommandHelp,
@@ -37,10 +31,6 @@ import type {
 } from "../shared/types.js";
 
 type JsonRpcId = number | string | null;
-
-const OWNER_LOCK_RETRY_DELAY_MS = 10;
-const OWNER_LOCK_MAX_ATTEMPTS = 200;
-const OWNER_LOCK_STALE_MS = 30_000;
 
 interface JsonRpcRequest {
   id?: JsonRpcId;
@@ -65,6 +55,7 @@ export interface SessionServerOptions {
   config: NdxConfig;
   sources?: string[];
   createClient: (config: NdxConfig) => ModelClient;
+  dataDir?: string;
   persistenceDir?: string;
 }
 
@@ -73,6 +64,9 @@ export interface SessionServerAddress {
   host: string;
   port: number;
   url: string;
+  dashboardHost?: string;
+  dashboardPort?: number;
+  dashboardUrl?: string;
 }
 
 interface LiveSession {
@@ -122,20 +116,14 @@ interface PersistedSessionState {
   title: string;
 }
 
-interface AccountState {
-  password: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-/** WebSocket JSON-RPC authority for live sessions, event fan-out, and JSONL. */
+/** WebSocket JSON-RPC authority for live sessions, event fan-out, and SQLite. */
 export class SessionServer {
   private readonly server: Server;
+  private readonly dashboardServer: Server;
   private readonly options: SessionServerOptions;
   private readonly sessions = new Map<string, LiveSession>();
   private readonly clients = new Set<WebSocketConnection>();
-  private readonly accounts = new Map<string, AccountState>();
-  private readonly store: SessionLogStore;
+  private readonly store: SqliteSessionStore;
   private readonly bootstrap: NdxBootstrapReport;
   private readonly serverId = randomUUID();
   private closing = false;
@@ -144,19 +132,21 @@ export class SessionServer {
     this.options = options;
     this.bootstrap = ensureGlobalNdxHome(options.config.paths.globalDir);
     this.server = createServer();
-    this.accounts.set("defaultUser", {
-      password: "",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    this.store = new SessionLogStore(
-      options.persistenceDir ??
-        join(options.config.paths.globalDir, "sessions", "ts-server"),
+    this.dashboardServer = createServer();
+    this.store = SqliteSessionStore.open(
+      options.dataDir ??
+        options.persistenceDir ??
+        options.config.paths.dataDir ??
+        "/home/.ndx-data",
     );
     this.server.on("upgrade", (request, socket) => {
       this.handleUpgrade(request, socket as Socket);
     });
-    this.server.on("request", (request, response) => {
+    this.server.on("request", (_request, response) => {
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end("ndx socket server\n");
+    });
+    this.dashboardServer.on("request", (request, response) => {
       if (request.url === "/" || request.url === "/dashboard") {
         response.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
@@ -190,33 +180,30 @@ export class SessionServer {
       connection.user = user;
       connection.clientId = clientId;
     }
-    if (!this.accounts.has(user)) {
-      this.accounts.set(user, {
-        password: "",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-    }
     return { user, clientId };
   }
 
-  listen(port = 0, host = "127.0.0.1"): Promise<SessionServerAddress> {
-    return new Promise((resolve, reject) => {
-      this.server.once("error", reject);
-      this.server.listen(port, host, () => {
-        this.server.off("error", reject);
-        const address = this.server.address();
-        if (address === null || typeof address === "string") {
-          reject(new Error("session server did not bind a TCP address"));
-          return;
-        }
-        resolve({
-          host,
-          port: address.port,
-          url: `ws://${host}:${address.port}`,
-        });
-      });
-    });
+  async listen(
+    port = 0,
+    host = "127.0.0.1",
+    dashboardPort = 0,
+    dashboardHost = host,
+  ): Promise<SessionServerAddress> {
+    const socket = await listenHttp(this.server, port, host, "session server");
+    const dashboard = await listenHttp(
+      this.dashboardServer,
+      dashboardPort,
+      dashboardHost,
+      "dashboard server",
+    );
+    return {
+      host,
+      port: socket.port,
+      url: `ws://${host}:${socket.port}`,
+      dashboardHost,
+      dashboardPort: dashboard.port,
+      dashboardUrl: `http://${dashboardHost}:${dashboard.port}`,
+    };
   }
 
   async close(): Promise<void> {
@@ -237,11 +224,20 @@ export class SessionServer {
         resolve();
       });
     });
-    await this.store.close();
+    await new Promise<void>((resolve, reject) => {
+      this.dashboardServer.close((error) => {
+        if (error !== undefined) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+    this.store.close();
   }
 
   async flushPersistence(): Promise<void> {
-    await this.store.flush();
+    await Promise.resolve();
   }
 
   private handleUpgrade(request: IncomingMessage, socket: Socket): void {
@@ -311,6 +307,9 @@ export class SessionServer {
     connection: WebSocketConnection,
     request: JsonRpcRequest,
   ): Promise<unknown> {
+    if (!isPublicMethod(request.method) && !connection.authenticated) {
+      throw new Error("socket authentication is required");
+    }
     switch (request.method) {
       case "initialize":
         return {
@@ -416,16 +415,13 @@ export class SessionServer {
   private createAccount(params: unknown): unknown {
     const username = requiredStringParam(params, "username");
     const password = stringParam(params, "password") ?? "";
-    if (this.accounts.has(username)) {
+    if (this.store.accountExists(username)) {
       throw new Error(`account already exists: ${username}`);
     }
-    const now = Date.now();
-    this.accounts.set(username, {
-      password,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { username, createdAt: now };
+    return {
+      username,
+      createdAt: this.store.createAccount(username, password),
+    };
   }
 
   private loginAccount(
@@ -435,16 +431,16 @@ export class SessionServer {
     const username = stringParam(params, "username") ?? "defaultUser";
     const password = stringParam(params, "password") ?? "";
     const clientId: string = stringParam(params, "clientId") ?? randomUUID();
-    const account = this.accounts.get(username);
-    if (account === undefined || account.password !== password) {
+    if (!this.store.validateAccount(username, password)) {
       throw new Error("invalid account credentials");
     }
     connection.user = username;
     connection.clientId = clientId;
+    connection.authenticated = true;
     return {
       username,
       clientId,
-      sessionRoot: this.persistenceDir(),
+      sessionRoot: this.dataDir(),
     };
   }
 
@@ -453,7 +449,7 @@ export class SessionServer {
     if (username === "defaultUser") {
       throw new Error("defaultUser cannot be deleted");
     }
-    const deleted = this.accounts.delete(username);
+    const deleted = this.store.deleteAccount(username);
     return { username, deleted };
   }
 
@@ -461,13 +457,10 @@ export class SessionServer {
     const username = requiredStringParam(params, "username");
     const oldPassword = stringParam(params, "oldPassword") ?? "";
     const newPassword = requiredStringParam(params, "newPassword");
-    const account = this.accounts.get(username);
-    if (account === undefined || account.password !== oldPassword) {
-      throw new Error("invalid account credentials");
-    }
-    account.password = newPassword;
-    account.updatedAt = Date.now();
-    return { username, updatedAt: account.updatedAt };
+    return {
+      username,
+      updatedAt: this.store.changePassword(username, oldPassword, newPassword),
+    };
   }
 
   private async subscribeSession(
@@ -728,7 +721,7 @@ export class SessionServer {
       cwd,
       requestedAt: session.updatedAt,
     });
-    await this.store.flush();
+    await this.flushPersistence();
     setImmediate(() => {
       void session.runtime
         .submit(
@@ -892,7 +885,7 @@ export class SessionServer {
         status: session.status,
         disconnectedAt: session.updatedAt,
       });
-      void this.store.flush();
+      void this.flushPersistence();
     }
   }
 
@@ -1008,12 +1001,7 @@ export class SessionServer {
       }
     }
     this.sessions.delete(session.id);
-    rmSync(this.sessionFile(session.id), { force: true });
-    rmSync(this.ownerFile(session.id), { force: true });
-    rmSync(`${this.ownerFile(session.id)}.lock`, {
-      recursive: true,
-      force: true,
-    });
+    this.store.deleteSession(session.id);
     return session;
   }
 
@@ -1423,112 +1411,14 @@ export class SessionServer {
   }
 
   private readPersistedSessions(): PersistedSessionState[] {
-    const dir = this.persistenceDir();
-    if (!existsSync(dir)) {
-      return [];
-    }
-    return this.sessionFiles(dir)
-      .map((file) =>
-        this.readPersistedSessionFromFile(
-          file,
-          relative(dir, file)
-            .replace(/\\/g, "/")
-            .replace(/\.jsonl$/, ""),
-        ),
-      )
-      .filter(
-        (session): session is PersistedSessionState => session !== undefined,
-      );
-  }
-
-  private sessionFiles(dir: string): string[] {
-    if (!existsSync(dir)) {
-      return [];
-    }
-    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        return this.sessionFiles(path);
-      }
-      return entry.isFile() && entry.name.endsWith(".jsonl") ? [path] : [];
-    });
+    return this.store.readSessions().map(storedSessionToPersisted);
   }
 
   private readPersistedSession(
     sessionId: string,
   ): PersistedSessionState | undefined {
-    const file = this.sessionFile(sessionId);
-    if (!existsSync(file)) {
-      return undefined;
-    }
-    return this.readPersistedSessionFromFile(
-      file,
-      relative(this.persistenceDir(), file)
-        .replace(/\\/g, "/")
-        .replace(/\.jsonl$/, ""),
-    );
-  }
-
-  private readPersistedSessionFromFile(
-    file: string,
-    logKey: string,
-  ): PersistedSessionState | undefined {
-    const sessionId = basename(file, ".jsonl");
-    const records = readFileSync(file, "utf8")
-      .split("\n")
-      .filter((line) => line.trim().length > 0)
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-    let cwd: string | undefined;
-    let user = userFromLogKey(logKey);
-    let createdAt: number | undefined;
-    let updatedAt = 0;
-    let status: LiveSession["status"] = "idle";
-    let sequence: number | undefined;
-    let title = "empty";
-    const events: RuntimeEvent[] = [];
-    for (const record of records) {
-      const recordTime = recordTimestamp(record);
-      updatedAt = Math.max(updatedAt, recordTime);
-      if (record.type === "session_started") {
-        cwd = typeof record.cwd === "string" ? record.cwd : cwd;
-        user = typeof record.user === "string" ? record.user : user;
-        createdAt =
-          typeof record.createdAt === "number" ? record.createdAt : createdAt;
-        sequence =
-          typeof record.sequence === "number" ? record.sequence : sequence;
-        title = typeof record.title === "string" ? record.title : title;
-      } else if (record.type === "session_title_updated") {
-        title = typeof record.title === "string" ? record.title : title;
-      } else if (record.type === "runtime_event") {
-        const event = record.event;
-        if (isRuntimeEvent(event)) {
-          events.push(event);
-          status = statusFromEvent(event, status);
-          if (event.msg.type === "turn_started") {
-            cwd = event.msg.cwd;
-          } else if (event.msg.type === "session_configured") {
-            cwd = event.msg.cwd;
-          }
-        }
-      } else if (record.type === "session_detached") {
-        status = parseThreadStatus(record.status) ?? status;
-      }
-    }
-    if (cwd === undefined || sequence === undefined) {
-      return undefined;
-    }
-    return {
-      id: sessionId,
-      user,
-      logKey,
-      cwd,
-      status,
-      createdAt: createdAt ?? updatedAt,
-      updatedAt,
-      events,
-      sequence,
-      title,
-    };
+    const stored = this.store.readSession(sessionId);
+    return stored === undefined ? undefined : storedSessionToPersisted(stored);
   }
 
   private ensureSessionPersisted(session: LiveSession, prompt: string): void {
@@ -1536,23 +1426,23 @@ export class SessionServer {
       return;
     }
     const now = Date.now();
-    const sequence = this.nextSequenceForCwd(session.user, session.cwd);
-    session.sequence = sequence;
-    session.title = titleFromPrompt(prompt);
-    session.createdAt = now;
-    session.updatedAt = now;
-    session.logKey = this.newSessionLogKey(session.user, now, session.id);
-    session.persisted = true;
-    this.acquireOwnership(session);
-    this.appendSessionRecord(session, {
-      type: "session_started",
-      sessionId: session.id,
+    const title = titleFromPrompt(prompt);
+    const sequence = this.store.createSession({
+      id: session.id,
       user: session.user,
       cwd: session.cwd,
-      sequence,
-      title: session.title,
+      title,
+      status: session.status,
+      model: session.config.model,
       createdAt: now,
     });
+    session.sequence = sequence;
+    session.title = title;
+    session.createdAt = now;
+    session.updatedAt = now;
+    session.logKey = session.id;
+    session.persisted = true;
+    this.acquireOwnership(session);
   }
 
   private nextSequenceForCwd(user: string, cwd: string): number {
@@ -1573,7 +1463,7 @@ export class SessionServer {
     if (!session.persisted) {
       return session;
     }
-    if (!this.sessionFileExists(session.id)) {
+    if (!this.store.sessionExists(session.id)) {
       this.terminateDeletedSession(session, "session was deleted");
       return session;
     }
@@ -1638,149 +1528,39 @@ export class SessionServer {
     if (!session.persisted) {
       return;
     }
-    this.withOwnerLock(session.id, () => {
-      const owner = {
-        sessionId: session.id,
-        serverId: this.serverId,
-        claimedAt: Date.now(),
-      };
-      const file = this.ownerFile(session.id);
-      const temp = `${file}.${process.pid}.${this.serverId}.${randomUUID()}.tmp`;
-      writeFileSync(temp, JSON.stringify(owner));
-      renameSync(temp, file);
-    });
+    this.store.claimOwner(session.id, this.serverId);
   }
 
   private currentOwner(sessionId: string): string | undefined {
-    return this.withOwnerLock(sessionId, () => {
-      const file = this.ownerFile(sessionId);
-      if (!existsSync(file)) {
-        return undefined;
-      }
-      try {
-        const value = JSON.parse(readFileSync(file, "utf8")) as {
-          serverId?: unknown;
-        };
-        return typeof value.serverId === "string" ? value.serverId : undefined;
-      } catch {
-        return undefined;
-      }
-    });
+    return this.store.currentOwner(sessionId);
   }
 
-  private withOwnerLock<T>(sessionId: string, action: () => T): T {
-    mkdirSync(this.ownerDir(), { recursive: true });
-    const lockDir = `${this.ownerFile(sessionId)}.lock`;
-    let lastError: unknown;
-    for (let attempt = 0; attempt < OWNER_LOCK_MAX_ATTEMPTS; attempt += 1) {
-      try {
-        mkdirSync(lockDir);
-      } catch (error) {
-        lastError = error;
-        if (isFileSystemError(error, "EEXIST")) {
-          this.removeStaleOwnerLock(lockDir);
-          sleepSync(OWNER_LOCK_RETRY_DELAY_MS);
-          continue;
-        }
-        if (
-          isFileSystemError(error, "EBUSY") ||
-          isFileSystemError(error, "EPERM") ||
-          isFileSystemError(error, "EACCES") ||
-          isFileSystemError(error, "ENOENT")
-        ) {
-          mkdirSync(this.ownerDir(), { recursive: true });
-          sleepSync(OWNER_LOCK_RETRY_DELAY_MS);
-          continue;
-        }
-        throw error;
-      }
-      try {
-        return action();
-      } finally {
-        rmSync(lockDir, { recursive: true, force: true });
-      }
-    }
-    throw new Error(
-      `timed out waiting for session ownership file lock: ${sessionId}`,
-      { cause: lastError },
-    );
-  }
-
-  private removeStaleOwnerLock(lockDir: string): void {
-    try {
-      const ageMs = Date.now() - statSync(lockDir).mtimeMs;
-      if (ageMs > OWNER_LOCK_STALE_MS) {
-        rmSync(lockDir, { recursive: true, force: true });
-      }
-    } catch (error) {
-      if (!isFileSystemError(error, "ENOENT")) {
-        throw error;
-      }
-    }
-  }
-
-  private persistenceDir(): string {
+  private dataDir(): string {
     return (
+      this.options.dataDir ??
       this.options.persistenceDir ??
+      this.options.config.paths.dataDir ??
       this.options.config.paths.sessionDir ??
-      join(this.options.config.paths.globalDir, "sessions")
+      "/home/.ndx-data"
     );
   }
 
   private appendSessionRecord(
     session: LiveSession,
-    record: SessionLogRecord,
+    record: Record<string, unknown>,
   ): void {
-    this.store.append(this.sessionLogKey(session), record);
-  }
-
-  private sessionLogKey(session: LiveSession): string {
-    if (session.logKey !== undefined) {
-      return session.logKey;
+    if (!session.persisted || this.closing) {
+      return;
     }
-    session.logKey = this.newSessionLogKey(
-      session.user,
-      session.createdAt,
+    this.store.appendRecord(
       session.id,
+      typeof record.type === "string" ? record.type : "record",
+      record,
     );
-    return session.logKey;
-  }
-
-  private newSessionLogKey(
-    user: string,
-    createdAt: number,
-    sessionId: string,
-  ): string {
-    const created = new Date(createdAt);
-    return [
-      sanitizePathSegment(user),
-      String(created.getUTCFullYear()).padStart(4, "0"),
-      String(created.getUTCMonth() + 1).padStart(2, "0"),
-      sessionId,
-    ].join("/");
-  }
-
-  private sessionFile(sessionId: string): string {
-    return (
-      this.sessionFiles(this.persistenceDir()).find(
-        (file) => basename(file, ".jsonl") === sessionId,
-      ) ??
-      join(
-        this.persistenceDir(),
-        "defaultUser",
-        "unknown",
-        "unknown",
-        `${sessionId}.jsonl`,
-      )
-    );
-  }
-
-  private sessionFileExists(sessionId: string): boolean {
-    return existsSync(this.sessionFile(sessionId));
   }
 
   private terminateIfDeleted(session: LiveSession, message: string): boolean {
-    if (!session.persisted || this.sessionFileExists(session.id)) {
+    if (!session.persisted || this.store.sessionExists(session.id)) {
       return false;
     }
     this.terminateDeletedSession(session, message);
@@ -1800,14 +1580,6 @@ export class SessionServer {
       void this.close().catch(() => undefined);
     });
   }
-
-  private ownerDir(): string {
-    return join(this.persistenceDir(), "owners");
-  }
-
-  private ownerFile(sessionId: string): string {
-    return join(this.ownerDir(), `${sessionId}.json`);
-  }
 }
 
 function isFileSystemError(error: unknown, code: string): boolean {
@@ -1816,6 +1588,51 @@ function isFileSystemError(error: unknown, code: string): boolean {
     "code" in error &&
     (error as NodeJS.ErrnoException).code === code
   );
+}
+
+function isPublicMethod(method: string | undefined): boolean {
+  return (
+    method === "initialize" ||
+    method === "account/create" ||
+    method === "account/login"
+  );
+}
+
+function listenHttp(
+  server: Server,
+  port: number,
+  host: string,
+  label: string,
+): Promise<{ port: number }> {
+  return new Promise((resolveListen, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error(`${label} did not bind a TCP address`));
+        return;
+      }
+      resolveListen({ port: address.port });
+    });
+  });
+}
+
+function storedSessionToPersisted(
+  session: StoredSession,
+): PersistedSessionState {
+  return {
+    id: session.id,
+    user: session.user,
+    logKey: session.id,
+    cwd: session.cwd,
+    status: session.status,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    events: session.events,
+    sequence: session.sequence,
+    title: session.title,
+  };
 }
 
 function sanitizePathSegment(value: string): string {
@@ -1877,6 +1694,7 @@ class WebSocketConnection {
   private buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   user = "defaultUser";
   clientId: string = randomUUID();
+  authenticated = false;
 
   constructor(
     private readonly socket: Socket,

@@ -29,7 +29,7 @@ test("CLI session controller initializes socket, starts session, and renders sta
 
   assert.deepEqual(
     transport.requests.map((request) => request.method),
-    ["initialize", "session/start", "command/execute"],
+    ["initialize", "account/login", "session/start", "command/execute"],
   );
   assert.deepEqual(status, { handled: true, shouldExit: false });
   assert.equal(
@@ -260,6 +260,13 @@ class FakeTransport implements CliSessionTransport {
           "session/start",
           "turn/start",
         ],
+      } as T;
+    }
+    if (method === "account/login") {
+      return {
+        username: "defaultUser",
+        clientId: cliIdentity.clientId,
+        sessionRoot: "/home/.ndx-data",
       } as T;
     }
     if (method === "session/start") {

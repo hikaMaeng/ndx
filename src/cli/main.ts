@@ -21,6 +21,7 @@ interface CliArgs {
   mock: boolean;
   mode: "run" | "serve" | "connect";
   listen: string;
+  dashboardListen: string;
   connectUrl?: string;
   prompt?: string;
   interactive: boolean;
@@ -29,7 +30,10 @@ interface CliArgs {
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const invokedAsServer = /(^|[/\\])ndxserver(?:\.[cm]?js)?$/.test(
+    process.argv[1] ?? "",
+  );
+  const args = parseArgs(process.argv.slice(2), invokedAsServer);
   if (args.help) {
     printHelp();
     return;
@@ -144,8 +148,15 @@ async function runServer(options: {
   sources: string[];
 }): Promise<void> {
   const server = createSessionServer(options);
-  const address = await listen(server, options.args.listen);
+  const address = await listen(
+    server,
+    options.args.listen,
+    options.args.dashboardListen,
+  );
   console.error(`[session-server] ${address.url}`);
+  if (address.dashboardUrl !== undefined) {
+    console.error(`[dashboard] ${address.dashboardUrl}`);
+  }
   await waitForShutdown();
   await server.close();
 }
@@ -229,13 +240,19 @@ function createSessionServer(options: {
 async function listen(
   server: SessionServer,
   listenAddress: string,
+  dashboardListenAddress: string,
 ): Promise<SessionServerAddress> {
-  const [host = "127.0.0.1", portText = "0"] = listenAddress.split(":");
-  const port = Number.parseInt(portText, 10);
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error(`invalid --listen port: ${listenAddress}`);
-  }
-  return server.listen(port, host);
+  const socket = parseListenAddress(listenAddress, "--listen");
+  const dashboard = parseListenAddress(
+    dashboardListenAddress,
+    "--dashboard-listen",
+  );
+  return server.listen(
+    socket.port,
+    socket.host,
+    dashboard.port,
+    dashboard.host,
+  );
 }
 
 async function waitForShutdown(): Promise<void> {
@@ -249,13 +266,14 @@ function createClient(mock: boolean, config: NdxConfig): ModelClient {
   return mock ? new MockModelClient() : createRoutedModelClient(config);
 }
 
-function parseArgs(argv: string[]): CliArgs {
+function parseArgs(argv: string[], invokedAsServer = false): CliArgs {
   let cwd = process.cwd();
   let mock = false;
   let help = false;
   let version = false;
-  let mode: CliArgs["mode"] = "run";
+  let mode: CliArgs["mode"] = invokedAsServer ? "serve" : "run";
   let listenAddress = "127.0.0.1:0";
+  let dashboardListenAddress = "127.0.0.1:0";
   let connectUrl: string | undefined;
   const prompt: string[] = [];
 
@@ -275,6 +293,12 @@ function parseArgs(argv: string[]): CliArgs {
         throw new Error("--listen requires HOST:PORT");
       }
       listenAddress = next;
+    } else if (arg === "--dashboard-listen") {
+      const next = argv[++i];
+      if (!next) {
+        throw new Error("--dashboard-listen requires HOST:PORT");
+      }
+      dashboardListenAddress = next;
     } else if (arg === "--connect") {
       const next = argv[++i];
       if (!next) {
@@ -299,6 +323,7 @@ function parseArgs(argv: string[]): CliArgs {
     mock,
     mode,
     listen: listenAddress,
+    dashboardListen: dashboardListenAddress,
     connectUrl,
     help,
     version,
@@ -320,8 +345,20 @@ function printInteractiveHeader(config: NdxConfig): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and JSONL persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [--mock] [--cwd PATH] [prompt]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` without a prompt from a TTY to open the ndx prompt.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, initializes the socket, logs in with account credentials, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"qwen3.6-35b-a3b:tr\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
+}
+
+function parseListenAddress(
+  listenAddress: string,
+  optionName: string,
+): { host: string; port: number } {
+  const [host = "127.0.0.1", portText = "0"] = listenAddress.split(":");
+  const port = Number.parseInt(portText, 10);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new Error(`invalid ${optionName} port: ${listenAddress}`);
+  }
+  return { host, port };
 }
 
 main().catch((error: unknown) => {

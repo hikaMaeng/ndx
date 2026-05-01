@@ -7,7 +7,7 @@ This document records the TypeScript agent loop contract implemented by
 This is the TypeScript ndx session architecture. It
 now follows the same ownership split: the agent loop executes one model/tool
 turn, `AgentRuntime` converts it into session events, and `SessionServer` owns
-live threads, WebSocket subscriptions, and JSONL persistence.
+live sessions, WebSocket subscriptions, and SQLite persistence.
 
 ## Loop State
 
@@ -31,13 +31,12 @@ request returns tool calls, the loop exits with
 
 `SessionServer` owns the live session system:
 
-- `threads`: live thread registry keyed by runtime `sessionId`;
-- `subscribers`: WebSocket clients subscribed to each thread;
-- `events`: server-held runtime event history for `thread/read`;
-- `status`: thread status derived from runtime events;
-- `SessionLogStore`: FIFO persistence queue under
-  `<globalDir>/sessions/ts-server`;
-- `session-log-writer`: child process that performs JSONL filesystem writes.
+- `sessions`: live session registry keyed by runtime `sessionId`;
+- `subscribers`: WebSocket clients subscribed to each session;
+- `events`: server-held runtime event history for `session/read`;
+- `status`: session status derived from runtime events;
+- `SqliteSessionStore`: account, project, session, event, and owner rows in
+  `<dataDir>/ndx.sqlite`.
 
 The CLI is not the session owner. Normal one-shot and interactive CLI modes
 start an embedded loopback WebSocket server and then act as a client. `ndx
@@ -97,13 +96,11 @@ converts the same local stack into chat messages. Anthropic providers convert
 the same local stack into Messages requests. In every case, provider-specific
 wire shapes stay inside the adapter.
 
-`SessionServer` queues server-owned JSONL records for thread creation,
-subscription, turn requests, runtime events, outbound notifications, and
-connection detach. A child writer process performs the actual file IO and
-reports result events to the parent. This is ndx session persistence
-recovery: the server does not write `history.jsonl`, does not back thread
-metadata with SQLite, and cannot rebuild turns from persisted `RolloutItem`
-records.
+`SessionServer` writes server-owned SQLite records for session creation,
+subscription, turn requests, runtime events, outbound notifications, ownership,
+and connection detach. This is ndx session persistence recovery: the server
+does not write `history.jsonl` and does not depend on provider-side persisted
+`RolloutItem` records.
 
 ## Hooks, Events, And Socket Delivery
 

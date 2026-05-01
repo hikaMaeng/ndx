@@ -5,15 +5,20 @@ ndx is a TypeScript-first local coding agent runtime.
 ## Current Contract
 
 - `src/cli/main.ts` is the active CLI entrypoint.
+- `ndx` remains the CLI command. `ndxserver` directly runs the long-lived
+  server path.
 - CLI one-shot and interactive modes both run through `AgentRuntime`.
 - `AgentRuntime` exposes a session/turn/submission/event protocol that future TUI, app-server, and tool registry work will reuse.
 - `ndx` opens an interactive prompt when run without arguments from a TTY.
 - Interactive slash commands are session-server controls exposed through `command/list` and `command/execute`.
 - `/home/.ndx/settings.json` is the fixed global settings path.
-- `/home/.ndx/sessions` is the default session origin; optional global
-  `sessionPath` overrides only the session origin.
-- Session files are partitioned by user, year, month, and session UUID. Omitted
-  user is `defaultUser`.
+- `/home/.ndx-data` is the default SQLite data directory; optional `dataPath`
+  overrides it and legacy `sessionPath` is treated as the same override.
+- Accounts, sessions, events, and ownership are stored in
+  `<dataDir>/ndx.sqlite`. Omitted user is `defaultUser`.
+- The server exposes a WebSocket socket port and a separate dashboard HTTP
+  port. The dashboard has no auth; the socket requires account login after
+  public initialization/account methods.
 - Project-local settings are discovered from the nearest `.ndx/settings.json` ancestor.
 - `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
 - `keys` entries in settings are injected into shell tool executions.

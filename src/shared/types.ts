@@ -57,6 +57,7 @@ export interface ToolRuntimeSettings {
 
 export interface NdxPaths {
   globalDir: string;
+  dataDir?: string;
   sessionDir?: string;
   projectDir?: string;
   projectNdxDir?: string;

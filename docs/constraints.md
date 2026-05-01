@@ -3,11 +3,10 @@
 ## Config
 
 - Global settings path is fixed at `/home/.ndx/settings.json`.
-- The session origin is `/home/.ndx/sessions` unless global settings define
-  optional `sessionPath`.
-- Session records are stored as
-  `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionUuid>.jsonl`; omitted user means
-  `defaultUser`.
+- The data directory is `/home/.ndx-data` unless settings define optional
+  `dataPath`. Legacy `sessionPath` is accepted as a data-directory override.
+- Account, project, session, event, and ownership records are stored in
+  `<dataDir>/ndx.sqlite`; omitted user means `defaultUser`.
 - Project settings path is `.ndx/settings.json` under the nearest ancestor project directory.
 - No runtime environment variable is used to select model, provider URL, provider key, or ndx home.
 - Settings are JSON only; `config.toml`, `.codex`, `NDX_HOME`, `NDX_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are not part of the ndx TypeScript loader contract.
@@ -25,7 +24,17 @@
   model changes reset both controls to those defaults.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
 - The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
+- `/home/.ndx` bootstrap information remains code-managed and is not stored in SQLite.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
+
+## Server Ports And Auth
+
+- `ndx serve` and `ndxserver` expose two ports: WebSocket JSON-RPC and HTTP dashboard.
+- The dashboard has no authentication or authorization.
+- WebSocket methods other than `initialize`, `account/create`, and
+  `account/login` require successful account login on that connection.
+- Authentication checks username and password only. Authorization is not
+  implemented yet.
 
 ## Search
 
@@ -75,7 +84,7 @@
 ## Browser Markup
 
 The only rendered frontend view is the agent-service dashboard placeholder at
-`GET /` and `GET /dashboard`.
+`GET /` and `GET /dashboard` on the dashboard listener.
 
 - The page exposes one `main` landmark named by the visible `ndx Agent Service`
   heading.

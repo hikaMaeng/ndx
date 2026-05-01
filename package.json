@@ -5,7 +5,8 @@
   "type": "module",
   "description": "TypeScript-first local coding agent.",
   "bin": {
-    "ndx": "dist/src/cli/main.js"
+    "ndx": "dist/src/cli/main.js",
+    "ndxserver": "dist/src/cli/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

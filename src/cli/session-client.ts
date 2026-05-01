@@ -118,6 +118,11 @@ export class CliSessionController {
   async initialize(): Promise<void> {
     this.initializeResult =
       await this.client.request<InitializeResult>("initialize");
+    await this.client.request("account/login", {
+      username: this.user,
+      password: "",
+      clientId: this.clientId,
+    });
     this.printError(formatInitializeResult(this.initializeResult));
   }
 

@@ -12,7 +12,8 @@ npm run deploy
 - Fixed global `/home/.ndx/settings.json` path.
 - Nearest project `.ndx/settings.json` discovery.
 - Global plus project settings merge precedence.
-- Optional `sessionPath` session-origin override.
+- Optional `dataPath` SQLite data-directory override and legacy `sessionPath`
+  compatibility.
 - Global `/home/.ndx/search.json` rule loading.
 - Provider/model resolution from settings.
 - Model pool parsing for `session`, `worker`, `reviewer`, and `custom`.
@@ -48,9 +49,9 @@ npm run deploy
 - CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
-- Server-side JSONL persistence under
-  `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionUuid>.jsonl`.
+- Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.
 - Account create/login/password-change methods and WebSocket client identity.
+- Socket authentication requirement for session, command, and turn methods.
 - Dashboard placeholder HTTP response and stable browser locator contract.
 - Workspace-scoped session listing, restore by session id or list number, and
   non-current session deletion.
@@ -65,10 +66,8 @@ npm run deploy
   mock responses do not look like externally deleted session files.
 - Session server shutdown destroys upgraded WebSocket sockets after sending
   close frames so tests and CLI teardown do not hang on peer close handshakes.
-- Session owner file contention waits and retries before restore claims
-  ownership.
-- Session JSONL writes performed by a child writer process, not the main process.
-- Queue drain after clients disconnect without an explicit session close command.
+- Session ownership is tracked in SQLite and reclaimed by the last prompt owner.
+- `session_detached` record after clients disconnect without an explicit session close command.
 - Multiple WebSocket clients subscribed to the same live session.
 - Provider error classification for non-retryable and retryable failures.
 - Docker remote-clone build using the selected `NDX_GIT_REF` branch.
@@ -78,8 +77,8 @@ npm run deploy
 
 ## Browser Verification
 
-The current browser surface is the dashboard placeholder served by the session
-server at `/` and `/dashboard`.
+The current browser surface is the dashboard placeholder served by the
+dashboard listener at `/` and `/dashboard`.
 
 Locator contract:
 

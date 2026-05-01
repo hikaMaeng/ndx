@@ -50,11 +50,11 @@ node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text v
 
 The CLI prints the robot plus uppercase `NDX` startup logo to stderr, starts an
 embedded loopback session server, connects over WebSocket, sends `initialize`,
-starts a session, and sends the prompt as a user turn. The server owns the live
-session and writes session JSONL under
-`/home/.ndx/sessions/defaultUser/<yyyy>/<mm>/<sessionUuid>.jsonl` once the first
-prompt is submitted. Set optional `sessionPath` in global
-`/home/.ndx/settings.json` to move only the session origin.
+logs in as `defaultUser`, starts a session, and sends the prompt as a user
+turn. The server owns the live session and writes accounts plus sessions to
+`/home/.ndx-data/ndx.sqlite` once the first prompt is submitted. Set optional
+`dataPath` in settings to move the SQLite data directory; legacy `sessionPath`
+is treated as the same data-directory override.
 
 On startup, config loading and the session server both enforce required global
 `.ndx` elements. Missing `core/`, `core/tools/`, built-in core tool package
@@ -73,6 +73,13 @@ Run a long-lived server:
 node dist/src/cli/main.js serve --mock --listen 127.0.0.1:45123
 ```
 
+Direct server command:
+
+```bash
+node dist/src/cli/main.js --help
+ndxserver --mock --listen 127.0.0.1:45123 --dashboard-listen 127.0.0.1:45124
+```
+
 Attach a client to that server:
 
 ```bash
@@ -82,11 +89,13 @@ node dist/src/cli/main.js --connect ws://127.0.0.1:45123 "list files"
 Attached clients use the same session-client controller as embedded mode. They
 display socket initialization and session status, but the remote server remains
 the authority for live state, initialization detail, event broadcast, and
-persistence. Each CLI controller instance sends a fresh `clientId`; the server
-tracks distinct connections even when user, workspace, and session are the same.
+persistence. Each CLI controller instance sends a fresh `clientId` and logs in
+before using session, command, or turn methods. The server tracks distinct
+connections even when user, workspace, and session are the same.
 
-Open `http://127.0.0.1:45123/` for the dashboard placeholder when the server is
-running. Agent interaction remains on WebSocket JSON-RPC.
+Open the printed dashboard URL for the dashboard placeholder when the server is
+running. The dashboard listener has no authentication or authorization. Agent
+interaction remains on authenticated WebSocket JSON-RPC.
 
 ## Interactive Commands
 

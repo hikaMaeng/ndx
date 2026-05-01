@@ -21,6 +21,7 @@ import type {
 import { CORE_TOOL_PACKAGES, type CoreToolPackage } from "./core-tools.js";
 
 const DEFAULT_GLOBAL_NDX_DIR = "/home/.ndx";
+const DEFAULT_DATA_DIR = "/home/.ndx-data";
 const CONFIG_DIR = ".ndx";
 const SETTINGS_FILE = "settings.json";
 const SEARCH_FILE = "search.json";
@@ -31,6 +32,7 @@ export interface ConfigLoadOptions {
 
 interface PartialSettings {
   model?: string | PartialModelPools;
+  dataPath?: string;
   sessionPath?: string;
   instructions?: string;
   maxTurns?: number;
@@ -254,6 +256,7 @@ function findProjectSettingsFile(cwd: string): string | undefined {
 function parseSettings(contents: string, file: string): PartialSettings {
   const parsed = parseJsonObject(contents, file) as PartialSettings;
   assertOptionalModelSelection(parsed.model, "model", file);
+  assertOptionalString(parsed.dataPath, "dataPath", file);
   assertOptionalString(parsed.sessionPath, "sessionPath", file);
   assertOptionalString(parsed.instructions, "instructions", file);
   assertOptionalInteger(parsed.maxTurns, "maxTurns", file);
@@ -286,6 +289,9 @@ function mergeSettings(target: PartialSettings, source: PartialSettings): void {
   }
   if (source.sessionPath !== undefined) {
     target.sessionPath = source.sessionPath;
+  }
+  if (source.dataPath !== undefined) {
+    target.dataPath = source.dataPath;
   }
   if (source.instructions !== undefined) {
     target.instructions = source.instructions;
@@ -423,6 +429,9 @@ function finalizeConfig(
 
   const keys = settings.keys ?? {};
   const env = { ...keys, ...(settings.env ?? {}) };
+  const dataDir = resolve(
+    settings.dataPath ?? settings.sessionPath ?? DEFAULT_DATA_DIR,
+  );
   return {
     model,
     modelPools,
@@ -449,9 +458,8 @@ function finalizeConfig(
     },
     paths: {
       globalDir: runtime.globalDir,
-      sessionDir: resolve(
-        settings.sessionPath ?? join(runtime.globalDir, "sessions"),
-      ),
+      dataDir,
+      sessionDir: dataDir,
       projectDir: runtime.projectDir,
       projectNdxDir: runtime.projectNdxDir,
     },

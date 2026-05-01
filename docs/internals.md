@@ -15,7 +15,7 @@ context answers, then the CLI reruns `loadConfig`.
 
 ## Settings Merge
 
-Scalar fields such as `model`, `sessionPath`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` may be an array or an object keyed by local model ID and are merged by that ID.
+Scalar fields such as `model`, `dataPath`, `sessionPath`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` may be an array or an object keyed by local model ID and are merged by that ID.
 
 ## Active Provider
 
@@ -86,33 +86,29 @@ the manifest command remains owned by the capability tool implementation.
 
 `src/session/server.ts` owns live sessions. `SessionServer` accepts WebSocket
 JSON-RPC, creates one `AgentRuntime` per live session, stores per-session event
-history, maps runtime events to client notifications, and enqueues server-owned
-JSONL records under `<sessionOrigin>/<user>/<yyyy>/<mm>/<sessionUuid>.jsonl`.
-The origin is `/home/.ndx/sessions` unless `sessionPath` is present in global
-settings. Missing user defaults to `defaultUser`.
+history, maps runtime events to client notifications, and stores server-owned
+records in `<dataDir>/ndx.sqlite`. The default data directory is
+`/home/.ndx-data`; `dataPath` overrides it and legacy `sessionPath` is accepted
+as the same override. Missing user defaults to `defaultUser`.
 
-`session/list` scans the same JSONL tree and merges matching persisted live
+`session/list` scans SQLite and merges matching persisted live
 sessions with saved records for a requested user and resolved `cwd`. Workspace numbers
 are monotonically increasing sequence values assigned on the first user prompt,
 not temporary list indexes. `session/restore` reloads saved runtime events,
 rebuilds model conversation history from prior user turns, assistant messages,
 tool calls, and tool results, creates an `AgentRuntime` with the original
-session id, and claims the session owner file. `session/delete`
-removes a non-current session's JSONL and owner files. A server that still holds
-the deleted session checks for the missing JSONL when it receives a prompt and
-when a response reaches a terminal event; if missing, it emits
+session id, and claims the session owner row. `session/delete` marks a
+non-current session deleted and clears its owner row. A server that still holds
+the deleted session checks SQLite when it receives a prompt and when a response
+reaches a terminal event; if deleted, it emits
 `session/deleted`, closes socket clients, and terminates.
 
-Session owner files are serialized with a sibling `.lock` directory. A server
-that finds the owner file locked waits briefly and retries instead of reading
-or replacing the owner file during another server's claim. Stale owner locks are
-removed after the configured stale window so a crashed claimant does not block
-future restore or prompt attempts indefinitely.
+Session ownership uses `session_owners` rows. A server replaces the owner row
+when it restores or starts a prompt. A stale owner discards in-flight output if
+another server claimed the row before completion.
 
-`turn/start` flushes the session start and turn start records before the
-runtime is scheduled. The response still returns before model completion, but a
-fast model response cannot be mistaken for a deleted session just because the
-JSONL writer has not created the file yet.
+`turn/start` creates the durable session row and turn-start event before the
+runtime is scheduled. The response still returns before model completion.
 
 Server shutdown sends WebSocket close frames and then destroys the upgraded
 sockets. Tests and short-lived CLI clients must not wait indefinitely for peer
@@ -120,33 +116,36 @@ close handshakes when a session server is being torn down.
 
 The CLI is a client of this server. In normal one-shot and interactive modes it
 starts an embedded loopback server and talks to that server over WebSocket. In
-`ndx serve` mode it only hosts the server. In `--connect` mode it attaches to an
-already-running server.
+`ndx serve` or `ndxserver` mode it only hosts the server. In `--connect` mode it
+attaches to an already-running server.
 
 Client programs may render or cache notifications, but durable session writes
 belong to the session server so CLI, TUI, VS Code, and other clients observe the
 same source of truth.
 
-`SessionLogStore` keeps persistence work off the session request path. It owns
-an in-memory FIFO queue, one in-flight job, and an IPC child process. The child
-process writes JSONL, adds `persistedAt` and `writerPid`, and reports result
-events. The parent retries failed writes three times and logs drops instead of
-crashing the server.
+`SqliteSessionStore` owns schema initialization, default account creation,
+account password checks, session rows, event append, soft delete, and ownership
+claiming. It enables WAL, foreign keys, and a busy timeout for concurrent
+socket-server processes.
 
 Socket close is also a persistence boundary. When a connection disappears and a
 persisted session has no subscribers left, the server records
-`session_detached` and drains the queue. Empty sessions are ignored because they
-have no durable identity yet.
+`session_detached`. Empty sessions are ignored because they have no durable
+identity yet.
 
 The account methods are in-process JSON-RPC controls for the current service
 instance: `account/create`, `account/login`, `account/delete`, and
-`account/changePassword`. Login stores user and client id on the WebSocket
-connection. The first CLI client implemented here generates a fresh client id
-per controller instance and includes user/client id in session and turn
-requests.
+`account/changePassword`. `initialize`, `account/create`, and `account/login`
+are public. Other socket methods require a successful login on the WebSocket
+connection. Login stores user and client id on the connection. The first CLI
+client implemented here generates a fresh client id per controller instance,
+logs in as `defaultUser` with an empty password, and includes user/client id in
+session and turn requests.
 
-HTTP `GET /` and `GET /dashboard` are intentionally minimal. They return the
-dashboard placeholder only; all agent interaction remains on WebSocket JSON-RPC.
+HTTP `GET /` and `GET /dashboard` on the separate dashboard listener are
+intentionally minimal. They return the dashboard placeholder only. The
+dashboard has no authentication or authorization; agent interaction remains on
+authenticated WebSocket JSON-RPC.
 
 ## Mock Client
 
