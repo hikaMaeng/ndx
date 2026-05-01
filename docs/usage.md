@@ -215,11 +215,26 @@ The project `.ndx/settings.json` defaults to:
 - `url`: `http://192.168.0.6:12345/v1`
 - `model`: `qwen3.6-35b-a3b:tr`
 
-Start the container and run a one-shot prompt:
+Start the container. The default service starts `ndxserver` immediately and
+publishes both service ports:
+
+- WebSocket JSON-RPC: `ws://127.0.0.1:45123`
+- Dashboard HTTP: `http://127.0.0.1:45124`
 
 ```bash
 docker compose up -d --build ndx-agent
+docker compose logs --tail 80 ndx-agent
 docker compose exec ndx-agent ndx "간단히 준비 완료라고 응답해"
+```
+
+Override the host ports or advertised URLs with environment variables:
+
+```bash
+NDX_SOCKET_PORT=55123 \
+NDX_DASHBOARD_PORT=55124 \
+NDX_PUBLIC_SOCKET_URL=ws://127.0.0.1:55123 \
+NDX_PUBLIC_DASHBOARD_URL=http://127.0.0.1:55124 \
+docker compose up -d --build ndx-agent
 ```
 
 Docker Desktop Exec tab also works after the container is running. Open the `ndx-agent` container and run:
@@ -234,9 +249,18 @@ That opens the ndx prompt. Submit tasks at `ndx>`, use `/help` for local command
 ndx "원하는 작업"
 ```
 
-The default compose service stays alive with `sleep infinity` so interactive exec sessions can start `ndx` on demand. Files created by the agent persist in `./docker/volume/workspace`, and global settings persist in `./docker/volume/home-ndx`.
+The default compose service stays alive by running `ndxserver` for
+`/workspace`. On first startup, if the `/home/.ndx` volume has no
+`settings.json`, the image copies the repository's non-secret default settings
+from `/opt/ndx/.ndx/settings.json` into `/home/.ndx/settings.json` before
+starting the server. Files created by the agent persist in
+`./docker/volume/workspace`, and global settings persist in
+`./docker/volume/home-ndx`.
 
 Compose uses the image default command. Container startup logs include image
 provenance lines prefixed with `[ndx-image]`. Those lines record the package
 version, GitHub remote, `NDX_GIT_REF`, cloned commit SHA, branch, commit date,
-commit subject, Node version, and Yarn version.
+commit subject, Node version, and Yarn version. Startup logs also include
+`[ndx-service]` lines for any installed default global settings, the socket bind
+address, dashboard bind address, advertised socket URL, advertised dashboard URL,
+and runtime cwd.
