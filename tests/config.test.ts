@@ -5,7 +5,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -24,8 +24,8 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-test("resolveGlobalNdxDir returns /home/.ndx by default", () => {
-  assert.equal(resolveGlobalNdxDir(), "/home/.ndx");
+test("resolveGlobalNdxDir returns user home .ndx by default", () => {
+  assert.equal(resolveGlobalNdxDir(), join(homedir(), ".ndx"));
   assert.equal(
     resolveGlobalNdxDir({ globalDir: "/tmp/global" }),
     "/tmp/global",
@@ -278,14 +278,18 @@ test("ensureGlobalNdxHome installs core directories and tool packages", () => {
     const report = ensureGlobalNdxHome(globalDir);
 
     assert.equal(existsSync(join(globalDir, "settings.json")), false);
-    assert.equal(existsSync(join(globalDir, "core")), true);
-    assert.equal(existsSync(join(globalDir, "skills")), true);
+    assert.equal(existsSync(join(globalDir, "system", "core")), true);
+    assert.equal(existsSync(join(globalDir, "system", "skills")), true);
     assert.equal(
-      existsSync(join(globalDir, "core", "tools", "shell", "tool.json")),
+      existsSync(
+        join(globalDir, "system", "core", "tools", "shell", "tool.json"),
+      ),
       true,
     );
     assert.equal(
-      existsSync(join(globalDir, "core", "tools", "shell", "tool.mjs")),
+      existsSync(
+        join(globalDir, "system", "core", "tools", "shell", "tool.mjs"),
+      ),
       true,
     );
     for (const tool of [
@@ -299,11 +303,15 @@ test("ensureGlobalNdxHome installs core directories and tool packages", () => {
       "request_permissions",
     ]) {
       assert.equal(
-        existsSync(join(globalDir, "core", "tools", tool, "tool.json")),
+        existsSync(
+          join(globalDir, "system", "core", "tools", tool, "tool.json"),
+        ),
         true,
       );
       assert.equal(
-        existsSync(join(globalDir, "core", "tools", tool, "tool.mjs")),
+        existsSync(
+          join(globalDir, "system", "core", "tools", tool, "tool.mjs"),
+        ),
         true,
       );
     }

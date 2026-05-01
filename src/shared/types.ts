@@ -53,6 +53,7 @@ export interface SearchRules {
 
 export interface ToolRuntimeSettings {
   imageGeneration: boolean;
+  dockerSandboxImage?: string;
 }
 
 export interface NdxPaths {

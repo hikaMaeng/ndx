@@ -48,10 +48,13 @@ npm run deploy
 - Runtime interrupt event contract.
 - CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
 - CLI `/login` default-user switching and shared login-store update.
-- Workspace-managed Docker bootstrap compose-state generation without placing
-  CLI login state in project `.ndx`.
-- Managed workspace startup probes reachable ndx socket state before invoking
-  Docker and verifies `initialize.server` is `ndx-ts-session-server`.
+- Managed Docker bootstrap compose-state generation under `.ndx/system/managed`
+  without placing CLI login state in project `.ndx`.
+- Managed startup probes the requested ndx socket before invoking Docker and
+  verifies `initialize.server` is `ndx-ts-session-server`.
+- Interactive managed startup asks for a workspace folder only when Docker
+  fallback is needed, then project selection uses a subfolder of that workspace.
+- Session server project listing and project folder creation.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
 - Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.
@@ -76,16 +79,12 @@ npm run deploy
 - `session_detached` record after clients disconnect without an explicit session close command.
 - Multiple WebSocket clients subscribed to the same live session.
 - Provider error classification for non-retryable and retryable failures.
-- Docker remote-clone build using the selected `NDX_GIT_REF` branch.
-- Docker workspace and global settings bind mounts under `./docker/volume`.
-- Docker build, in-container tests, and in-container mock agent execution.
-- Deploy verification uses non-interactive `docker compose run -T` so test and
-  mock-agent containers exit cleanly even though the service keeps `tty: true`
-  for manual use.
-- Compose startup verification should run `docker compose up -d ndx-agent`,
-  inspect `[ndx-image]` and `[ndx-service]` log lines, confirm the service is
-  healthy, fetch the dashboard through the published host port, and connect a
-  client through the published WebSocket port.
+- Docker sandbox image build and `/workspace` bind mount behavior.
+- Deploy verification uses non-interactive `docker compose exec -T` for sandbox
+  shell execution.
+- Server startup verification should run the local server, confirm it logs in
+  before initialization, fetch the dashboard through the local dashboard port,
+  and verify that shell-like tools execute through the pinned Docker sandbox.
 - Repository hygiene checks keep the root package as the only package and keep
   generated dependency, build, and Docker runtime state out of tracked source.
 - Yarn Plug'n'Play with the global cache enabled is the package-install

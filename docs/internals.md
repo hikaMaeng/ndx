@@ -23,7 +23,7 @@ Scalar fields such as `model`, `dataPath`, `sessionPath`, `instructions`, `maxTu
 
 The active root config resolves to the first `session` model for display and provider validation. Sessions keep that base config. `RoundRobinModelRouter` now binds each selected pool to one model for the live session. `@key` prompts select `model.custom.<key>` and tool follow-up requests keep using that pool. Explicit `/model` changes update `config.model`, `activeModel`, effort, and thinking state; the next provider request uses a new provider-client cache key when those values change.
 
-`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global directories and built-in `/core/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
+`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global system directories and built-in `/system/core/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
 
 ## Model Adapters
 
@@ -88,7 +88,7 @@ the manifest command remains owned by the capability tool implementation.
 JSON-RPC, creates one `AgentRuntime` per live session, stores per-session event
 history, maps runtime events to client notifications, and stores server-owned
 records in `<dataDir>/ndx.sqlite`. The default data directory is
-`/home/.ndx-data`; `dataPath` overrides it and legacy `sessionPath` is accepted
+`/home/.ndx/system`; `dataPath` overrides it and legacy `sessionPath` is accepted
 as the same override. Missing user defaults to `defaultUser`.
 
 `session/list` scans SQLite and merges matching persisted live
@@ -153,4 +153,7 @@ authenticated WebSocket JSON-RPC.
 
 ## Docker Context
 
-Docker build does not copy source folders from the local build context. The Dockerfile installs Git, clones `https://github.com/hikaMaeng/ndx.git` at `NDX_GIT_REF` into `/opt/ndx`, then installs dependencies and builds inside the cloned checkout. Compose mounts `./docker/volume/workspace` to `/workspace` and `./docker/volume/home-ndx` to `/home/.ndx` for runtime state.
+Docker build creates only the tool sandbox image. It installs the shell/runtime
+utilities needed by core external tools and keeps `/workspace` as the mounted
+project directory. Compose mounts `./docker/volume/workspace` to `/workspace`.
+The ndx server is a local process and owns session state outside Docker.

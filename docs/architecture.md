@@ -27,28 +27,39 @@ except for the two `.gitkeep` directory anchors.
 
 ## Runtime Flow
 
-1. CLI resolves `cwd` and reads existing `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` directories and core tools. In TTY CLI runs with no settings, the CLI asks setup questions, writes project `.ndx/settings.json`, then reloads config.
-2. Host CLI startup resolves CLI app state, probes saved workspace socket URLs,
-   and attaches to the first reachable ndx WebSocket session server. In the
-   standard container workspace `/workspace`, it also probes
-   `ws://127.0.0.1:45123` before any Docker command. If no socket is reachable,
-   it creates compose state for the current folder, starts the container, and
-   then connects. `--mock` and `NDX_EMBEDDED_SERVER=1` keep the source-tree
-   embedded loopback path.
-3. Session server startup re-checks required global `.ndx` elements and installs any missing core directories, core tool package files, and skills directory before accepting session work.
-4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
-5. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
-6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-7. The session server stores accounts, social account links, sessions, request
-   records, runtime events, notifications, and ownership in SQLite under the
-   configured data directory.
-8. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
-9. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
-10. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
-11. Function schemas from that registry are sent to the model.
-12. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
-13. Filesystem tools are executed from their `tool.json` command process. MCP tools are executed through the configured MCP stdio command. Task tools run inside the worker.
-14. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
+1. Host CLI startup probes the requested server address, defaulting to
+   `127.0.0.1:45123`. `SERVER_ADDRESS` is the only normal `ndx` startup
+   argument.
+2. If no socket is reachable, the CLI reports the failed connection, resolves
+   settings for the workspace, starts a local default `SessionServer` at the
+   default address, and connects to that local process. `--mock` and
+   `NDX_EMBEDDED_SERVER=1` remain source-tree development paths.
+3. After WebSocket connect, the CLI logs in immediately. The server ignores
+   unauthenticated non-login JSON-RPC methods.
+4. After login and initialization, the server ensures a Docker tool sandbox for
+   the selected workspace. If Docker cannot provide the pinned sandbox image or
+   container, server startup fails and the CLI exits with that warning.
+5. If no settings file exists, the interactive settings wizard writes project
+   `.ndx/settings.json`.
+6. The CLI asks the server for projects
+   under the workspace root. The selected project subfolder becomes the session
+   `cwd`; the user can also create a new project folder.
+7. Session server startup re-checks required global `.ndx/system` elements and installs any missing core directories, core tool package files, and skills directory before accepting session work.
+8. The CLI is a session-server client. `CliSessionController` logs in, sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
+9. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
+10. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
+11. The session server stores accounts, social account links, sessions, request
+    records, runtime events, notifications, and ownership in SQLite under the
+    configured data directory.
+12. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
+13. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
+14. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
+15. Function schemas from that registry are sent to the model.
+16. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
+17. Shell-like core tools execute inside the workspace Docker sandbox by using
+    `docker exec` against the server-managed container. MCP tools are executed
+    through the configured MCP stdio command. Task tools run inside the worker.
+18. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
 
 ## Model Routing And Context
 
@@ -102,15 +113,15 @@ Client programs must not maintain authoritative live session or persistence stat
 - runtime notification formatting for human output
 
 The CLI does not persist live session state. Host CLI app state persists only
-last-login and workspace server connection metadata; `/home/.ndx` and project
-`.ndx` remain agent runtime configuration.
+last-login metadata; `/home/.ndx` and project `.ndx` remain agent runtime
+configuration.
 
 ## SQLite Persistence
 
 The session server opens `<dataDir>/ndx.sqlite` through `SqliteSessionStore`.
-The default data directory is `/home/.ndx-data`; settings may define
+The default data directory is `/home/.ndx/system`; settings may define
 `dataPath`, and legacy `sessionPath` is treated as a data-directory override.
-`/home/.ndx` bootstrap state remains code-managed and is not stored in SQLite.
+`/home/.ndx/system` bootstrap state remains code-managed and is not stored in SQLite.
 
 SQLite tables own users, OAuth account links, projects, sessions, session
 events, and session owners. `defaultUser` with an empty password is created on
@@ -137,10 +148,11 @@ non-current listed session deleted and clears its owner row; any server still
 holding that session detects the deleted SQLite row on the next prompt or turn
 completion, emits `session/deleted`, closes its socket clients, and terminates.
 
-The socket server requires authentication for non-public JSON-RPC methods.
-`initialize`, `account/create`, `account/login`, and `account/socialLogin` are
-public; session, command, turn, account mutation, and delete methods require a
-successful login. The CLI assigns a fresh client id per controller instance.
+The socket server requires authentication for non-login JSON-RPC methods.
+`account/create`, `account/login`, and `account/socialLogin` are public;
+session, command, turn, account mutation, delete, project, and `initialize`
+methods require a successful login. Unauthenticated non-login requests are
+ignored. The CLI assigns a fresh client id per controller instance.
 The server treats the authenticated connection user as authoritative and does
 not rely on later request params to choose the user.
 
@@ -153,14 +165,15 @@ verification.
 
 ## Docker Flow
 
-`npm run deploy` builds locally, removes previous compose containers, passes the current Git branch as `NDX_GIT_REF`, builds `ndx-agent` with `--no-cache` by cloning that remote branch into `/opt/ndx`, runs tests in the image from `/opt/ndx`, runs a mock agent from `/opt/ndx` that writes `/workspace/tmp/ndx-docker-verify.txt`, then tears compose down.
+`npm run deploy` builds and tests locally, removes previous compose containers,
+builds `ndx-sandbox` with `--no-cache`, starts the sandbox with
+`./docker/volume/workspace` mounted at `/workspace`, writes
+`/workspace/tmp/ndx-docker-verify.txt` through `docker exec`, then tears compose
+down.
 
-The default compose service runs `ndxserver`, not an idle sleep process. It
-publishes the WebSocket JSON-RPC port and dashboard HTTP port separately, with
-defaults `45123:45123` and `45124:45124`. Startup logs include `[ndx-image]`
-provenance and `[ndx-service]` bind URL lines so Docker Desktop and compose
-logs show both what image revision is running and which external URLs operators
-should use. The default compose command uses `--mock` for service wiring
-verification and never copies repository settings into `/home/.ndx`; real model
-settings are created by the wizard or loaded through the normal global/project
-settings cascade.
+The default compose service is `ndx-sandbox`. It runs `sleep infinity` and is
+only a tool-execution sandbox. It does not run `ndxserver`, publish service
+ports, or contain authoritative session state. Production server builds depend
+on the pinned Docker Hub image `hika00/ndx-sandbox:0.1.0`; any sandbox
+Dockerfile change must be pushed under a new Docker Hub tag and tested by the
+server against that pushed tag.

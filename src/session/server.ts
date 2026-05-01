@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { mkdirSync, readdirSync } from "node:fs";
 import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
 import {
@@ -25,10 +26,15 @@ import {
 import type { RuntimeEvent, RuntimeEventMsg } from "../shared/protocol.js";
 import type {
   ModelClient,
+  ModelSettings,
   NdxBootstrapReport,
   NdxConfig,
-  ModelSettings,
 } from "../shared/types.js";
+import {
+  ensureDockerSandbox,
+  hostPathToSandboxPath,
+  type DockerSandboxState,
+} from "./docker-sandbox.js";
 
 type JsonRpcId = number | string | null;
 
@@ -57,6 +63,8 @@ export interface SessionServerOptions {
   createClient: (config: NdxConfig) => ModelClient;
   dataDir?: string;
   persistenceDir?: string;
+  requireDockerSandbox?: boolean;
+  dockerSandboxImage?: string;
 }
 
 /** Concrete loopback address chosen by the session server listener. */
@@ -126,6 +134,7 @@ export class SessionServer {
   private readonly store: SqliteSessionStore;
   private readonly bootstrap: NdxBootstrapReport;
   private readonly serverId = randomUUID();
+  private readonly sandboxes = new Map<string, DockerSandboxState>();
   private closing = false;
 
   constructor(options: SessionServerOptions) {
@@ -137,7 +146,7 @@ export class SessionServer {
       options.dataDir ??
         options.persistenceDir ??
         options.config.paths.dataDir ??
-        "/home/.ndx-data",
+        "/home/.ndx/system",
     );
     this.server.on("upgrade", (request, socket) => {
       this.handleUpgrade(request, socket as Socket);
@@ -191,6 +200,9 @@ export class SessionServer {
     dashboardPort = 0,
     dashboardHost = host,
   ): Promise<SessionServerAddress> {
+    if (this.options.requireDockerSandbox === true) {
+      await this.ensureWorkspaceSandbox(this.options.cwd);
+    }
     const socket = await listenHttp(this.server, port, host, "session server");
     const dashboard = await listenHttp(
       this.dashboardServer,
@@ -310,7 +322,7 @@ export class SessionServer {
     request: JsonRpcRequest,
   ): Promise<unknown> {
     if (!isPublicMethod(request.method) && !connection.authenticated) {
-      throw new Error("socket authentication is required");
+      return null;
     }
     switch (request.method) {
       case "initialize":
@@ -336,6 +348,8 @@ export class SessionServer {
             "account/socialLogin",
             "account/delete",
             "account/changePassword",
+            "project/list",
+            "project/create",
           ],
         };
       case "account/create":
@@ -348,6 +362,10 @@ export class SessionServer {
         return this.deleteAccount(request.params);
       case "account/changePassword":
         return this.changeAccountPassword(request.params);
+      case "project/list":
+        return this.listProjects();
+      case "project/create":
+        return this.createProject(request.params);
       case "command/list":
         return { commands: BUILT_IN_SLASH_COMMANDS };
       case "command/execute":
@@ -381,7 +399,12 @@ export class SessionServer {
   ): Promise<unknown> {
     const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
-    const config = this.nextSessionConfig();
+    const sandbox = await this.ensureWorkspaceSandbox(cwd);
+    const config = this.configWithSandbox(
+      this.nextSessionConfig(),
+      sandbox,
+      cwd,
+    );
     const runtime = new AgentRuntime({
       cwd,
       config,
@@ -501,6 +524,75 @@ export class SessionServer {
     return {
       username,
       updatedAt: this.store.changePassword(username, oldPassword, newPassword),
+    };
+  }
+
+  private listProjects(): unknown {
+    const root = resolve(this.options.cwd);
+    const projects = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => ({
+        name: entry.name,
+        cwd: join(root, entry.name),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    return { root, projects };
+  }
+
+  private createProject(params: unknown): unknown {
+    const root = resolve(this.options.cwd);
+    const name = requiredStringParam(params, "name");
+    if (
+      name.includes("/") ||
+      name.includes("\\") ||
+      name === "." ||
+      name === ".."
+    ) {
+      throw new Error(`invalid project name: ${name}`);
+    }
+    const cwd = join(root, name);
+    mkdirSync(cwd, { recursive: true });
+    return { project: { name, cwd } };
+  }
+
+  private async ensureWorkspaceSandbox(
+    cwd: string,
+  ): Promise<DockerSandboxState | undefined> {
+    if (this.options.requireDockerSandbox !== true) {
+      return undefined;
+    }
+    const workspaceDir = resolve(cwd);
+    const existing = this.sandboxes.get(workspaceDir);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const sandbox = await ensureDockerSandbox({
+      workspaceDir,
+      image:
+        this.options.dockerSandboxImage ??
+        this.options.config.tools.dockerSandboxImage,
+    });
+    this.sandboxes.set(workspaceDir, sandbox);
+    return sandbox;
+  }
+
+  private configWithSandbox(
+    config: NdxConfig,
+    sandbox: DockerSandboxState | undefined,
+    cwd: string,
+  ): NdxConfig {
+    if (sandbox === undefined) {
+      return config;
+    }
+    return {
+      ...config,
+      env: {
+        ...config.env,
+        NDX_SANDBOX_CONTAINER: sandbox.containerName,
+        NDX_SANDBOX_HOST_WORKSPACE: sandbox.workspaceDir,
+        NDX_SANDBOX_WORKSPACE: sandbox.containerWorkspaceDir,
+        NDX_SANDBOX_CWD: hostPathToSandboxPath(sandbox, cwd),
+      },
     };
   }
 
@@ -1595,7 +1687,7 @@ export class SessionServer {
       this.options.persistenceDir ??
       this.options.config.paths.dataDir ??
       this.options.config.paths.sessionDir ??
-      "/home/.ndx-data"
+      "/home/.ndx/system"
     );
   }
 
@@ -1646,7 +1738,6 @@ function isFileSystemError(error: unknown, code: string): boolean {
 
 function isPublicMethod(method: string | undefined): boolean {
   return (
-    method === "initialize" ||
     method === "account/create" ||
     method === "account/login" ||
     method === "account/socialLogin"

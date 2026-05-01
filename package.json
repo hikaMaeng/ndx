@@ -11,7 +11,7 @@
     "build": "yarn exec tsc -p tsconfig.json",
     "test": "yarn build && node --test dist/tests/*.test.js",
     "start": "node dist/src/cli/main.js",
-    "deploy": "yarn build && docker compose down --remove-orphans && NDX_GIT_REF=$(git branch --show-current) docker compose build --no-cache ndx-agent && docker compose run --rm -T --workdir /opt/ndx ndx-agent yarn test && docker compose run --rm -T --workdir /opt/ndx ndx-agent ndx --mock \"create a file named /workspace/tmp/ndx-docker-verify.txt with text verified\" && docker compose down --remove-orphans"
+    "deploy": "yarn build && yarn test && docker compose down --remove-orphans && docker compose build --no-cache ndx-sandbox && docker compose up -d ndx-sandbox && docker compose exec -T ndx-sandbox bash -lc \"mkdir -p /workspace/tmp && echo verified > /workspace/tmp/ndx-docker-verify.txt\" && docker compose down --remove-orphans"
   },
   "devDependencies": {
     "@types/node": "^20.19.18",

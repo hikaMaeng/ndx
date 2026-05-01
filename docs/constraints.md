@@ -3,7 +3,7 @@
 ## Config
 
 - Global settings path is fixed at `/home/.ndx/settings.json`.
-- The data directory is `/home/.ndx-data` unless settings define optional
+- The data directory is `/home/.ndx/system` unless settings define optional
   `dataPath`. Legacy `sessionPath` is accepted as a data-directory override.
 - Account, project, session, event, and ownership records are stored in
   `<dataDir>/ndx.sqlite`; omitted user means `defaultUser`.
@@ -23,8 +23,8 @@
   effort entry. A model with `think` starts with thinking mode on. Explicit
   model changes reset both controls to those defaults.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
-- The global `.ndx` directory is self-healing at startup for required directories and built-in `/core/tools` packages.
-- `/home/.ndx` bootstrap information remains code-managed and is not stored in SQLite.
+- The global `.ndx/system` directory is self-healing at startup for required directories and built-in `/system/core/tools` packages.
+- `/home/.ndx/system` bootstrap information remains code-managed and is not stored in SQLite.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
 
 ## Host CLI State
@@ -32,7 +32,8 @@
 - Host CLI app state is separate from `/home/.ndx` and project `.ndx`.
 - `NDX_CLI_STATE_DIR` overrides the app-state directory.
 - `auth.json` contains one shared last-login value for all host CLI instances.
-- `workspaces/<sha256>.json` contains workspace server connection metadata.
+- The host CLI does not manage Docker compose files for the server. Docker is a
+  server-managed per-workspace tool sandbox only.
 - `clientId` is never persisted as the last-login identity; each CLI or plugin
   runtime instance owns its own client id.
 
@@ -48,15 +49,13 @@
 
 ## Server Ports And Auth
 
-- `ndx serve` and `ndxserver` expose two ports: WebSocket JSON-RPC and HTTP dashboard.
-- Docker compose must publish both ports. Defaults are socket `45123` and
-  dashboard `45124`; the two listeners are separate and must not be configured
-  to the same container port.
-- The default compose command must start the long-running `ndxserver` service.
+- `ndx serve` and `ndxserver` expose two local-process ports: WebSocket JSON-RPC and HTTP dashboard.
+- Docker compose must not be treated as the server owner. The root compose file
+  owns only the `ndx-sandbox` service used for tool execution.
 - The dashboard has no authentication or authorization.
-- WebSocket methods other than `initialize`, `account/create`,
-  `account/login`, and `account/socialLogin` require successful account login
-  on that connection.
+- WebSocket methods other than `account/create`, `account/login`, and
+  `account/socialLogin` require successful account login on that connection.
+  Unauthenticated non-login requests are ignored.
 - Password authentication checks username and password. Social authentication
   validates the supplied access token against the provider profile endpoint and
   maps the account to `provider:subject`.
@@ -83,6 +82,11 @@
 - The default tool timeout is `shellTimeoutMs` from settings unless a tool manifest declares `timeoutMs`.
 - Turn cancellation is propagated to worker processes and to the immediate external manifest command process.
 - External tools that spawn their own children must handle cleanup for that deeper process tree.
+- Shell-like core tools run through `docker exec` when the server provides
+  `NDX_SANDBOX_CONTAINER`. The default pinned image is
+  `hika00/ndx-sandbox:0.1.0`.
+- Sandbox Dockerfile changes require a new Docker Hub tag under `hika00`, a
+  pushed image, and server verification against that exact tag before merge.
 
 ## Model Providers
 
