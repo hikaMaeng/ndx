@@ -73,7 +73,13 @@ npm run deploy
 - Docker remote-clone build using the selected `NDX_GIT_REF` branch.
 - Docker workspace and global settings bind mounts under `./docker/volume`.
 - Docker build, in-container tests, and in-container mock agent execution.
-- Deploy verification uses non-interactive `docker compose run -T` so test and mock-agent containers exit cleanly even though the service keeps `tty: true` for manual use.
+- Deploy verification uses non-interactive `docker compose run -T` so test and
+  mock-agent containers exit cleanly even though the service keeps `tty: true`
+  for manual use.
+- Compose startup verification should run `docker compose up -d ndx-agent`,
+  inspect `[ndx-image]` and `[ndx-service]` log lines, confirm the service is
+  healthy, fetch the dashboard through the published host port, and connect a
+  client through the published WebSocket port.
 - Repository hygiene checks keep the root package as the only package and keep
   generated dependency, build, and Docker runtime state out of tracked source.
 - Yarn Plug'n'Play with the global cache enabled is the package-install

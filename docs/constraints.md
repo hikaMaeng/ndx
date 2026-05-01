@@ -40,6 +40,10 @@
 ## Server Ports And Auth
 
 - `ndx serve` and `ndxserver` expose two ports: WebSocket JSON-RPC and HTTP dashboard.
+- Docker compose must publish both ports. Defaults are socket `45123` and
+  dashboard `45124`; the two listeners are separate and must not be configured
+  to the same container port.
+- The default compose command must start the long-running `ndxserver` service.
 - The dashboard has no authentication or authorization.
 - WebSocket methods other than `initialize`, `account/create`, and
   `account/login` require successful account login on that connection.

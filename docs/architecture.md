@@ -141,3 +141,12 @@ verification.
 ## Docker Flow
 
 `npm run deploy` builds locally, removes previous compose containers, passes the current Git branch as `NDX_GIT_REF`, builds `ndx-agent` with `--no-cache` by cloning that remote branch into `/opt/ndx`, runs tests in the image from `/opt/ndx`, runs a mock agent from `/opt/ndx` that writes `/workspace/tmp/ndx-docker-verify.txt`, then tears compose down.
+
+The default compose service runs `ndxserver`, not an idle sleep process. It
+publishes the WebSocket JSON-RPC port and dashboard HTTP port separately, with
+defaults `45123:45123` and `45124:45124`. Startup logs include `[ndx-image]`
+provenance and `[ndx-service]` bind URL lines so Docker Desktop and compose
+logs show both what image revision is running and which external URLs operators
+should use. If the persisted `/home/.ndx` volume has no settings file, startup
+copies the repository's non-secret default `.ndx/settings.json` into that volume
+before launching `ndxserver` for `/workspace`.
