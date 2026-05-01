@@ -43,16 +43,35 @@ MCP servers may be declared in settings. Project MCP has priority over global MC
 
 Plugin and capability tools are filesystem packages, not settings entries. Put each tool in a folder named after the tool and include `tool.json`; for example `/home/.ndx/tools/shell/tool.json` or `<project>/.ndx/plugins/calendar/tools/create_event/tool.json`.
 
+## Host CLI
+
+```bash
+npm install -g @neurondev/ndx
+cd /path/to/workspace
+ndx
+```
+
+The host CLI searches CLI app state for a reachable workspace-managed Docker
+server. If none exists, it asks a numbered setup question, writes compose state
+for the current folder, starts the container, then connects over WebSocket.
+The first setup uses the current folder as `/workspace`, bind-mounts
+workspace-local `.ndx/home` to `/home/.ndx`, and bind-mounts `.ndx/data` to
+`/home/.ndx-data`.
+
+Use `NDX_DOCKER_IMAGE` to override the Docker image. Use `NDX_CLI_STATE_DIR` to
+move host CLI app state. Host CLI login state is not stored in `/home/.ndx` or
+project `.ndx`.
+
 ## Mock Agent
 
 ```bash
-node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text verified"
+NDX_EMBEDDED_SERVER=1 node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text verified"
 ```
 
-The CLI prints the robot plus uppercase `NDX` startup logo to stderr, starts an
-embedded loopback session server, connects over WebSocket, sends `initialize`,
-logs in as `defaultUser`, starts a session, and sends the prompt as a user
-turn. The server owns the live session and writes accounts plus sessions to
+`--mock` starts an embedded loopback session server for source-tree development,
+connects over WebSocket, sends `initialize`, logs in from CLI app state or
+`defaultUser`, starts a session, and sends the prompt as a user turn. The server
+owns the live session and writes accounts plus sessions to
 `/home/.ndx-data/ndx.sqlite` once the first prompt is submitted. Set optional
 `dataPath` in settings to move the SQLite data directory; legacy `sessionPath`
 is treated as the same data-directory override.
@@ -105,6 +124,7 @@ interaction remains on authenticated WebSocket JSON-RPC.
 /status     Show socket, server, and current session status.
 /init       Show the latest session initialization detail received from server events.
 /events     Show recent runtime event types recorded on the current session.
+/login      Choose Google login, GitHub login, current account, or defaultUser.
 /session    List live and saved sessions for the current workspace.
 /restoreSession N  Switch to a session by UUID or by the number shown in /session.
 /deleteSession  List other sessions for this workspace and delete the selected number.
@@ -121,6 +141,20 @@ number column is the session creation sequence for that workspace. Empty
 sessions are not listed until the first prompt assigns a number and title.
 `/deleteSession` uses the same scope, excludes the current session, and cancels
 when Enter is submitted without a number.
+
+`/login` options:
+
+```text
+1. Google login
+2. GitHub login
+3. Keep current account
+4. Switch to default user
+```
+
+Google and GitHub use device login. Set `NDX_GOOGLE_CLIENT_ID` or
+`NDX_GITHUB_CLIENT_ID` in the host CLI environment. Successful login updates the
+single shared CLI `auth.json` last-login value; the next CLI instance reuses
+that account. Option 4 stores `defaultUser` as the last-login value.
 
 ## Real Agent
 

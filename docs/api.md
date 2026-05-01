@@ -9,10 +9,11 @@ ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PO
 ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]
 ```
 
-`ndx` without a prompt on a TTY opens the interactive `ndx>` prompt. Normal
-one-shot and interactive modes start an embedded loopback session server, log in
-over the socket, then send requests to it. `ndx serve` and `ndxserver` keep the
-session server open for other clients.
+`ndx` is the host CLI. By default it finds or creates a workspace-managed Docker
+session server for the current `cwd`, logs in over the socket, then sends
+requests to it. `--mock` keeps the source-tree development path and starts an
+embedded loopback server. `ndx serve` and `ndxserver` keep the session server
+open for other clients.
 
 Interactive slash commands are session-server controls. The CLI parses the
 leading slash and sends `command/execute`; command text is not appended to model
@@ -24,6 +25,7 @@ context.
 | `/status`         | Print initialized server and current session status. |
 | `/init`           | Print the latest session initialization event.       |
 | `/events`         | Print recent runtime event types for the session.    |
+| `/login`          | Choose Google, GitHub, current, or default user.     |
 | `/session`        | List saved and live sessions for the current `cwd`.  |
 | `/restoreSession` | Switch to a session by UUID or `/session` number.    |
 | `/deleteSession`  | Delete another session for the current `cwd`.        |
@@ -46,29 +48,31 @@ The session server is a WebSocket JSON-RPC endpoint. It owns live session state,
 event fan-out, and SQLite persistence. Clients send requests and receive
 notifications; they are not authoritative session stores.
 The server also starts a separate HTTP dashboard listener. Socket methods other
-than `initialize`, `account/create`, and `account/login` require successful
-account login on that WebSocket connection.
+than `initialize`, `account/create`, `account/login`, and
+`account/socialLogin` require successful account login on that WebSocket
+connection.
 
 Requests:
 
-| Method                     | Params                                                    | Result                                    |
-| -------------------------- | --------------------------------------------------------- | ----------------------------------------- |
-| `initialize`               | none                                                      | server name, protocol, methods, bootstrap |
-| `command/list`             | none                                                      | `{ commands }`                            |
-| `account/create`           | `{ username, password? }`                                 | `{ username, createdAt }`                 |
-| `account/login`            | `{ username?, password?, clientId? }`                     | `{ username, clientId, sessionRoot }`     |
-| `account/delete`           | `{ username }`                                            | `{ username, deleted }`                   |
-| `account/changePassword`   | `{ username, oldPassword?, newPassword }`                 | `{ username, updatedAt }`                 |
-| `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`           | command result                            |
-| `session/start`            | `{ cwd?, user?, clientId? }`                              | `{ session }`                             |
-| `session/list`             | `{ cwd?, user?, clientId? }`                              | `{ sessions }`                            |
-| `session/restore`          | `{ cwd?, selector, user?, clientId? }`                    | `{ session, events }`                     |
-| `session/deleteCandidates` | `{ cwd?, currentSessionId?, user?, clientId? }`           | `{ sessions }`                            |
-| `session/delete`           | `{ cwd?, selector, currentSessionId?, user?, clientId? }` | `{ session, message }`                    |
-| `session/subscribe`        | `{ sessionId, user?, clientId? }`                         | `{ session, events }`                     |
-| `session/read`             | `{ sessionId }`                                           | `{ session, events }`                     |
-| `turn/start`               | `{ sessionId, prompt, user?, clientId? }`                 | `{ turn }`                                |
-| `turn/interrupt`           | `{ sessionId, reason? }`                                  | `{ session }`                             |
+| Method                     | Params                                                          | Result                                                   |
+| -------------------------- | --------------------------------------------------------------- | -------------------------------------------------------- |
+| `initialize`               | none                                                            | server name, protocol, methods, bootstrap                |
+| `command/list`             | none                                                            | `{ commands }`                                           |
+| `account/create`           | `{ username, password? }`                                       | `{ username, createdAt }`                                |
+| `account/login`            | `{ username?, password?, clientId? }`                           | `{ username, clientId, sessionRoot }`                    |
+| `account/socialLogin`      | `{ provider, subject?, accessToken, refreshToken?, clientId? }` | `{ username, clientId, sessionRoot, provider, created }` |
+| `account/delete`           | `{ username }`                                                  | `{ username, deleted }`                                  |
+| `account/changePassword`   | `{ username, oldPassword?, newPassword }`                       | `{ username, updatedAt }`                                |
+| `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`                 | command result                                           |
+| `session/start`            | `{ cwd?, user?, clientId? }`                                    | `{ session }`                                            |
+| `session/list`             | `{ cwd?, user?, clientId? }`                                    | `{ sessions }`                                           |
+| `session/restore`          | `{ cwd?, selector, user?, clientId? }`                          | `{ session, events }`                                    |
+| `session/deleteCandidates` | `{ cwd?, currentSessionId?, user?, clientId? }`                 | `{ sessions }`                                           |
+| `session/delete`           | `{ cwd?, selector, currentSessionId?, user?, clientId? }`       | `{ session, message }`                                   |
+| `session/subscribe`        | `{ sessionId, user?, clientId? }`                               | `{ session, events }`                                    |
+| `session/read`             | `{ sessionId }`                                                 | `{ session, events }`                                    |
+| `turn/start`               | `{ sessionId, prompt, user?, clientId? }`                       | `{ turn }`                                               |
+| `turn/interrupt`           | `{ sessionId, reason? }`                                        | `{ session }`                                            |
 
 Notifications:
 
@@ -88,8 +92,10 @@ Notifications:
 
 Server records are stored in `<dataDir>/ndx.sqlite`. The default data directory
 is `/home/.ndx-data`; settings may define `dataPath`, and legacy `sessionPath`
-is treated as a data-directory override. Empty sessions are not persisted and do
-not receive workspace numbers. The first user prompt assigns the next
+is treated as a data-directory override. Social login validates the access token
+against the provider profile endpoint, uses `provider:subject` as the server
+`userId`, creates the account on first login, and reuses it on later logins.
+Empty sessions are not persisted and do not receive workspace numbers. The first user prompt assigns the next
 monotonically increasing number for that resolved `cwd`, changes the title from
 `empty` to a shortened prompt prefix, and stores `session_started`.
 
@@ -116,6 +122,23 @@ completion, a server also checks ownership; if ownership changed mid-turn, it
 discards stale live output, reloads persisted state, and reclaims ownership.
 If the SQLite session was marked deleted by another server, the stale owner
 sends `session/deleted`, closes its sockets, and terminates the server.
+
+## Host CLI App State
+
+The host CLI stores user-interface state outside agent `.ndx` configuration.
+`NDX_CLI_STATE_DIR` overrides the directory. Without the override, Windows uses
+`LOCALAPPDATA/ndx`, Unix-like systems use `XDG_STATE_HOME/ndx` when set, and
+otherwise `~/.local/state/ndx`.
+
+Files:
+
+| File                       | Purpose                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| `auth.json`                | Single shared last-login value for all host CLI instances.                                 |
+| `workspaces/<sha256>.json` | Workspace root, compose file path, socket URL, dashboard URL, ports, image, and mock flag. |
+
+The last-login value is independent from `clientId`. Each CLI process still
+creates its own runtime `clientId`; the stored login only chooses the `userId`.
 
 HTTP `GET /` and `GET /dashboard` on the dashboard port return a minimal
 dashboard placeholder. The dashboard has no authentication or authorization.

@@ -118,6 +118,48 @@ export class SqliteSessionStore {
     return now;
   }
 
+  upsertSocialAccount(input: {
+    provider: string;
+    subject: string;
+    email?: string;
+    displayName?: string;
+    accessToken?: string;
+    refreshToken?: string;
+  }): { username: string; updatedAt: number; created: boolean } {
+    const username = `${input.provider}:${input.subject}`;
+    const now = Date.now();
+    let created = false;
+    this.transaction(() => {
+      if (!this.accountExists(username)) {
+        this.createAccount(username, "");
+        created = true;
+      }
+      this.db
+        .prepare(
+          [
+            "insert into oauth_accounts",
+            "(provider, subject, user_id, email, display_name, access_token, refresh_token, updated_at)",
+            "values (?, ?, ?, ?, ?, ?, ?, ?)",
+            "on conflict(provider, subject) do update set",
+            "email = excluded.email, display_name = excluded.display_name,",
+            "access_token = excluded.access_token, refresh_token = excluded.refresh_token,",
+            "updated_at = excluded.updated_at",
+          ].join(" "),
+        )
+        .run(
+          input.provider,
+          input.subject,
+          username,
+          input.email ?? null,
+          input.displayName ?? null,
+          input.accessToken ?? null,
+          input.refreshToken ?? null,
+          now,
+        );
+    });
+    return { username, updatedAt: now, created };
+  }
+
   createSession(input: {
     id: string;
     user: string;
@@ -287,6 +329,17 @@ export class SqliteSessionStore {
         user_id text not null references users(id) on delete cascade,
         kind text,
         last_seen_at integer not null
+      );
+      create table if not exists oauth_accounts (
+        provider text not null,
+        subject text not null,
+        user_id text not null references users(id) on delete cascade,
+        email text,
+        display_name text,
+        access_token text,
+        refresh_token text,
+        updated_at integer not null,
+        primary key(provider, subject)
       );
       create table if not exists sessions (
         id text primary key,

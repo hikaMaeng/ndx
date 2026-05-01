@@ -20,12 +20,17 @@ and third-party trees are intentionally not part of this workspace.
 ## Quick Start
 
 ```bash
-yarn install --immutable
-yarn test
-node dist/src/cli/main.js --mock "create a file named tmp/verify.txt with text verified"
+npm install -g @neurondev/ndx
+ndx
 ```
 
-Use a real model by configuring provider settings in `.ndx/settings.json` or local global `/home/.ndx/settings.json`, then running without `--mock`.
+The host CLI looks for a workspace-managed Docker session server. If none is
+reachable, it asks a short numbered setup question, writes compose state for the
+current folder, starts the container, then connects. Use `--mock` for local
+source-tree development without Docker.
+
+Use a real model by configuring provider settings in `.ndx/settings.json` or
+local global `/home/.ndx/settings.json`.
 
 ## Docker Verification
 
@@ -36,8 +41,9 @@ npm run deploy
 The deploy script builds TypeScript locally, then builds the Docker image by cloning the current pushed Git branch selected by `NDX_GIT_REF`, runs tests in Docker, and executes the mock agent through the shell tool. Runtime workspace and global settings are bind-mounted under `./docker/volume`.
 
 `ndx serve` and `ndxserver` expose an authenticated WebSocket socket port plus
-an unauthenticated dashboard HTTP port. Accounts and sessions are stored in
-SQLite at `/home/.ndx-data/ndx.sqlite` by default.
+an unauthenticated dashboard HTTP port. Accounts, social account links, and
+sessions are stored in SQLite at `/home/.ndx-data/ndx.sqlite` by default. Host
+CLI last-login state is stored in the CLI app-state directory, not in `.ndx`.
 
 ## License
 

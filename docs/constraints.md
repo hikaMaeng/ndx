@@ -27,6 +27,15 @@
 - `/home/.ndx` bootstrap information remains code-managed and is not stored in SQLite.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
 
+## Host CLI State
+
+- Host CLI app state is separate from `/home/.ndx` and project `.ndx`.
+- `NDX_CLI_STATE_DIR` overrides the app-state directory.
+- `auth.json` contains one shared last-login value for all host CLI instances.
+- `workspaces/<sha256>.json` contains workspace server connection metadata.
+- `clientId` is never persisted as the last-login identity; each CLI or plugin
+  runtime instance owns its own client id.
+
 ## Repository Shape
 
 - The root package is the only package in this repository.
@@ -41,10 +50,15 @@
 
 - `ndx serve` and `ndxserver` expose two ports: WebSocket JSON-RPC and HTTP dashboard.
 - The dashboard has no authentication or authorization.
-- WebSocket methods other than `initialize`, `account/create`, and
-  `account/login` require successful account login on that connection.
-- Authentication checks username and password only. Authorization is not
-  implemented yet.
+- WebSocket methods other than `initialize`, `account/create`,
+  `account/login`, and `account/socialLogin` require successful account login
+  on that connection.
+- Password authentication checks username and password. Social authentication
+  validates the supplied access token against the provider profile endpoint and
+  maps the account to `provider:subject`.
+- The authenticated WebSocket connection user is authoritative for later
+  session, command, and turn requests.
+- Authorization beyond user-scoped session filtering is not implemented yet.
 
 ## Search
 

@@ -28,12 +28,18 @@ except for the two `.gitkeep` directory anchors.
 ## Runtime Flow
 
 1. CLI resolves `cwd` and reads existing `/home/.ndx/settings.json`, nearest project `.ndx/settings.json`, and `/home/.ndx/search.json`. The config loader bootstraps missing required global `.ndx` directories and core tools. In TTY CLI runs with no settings, the CLI asks setup questions, writes project `.ndx/settings.json`, then reloads config.
-2. CLI prints the configured robot startup art, then starts or connects to a WebSocket session server. `ndx serve` keeps that server running; normal one-shot and interactive CLI modes use an embedded loopback server.
+2. Host CLI startup resolves CLI app state, then attaches to a workspace-managed
+   Docker WebSocket session server. If the state is missing or stale, it
+   creates compose state for the current folder, starts the container, and then
+   connects. `--mock` and `NDX_EMBEDDED_SERVER=1` keep the source-tree embedded
+   loopback path.
 3. Session server startup re-checks required global `.ndx` elements and installs any missing core directories, core tool package files, and skills directory before accepting session work.
 4. The CLI is a session-server client. `CliSessionController` sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
 5. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
 6. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-7. The session server stores accounts, sessions, request records, runtime events, notifications, and ownership in SQLite under the configured data directory.
+7. The session server stores accounts, social account links, sessions, request
+   records, runtime events, notifications, and ownership in SQLite under the
+   configured data directory.
 8. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
 9. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
 10. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
@@ -86,12 +92,16 @@ Client programs must not maintain authoritative live session or persistence stat
 `src/cli/session-client.ts` owns CLI-only session behavior:
 
 - robot plus uppercase `NDX` startup logo and socket initialization display
+- last-login replay from host CLI app state
+- `/login` menu for Google, GitHub, current account, and `defaultUser`
 - session start status display
 - `/status`, `/init`, `/events`, `/session`, `/restoreSession`,
   `/deleteSession`, and `/interrupt`
 - runtime notification formatting for human output
 
-The CLI does not inspect `.ndx` directly after config loading and does not persist live session state. Future server-side initialization detail should arrive through notifications or initialize responses and be rendered by this controller without changing the model prompt.
+The CLI does not persist live session state. Host CLI app state persists only
+last-login and workspace server connection metadata; `/home/.ndx` and project
+`.ndx` remain agent runtime configuration.
 
 ## SQLite Persistence
 
@@ -100,9 +110,10 @@ The default data directory is `/home/.ndx-data`; settings may define
 `dataPath`, and legacy `sessionPath` is treated as a data-directory override.
 `/home/.ndx` bootstrap state remains code-managed and is not stored in SQLite.
 
-SQLite tables own users, projects, sessions, session events, and session
-owners. `defaultUser` with an empty password is created on first open so local
-CLI clients can authenticate without provisioning a separate account.
+SQLite tables own users, OAuth account links, projects, sessions, session
+events, and session owners. `defaultUser` with an empty password is created on
+first open so local CLI clients can authenticate without provisioning a
+separate account.
 
 When a WebSocket connection closes without an explicit session shutdown, the
 server removes that connection from session subscriber sets. If a persisted
@@ -125,11 +136,11 @@ holding that session detects the deleted SQLite row on the next prompt or turn
 completion, emits `session/deleted`, closes its socket clients, and terminates.
 
 The socket server requires authentication for non-public JSON-RPC methods.
-`initialize`, `account/create`, and `account/login` are public; session,
-command, turn, account mutation, and delete methods require a successful
-`account/login`. The CLI assigns a fresh client id per controller instance,
-logs in as `defaultUser` with an empty password by default, and includes
-user/client identity in session and turn requests.
+`initialize`, `account/create`, `account/login`, and `account/socialLogin` are
+public; session, command, turn, account mutation, and delete methods require a
+successful login. The CLI assigns a fresh client id per controller instance.
+The server treats the authenticated connection user as authoritative and does
+not rely on later request params to choose the user.
 
 The service owns two listeners: a WebSocket socket port and a dashboard HTTP
 port. `ndx serve` and `ndxserver` print both addresses. Normal HTTP requests to

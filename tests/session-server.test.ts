@@ -537,6 +537,71 @@ test("session server exposes account methods, client identity, and dashboard pla
   }
 });
 
+test("session server creates social login accounts", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-social-"));
+  const globalDir = join(root, "home", ".ndx");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        sub: "google-subject-1",
+        email: "user@example.test",
+        name: "Example User",
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        paths: { globalDir, dataDir: join(root, "data") },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    client = await SessionClient.connect(address.url);
+    await client.request("initialize");
+    const login = await client.request<{
+      username: string;
+      clientId: string;
+      sessionRoot: string;
+      provider: string;
+      created: boolean;
+    }>("account/socialLogin", {
+      provider: "google",
+      subject: "google-subject-1",
+      accessToken: "token",
+      clientId: "social-client-1",
+    });
+
+    assert.deepEqual(login, {
+      username: "google:google-subject-1",
+      clientId: "social-client-1",
+      sessionRoot: join(root, "data"),
+      provider: "google",
+      created: true,
+    });
+    const start = await client.request<{
+      session: { user: string; clientIds: string[] };
+    }>("session/start", { cwd: root });
+    assert.equal(start.session.user, "google:google-subject-1");
+    assert.deepEqual(start.session.clientIds, ["social-client-1"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    client?.close();
+    await server?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("session server restores a saved workspace session by id or number", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-restore-"));
   const globalDir = join(root, "home", ".ndx");

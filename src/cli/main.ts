@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
+import { createLoginStore } from "./auth.js";
 import { createProjectSettingsWithWizard } from "./settings-wizard.js";
 import {
   CliSessionController,
   interactiveHelp,
   printWelcomeLogo,
 } from "./session-client.js";
+import { ensureWorkspaceServer } from "./workspace.js";
 import { loadConfig } from "../config/index.js";
 import { createRoutedModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
@@ -43,6 +45,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (shouldUseManagedWorkspace(args)) {
+    await runManagedWorkspace(args);
+    return;
+  }
+
   const { config, sources } = await loadConfigForCli(args);
   if (sources.length > 0) {
     console.error(`[config] ${sources.join(", ")}`);
@@ -65,7 +72,11 @@ async function main(): Promise<void> {
 
   const prompt = args.prompt ?? readStdin();
   await withEmbeddedServer({ args, config, sources }, async (client) => {
-    const session = new CliSessionController({ client, cwd: args.cwd });
+    const session = new CliSessionController({
+      client,
+      cwd: args.cwd,
+      loginStore: createLoginStore(),
+    });
     await session.initialize();
     await session.startSession();
     await session.runPrompt(prompt);
@@ -110,6 +121,7 @@ async function runInteractive(options: {
       client,
       cwd: options.args.cwd,
       question: (prompt) => rl.question(prompt),
+      loginStore: createLoginStore(),
     });
     await session.initialize();
 
@@ -174,12 +186,65 @@ async function runConnected(options: {
     const session = new CliSessionController({
       client,
       cwd: options.args.cwd,
+      loginStore: createLoginStore(),
     });
     await session.initialize();
     await session.startSession();
     await session.runPrompt(options.prompt);
   } finally {
     client.close();
+  }
+}
+
+async function runManagedWorkspace(args: CliArgs): Promise<void> {
+  const rl =
+    args.interactive && process.stdin.isTTY
+      ? createInterface({ input, output })
+      : undefined;
+  try {
+    const state = await ensureWorkspaceServer({
+      cwd: args.cwd,
+      question: rl === undefined ? undefined : (prompt) => rl.question(prompt),
+      print: (message) => console.error(message),
+    });
+    const client = await SessionClient.connect(state.socketUrl);
+    try {
+      const session = new CliSessionController({
+        client,
+        cwd: args.cwd,
+        loginStore: createLoginStore(),
+        question:
+          rl === undefined ? undefined : (prompt) => rl.question(prompt),
+      });
+      await session.initialize();
+      if (args.interactive) {
+        await selectInitialSession(session, requireReadline(rl));
+        while (true) {
+          const prompt = (await requireReadline(rl).question("ndx> ")).trim();
+          if (prompt.length === 0) {
+            if (session.shouldExit()) {
+              break;
+            }
+            continue;
+          }
+          const command = await session.handleCommand(prompt);
+          if (command.handled && command.shouldExit) {
+            break;
+          }
+          if (command.handled) {
+            continue;
+          }
+          await session.runPrompt(prompt);
+        }
+        return;
+      }
+      await session.startSession();
+      await session.runPrompt(args.prompt ?? readStdin());
+    } finally {
+      client.close();
+    }
+  } finally {
+    rl?.close();
   }
 }
 
@@ -235,6 +300,21 @@ function createSessionServer(options: {
     createClient: (config) =>
       providerClient ?? createClient(options.args.mock, config),
   });
+}
+
+function shouldUseManagedWorkspace(args: CliArgs): boolean {
+  return (
+    args.mode === "run" && !args.mock && process.env.NDX_EMBEDDED_SERVER !== "1"
+  );
+}
+
+function requireReadline(
+  rl: ReturnType<typeof createInterface> | undefined,
+): ReturnType<typeof createInterface> {
+  if (rl === undefined) {
+    throw new Error("interactive workspace setup requires a TTY");
+  }
+  return rl;
 }
 
 async function listen(

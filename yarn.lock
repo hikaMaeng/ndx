@@ -5,18 +5,9 @@ __metadata:
   version: 9
   cacheKey: 10c0
 
-"@types/node@npm:^20.19.18":
-  version: 20.19.39
-  resolution: "@types/node@npm:20.19.39"
-  dependencies:
-    undici-types: "npm:~6.21.0"
-  checksum: 10c0/1d16da7b5f47a7415b827fcf3b94d279febf4c14671afec74a03e47856b5270023d9beb1b9aeab4d3b622fd97d61a60206cfc2cca588663181331bc592468289
-  languageName: node
-  linkType: hard
-
-"ndx@workspace:.":
+"@neurondev/ndx@workspace:.":
   version: 0.0.0-use.local
-  resolution: "ndx@workspace:."
+  resolution: "@neurondev/ndx@workspace:."
   dependencies:
     "@types/node": "npm:^20.19.18"
     prettier: "npm:^3.5.3"
@@ -26,6 +17,15 @@ __metadata:
     ndxserver: dist/src/cli/main.js
   languageName: unknown
   linkType: soft
+
+"@types/node@npm:^20.19.18":
+  version: 20.19.39
+  resolution: "@types/node@npm:20.19.39"
+  dependencies:
+    undici-types: "npm:~6.21.0"
+  checksum: 10c0/1d16da7b5f47a7415b827fcf3b94d279febf4c14671afec74a03e47856b5270023d9beb1b9aeab4d3b622fd97d61a60206cfc2cca588663181331bc592468289
+  languageName: node
+  linkType: hard
 
 "prettier@npm:^3.5.3":
   version: 3.8.3

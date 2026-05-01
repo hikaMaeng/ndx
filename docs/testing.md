@@ -47,10 +47,14 @@ npm run deploy
 - Runtime session event order for session, turn, tool, model message, and completion.
 - Runtime interrupt event contract.
 - CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
+- CLI `/login` default-user switching and shared login-store update.
+- Workspace-managed Docker bootstrap compose-state generation without placing
+  CLI login state in project `.ndx`.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
 - Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.
 - Account create/login/password-change methods and WebSocket client identity.
+- Social login account creation from a verified provider profile response.
 - Socket authentication requirement for session, command, and turn methods.
 - Dashboard placeholder HTTP response and stable browser locator contract.
 - Workspace-scoped session listing, restore by session id or list number, and
