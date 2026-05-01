@@ -44,6 +44,7 @@ yarn-error.log*
 # env
 .env*
 !.env.example
+.ndx/settings.json
 
 # package
 *.tgz

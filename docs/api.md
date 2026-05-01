@@ -160,38 +160,38 @@ Canonical shape:
 ```json
 {
   "model": {
-    "session": ["qwen-main-a", "qwen-main-b"],
-    "worker": ["qwen-worker-a", "qwen-worker-b"],
-    "reviewer": ["qwen-review-a"],
+    "session": ["local-main-a", "local-main-b"],
+    "worker": ["local-worker-a", "local-worker-b"],
+    "reviewer": ["local-review-a"],
     "custom": {
-      "deep": ["qwen-review-a", "qwen-review-b"],
-      "fast": "qwen-main-a"
+      "deep": ["local-review-a", "local-review-b"],
+      "fast": "local-main-a"
     }
   },
   "dataPath": "/mnt/state/ndx-data",
   "providers": {
-    "lmstudio-a": {
+    "local-openai-a": {
       "type": "openai",
       "key": "",
-      "url": "http://192.168.0.6:12345/v1"
+      "url": "http://127.0.0.1:12345/v1"
     },
-    "lmstudio-b": {
+    "local-openai-b": {
       "type": "openai",
       "key": "",
-      "url": "http://192.168.0.7:12345/v1"
+      "url": "http://127.0.0.1:12346/v1"
     }
   },
   "models": {
-    "qwen-main-a": {
-      "name": "qwen3.6-35b-a3b:mm",
-      "provider": "lmstudio-a",
+    "local-main-a": {
+      "name": "local-model-a",
+      "provider": "local-openai-a",
       "maxContext": 262000,
       "effort": ["low", "medium", "high"],
       "think": true
     },
-    "qwen-main-b": {
-      "name": "qwen3.6-35b-a3b:mm",
-      "provider": "lmstudio-b",
+    "local-main-b": {
+      "name": "local-model-b",
+      "provider": "local-openai-b",
       "maxContext": 262000,
       "effort": ["high"],
       "think": true,

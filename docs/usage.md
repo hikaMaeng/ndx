@@ -137,12 +137,12 @@ model behavior. Object form requires `session` and may declare `worker`,
 ```json
 {
   "model": {
-    "session": ["qwen-main-a", "qwen-main-b"],
-    "worker": ["qwen-worker-a", "qwen-worker-b"],
-    "reviewer": ["qwen-review-a"],
+    "session": ["local-main-a", "local-main-b"],
+    "worker": ["local-worker-a", "local-worker-b"],
+    "reviewer": ["local-review-a"],
     "custom": {
-      "deep": ["qwen-review-a", "qwen-review-b"],
-      "fast": "qwen-main-a"
+      "deep": ["local-review-a", "local-review-b"],
+      "fast": "local-main-a"
     }
   }
 }
@@ -162,9 +162,9 @@ parameters:
 ```json
 {
   "models": {
-    "qwen-high": {
-      "name": "qwen3.6-35b-a3b:mm",
-      "provider": "lmstudio",
+    "local-high": {
+      "name": "local-model-high",
+      "provider": "local-openai",
       "maxContext": 262000,
       "effort": ["low", "medium", "high"],
       "think": true,
@@ -209,14 +209,13 @@ NDX_GIT_REF=codex/example-feature docker compose build --no-cache ndx-agent
 
 ## Local OpenAI-Compatible Model
 
-The project `.ndx/settings.json` defaults to:
-
-- `provider`: `lmstudio`
-- `url`: `http://192.168.0.6:12345/v1`
-- `model`: `qwen3.6-35b-a3b:tr`
+This repository does not ship a project `.ndx/settings.json` with a default
+real model. If neither `/home/.ndx/settings.json` nor a project settings file is
+found, interactive CLI startup uses the settings wizard to create one.
 
 Start the container. The default service starts `ndxserver` immediately and
-publishes both service ports:
+publishes both service ports in mock mode so service wiring can be verified
+without installing a real model configuration:
 
 - WebSocket JSON-RPC: `ws://127.0.0.1:45123`
 - Dashboard HTTP: `http://127.0.0.1:45124`
@@ -224,7 +223,7 @@ publishes both service ports:
 ```bash
 docker compose up -d --build ndx-agent
 docker compose logs --tail 80 ndx-agent
-docker compose exec ndx-agent ndx "간단히 준비 완료라고 응답해"
+docker compose exec ndx-agent ndx --mock "간단히 준비 완료라고 응답해"
 ```
 
 Override the host ports or advertised URLs with environment variables:
@@ -249,11 +248,10 @@ That opens the ndx prompt. Submit tasks at `ndx>`, use `/help` for local command
 ndx "원하는 작업"
 ```
 
-The default compose service stays alive by running `ndxserver` for
-`/workspace`. On first startup, if the `/home/.ndx` volume has no
-`settings.json`, the image copies the repository's non-secret default settings
-from `/opt/ndx/.ndx/settings.json` into `/home/.ndx/settings.json` before
-starting the server. Files created by the agent persist in
+The default compose service stays alive by running `ndxserver --mock` for
+`/workspace`. It does not copy repository settings into `/home/.ndx`; real model
+settings remain owned by the normal global/project settings cascade and the
+interactive wizard. Files created by the agent persist in
 `./docker/volume/workspace`, and global settings persist in
 `./docker/volume/home-ndx`.
 
@@ -261,6 +259,5 @@ Compose uses the image default command. Container startup logs include image
 provenance lines prefixed with `[ndx-image]`. Those lines record the package
 version, GitHub remote, `NDX_GIT_REF`, cloned commit SHA, branch, commit date,
 commit subject, Node version, and Yarn version. Startup logs also include
-`[ndx-service]` lines for any installed default global settings, the socket bind
-address, dashboard bind address, advertised socket URL, advertised dashboard URL,
-and runtime cwd.
+`[ndx-service]` lines for the socket bind address, dashboard bind address,
+advertised socket URL, advertised dashboard URL, and runtime cwd.

@@ -26,8 +26,8 @@ and remains reachable through the host-published ports.
 - Compose config contains published socket and dashboard ports.
 - Startup logs include `[ndx-image]` provenance and `[ndx-service]` bind/URL
   lines.
-- On an empty `/home/.ndx` compose volume, startup installs the repository's
-  non-secret default settings before launching the server.
+- On an empty `/home/.ndx` compose volume, startup does not copy repository
+  settings; the default service uses `--mock` for compose wiring verification.
 - The service process is `ndxserver`, not `sleep infinity`.
 - Dashboard locator contract is reachable through the published dashboard port.
 - A CLI client can connect through the published socket port.
