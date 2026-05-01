@@ -21,6 +21,13 @@ npm test
 ### Run
 
 ```bash
+npm install -g @neurondev/ndx
+ndx
+```
+
+Source-tree development can bypass workspace Docker:
+
+```bash
 node dist/src/cli/main.js --mock "create tmp/example.txt"
 ```
 

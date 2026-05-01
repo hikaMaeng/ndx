@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  defaultLogin,
+  performSocialDeviceLogin,
+  type LoginStore,
+  type StoredLogin,
+} from "./auth.js";
 import type { SessionNotification } from "../session/client.js";
 import type {
   RuntimeEventMsg,
@@ -14,6 +20,7 @@ export interface CliSessionRuntime {
   question?: (prompt: string) => Promise<string>;
   user?: string;
   clientId?: string;
+  loginStore?: LoginStore;
 }
 
 export interface CliSessionTransport {
@@ -79,8 +86,9 @@ export class CliSessionController {
   private readonly print: (message: string) => void;
   private readonly printError: (message: string) => void;
   private readonly question: ((prompt: string) => Promise<string>) | undefined;
-  private readonly user: string;
   private readonly clientId: string;
+  private readonly loginStore: LoginStore | undefined;
+  private login: StoredLogin;
   private initializeResult: InitializeResult | undefined;
   private session: SessionSummary | undefined;
   private sessionConfigured: SessionConfiguredEvent | undefined;
@@ -92,8 +100,13 @@ export class CliSessionController {
     this.print = options.print ?? console.log;
     this.printError = options.printError ?? console.error;
     this.question = options.question;
-    this.user = options.user ?? "defaultUser";
     this.clientId = options.clientId ?? randomUUID();
+    this.loginStore = options.loginStore;
+    this.login =
+      options.loginStore?.load() ??
+      (options.user === undefined
+        ? defaultLogin()
+        : { kind: "password", username: options.user, password: "" });
     this.client.onNotification((notification) => {
       if (notification.method !== "session/deleted") {
         return;
@@ -118,11 +131,7 @@ export class CliSessionController {
   async initialize(): Promise<void> {
     this.initializeResult =
       await this.client.request<InitializeResult>("initialize");
-    await this.client.request("account/login", {
-      username: this.user,
-      password: "",
-      clientId: this.clientId,
-    });
+    await this.loginWithStoredIdentity(this.login);
     this.printError(formatInitializeResult(this.initializeResult));
   }
 
@@ -222,6 +231,10 @@ export class CliSessionController {
     if (parsed === undefined) {
       return { handled: false };
     }
+    if (parsed.name === "login") {
+      await this.handleLoginCommand();
+      return { handled: true, shouldExit: false };
+    }
     if (parsed.name === "deleteSession") {
       await this.handleDeleteSession(parsed.args);
       return {
@@ -256,6 +269,74 @@ export class CliSessionController {
 
   shouldExit(): boolean {
     return this.deletedSessionMessage !== undefined;
+  }
+
+  private async loginWithStoredIdentity(login: StoredLogin): Promise<void> {
+    if (login.kind === "social") {
+      await this.client.request("account/socialLogin", {
+        provider: login.provider,
+        subject: login.subject,
+        email: login.email,
+        displayName: login.displayName,
+        accessToken: login.accessToken,
+        refreshToken: login.refreshToken,
+        clientId: this.clientId,
+      });
+      return;
+    }
+    await this.client.request("account/login", {
+      username: login.username,
+      password: login.kind === "password" ? login.password : "",
+      clientId: this.clientId,
+    });
+  }
+
+  private async handleLoginCommand(): Promise<void> {
+    if (this.question === undefined) {
+      this.print("login requires an interactive CLI");
+      return;
+    }
+    this.print(
+      [
+        "login",
+        "1. Google login",
+        "2. GitHub login",
+        "3. Keep current account",
+        "4. Switch to default user",
+      ].join("\n"),
+    );
+    const answer = (await this.question("login> ")).trim();
+    if (answer === "1" || answer === "2") {
+      const provider = answer === "1" ? "google" : "github";
+      const social = await performSocialDeviceLogin(provider, {
+        question: this.question,
+        print: this.print,
+      });
+      const login: StoredLogin = {
+        kind: "social",
+        provider: social.provider,
+        username: social.username,
+        subject: social.subject,
+        email: social.email,
+        displayName: social.displayName,
+        accessToken: social.accessToken,
+        refreshToken: social.refreshToken,
+      };
+      await this.loginWithStoredIdentity(login);
+      this.login = login;
+      this.loginStore?.save(login);
+      this.print(`logged in as ${login.username}`);
+      return;
+    }
+    if (answer === "4") {
+      const login = defaultLogin();
+      await this.loginWithStoredIdentity(login);
+      this.login = login;
+      this.loginStore?.save(login);
+      this.print("logged in as defaultUser");
+      return;
+    }
+    this.print("kept current account");
   }
 
   private async handleDeleteSession(
@@ -324,8 +405,8 @@ export class CliSessionController {
 
   private requestParams<T extends Record<string, unknown>>(
     params: T,
-  ): T & { user: string; clientId: string } {
-    return { ...params, user: this.user, clientId: this.clientId };
+  ): T & { clientId: string } {
+    return { ...params, clientId: this.clientId };
   }
 }
 
@@ -375,6 +456,7 @@ export function interactiveHelp(): string {
     "  /status     Show socket, server, and session status",
     "  /init       Show latest session initialization details",
     "  /events     Show recent runtime event types",
+    "  /login      Change Google, GitHub, current, or default user login",
     "  /session    List sessions for this workspace",
     "  /restoreSession Restore a session by id or list number",
     "  /deleteSession  Delete a saved session for this workspace",

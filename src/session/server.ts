@@ -173,7 +173,9 @@ export class SessionServer {
     params: unknown,
   ): { user: string; clientId: string } {
     const user =
-      stringParam(params, "user") ?? connection?.user ?? "defaultUser";
+      connection?.authenticated === true
+        ? connection.user
+        : (stringParam(params, "user") ?? connection?.user ?? "defaultUser");
     const clientId: string =
       stringParam(params, "clientId") ?? connection?.clientId ?? randomUUID();
     if (connection !== undefined) {
@@ -331,6 +333,7 @@ export class SessionServer {
             "turn/interrupt",
             "account/create",
             "account/login",
+            "account/socialLogin",
             "account/delete",
             "account/changePassword",
           ],
@@ -339,6 +342,8 @@ export class SessionServer {
         return this.createAccount(request.params);
       case "account/login":
         return this.loginAccount(connection, request.params);
+      case "account/socialLogin":
+        return this.loginSocialAccount(connection, request.params);
       case "account/delete":
         return this.deleteAccount(request.params);
       case "account/changePassword":
@@ -346,17 +351,17 @@ export class SessionServer {
       case "command/list":
         return { commands: BUILT_IN_SLASH_COMMANDS };
       case "command/execute":
-        return this.executeCommand(request.params);
+        return this.executeCommand(connection, request.params);
       case "session/start":
         return this.startSession(connection, request.params);
       case "session/list":
-        return this.listSessions(request.params);
+        return this.listSessions(connection, request.params);
       case "session/restore":
         return this.restoreSession(connection, request.params);
       case "session/deleteCandidates":
-        return this.deleteSessionCandidates(request.params);
+        return this.deleteSessionCandidates(connection, request.params);
       case "session/delete":
-        return this.deleteSession(request.params);
+        return this.deleteSession(connection, request.params);
       case "session/subscribe":
         return this.subscribeSession(connection, request.params);
       case "session/read":
@@ -444,6 +449,42 @@ export class SessionServer {
     };
   }
 
+  private async loginSocialAccount(
+    connection: WebSocketConnection,
+    params: unknown,
+  ): Promise<unknown> {
+    const provider = requiredStringParam(params, "provider");
+    const accessToken = requiredStringParam(params, "accessToken");
+    const suppliedSubject = stringParam(params, "subject");
+    const clientId: string = stringParam(params, "clientId") ?? randomUUID();
+    const profile = await verifiedSocialProfile(provider, accessToken);
+    if (
+      suppliedSubject !== undefined &&
+      suppliedSubject.length > 0 &&
+      suppliedSubject !== profile.subject
+    ) {
+      throw new Error("social login subject does not match access token");
+    }
+    const account = this.store.upsertSocialAccount({
+      provider,
+      subject: profile.subject,
+      email: profile.email ?? stringParam(params, "email"),
+      displayName: profile.displayName ?? stringParam(params, "displayName"),
+      accessToken,
+      refreshToken: stringParam(params, "refreshToken"),
+    });
+    connection.user = account.username;
+    connection.clientId = clientId;
+    connection.authenticated = true;
+    return {
+      username: account.username,
+      clientId,
+      sessionRoot: this.dataDir(),
+      provider,
+      created: account.created,
+    };
+  }
+
   private deleteAccount(params: unknown): unknown {
     const username = requiredStringParam(params, "username");
     if (username === "defaultUser") {
@@ -497,14 +538,20 @@ export class SessionServer {
     };
   }
 
-  private listSessions(params: unknown): unknown {
-    const context = this.clientContext(undefined, params);
+  private listSessions(
+    connection: WebSocketConnection,
+    params: unknown,
+  ): unknown {
+    const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     return { sessions: this.numberedSessionsForCwd(context.user, cwd) };
   }
 
-  private deleteSessionCandidates(params: unknown): unknown {
-    const context = this.clientContext(undefined, params);
+  private deleteSessionCandidates(
+    connection: WebSocketConnection,
+    params: unknown,
+  ): unknown {
+    const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     const currentSessionId = stringParam(params, "currentSessionId");
     return {
@@ -516,8 +563,11 @@ export class SessionServer {
     };
   }
 
-  private deleteSession(params: unknown): unknown {
-    const context = this.clientContext(undefined, params);
+  private deleteSession(
+    connection: WebSocketConnection,
+    params: unknown,
+  ): unknown {
+    const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
     const selector = requiredStringParam(params, "selector");
     const currentSessionId = stringParam(params, "currentSessionId");
@@ -553,8 +603,12 @@ export class SessionServer {
     };
   }
 
-  private executeCommand(params: unknown): SlashCommandResult {
+  private executeCommand(
+    connection: WebSocketConnection,
+    params: unknown,
+  ): SlashCommandResult {
     const execution = slashCommandExecution(params);
+    const context = this.clientContext(connection, params);
     const definition = resolveSlashCommand(execution.name);
     if (definition === undefined) {
       return {
@@ -619,7 +673,7 @@ export class SessionServer {
           handled: true,
           action: "print",
           output: this.formatSessions(
-            stringParam(params, "user") ?? "defaultUser",
+            context.user,
             execution.cwd ?? this.options.cwd,
           ),
         };
@@ -633,8 +687,8 @@ export class SessionServer {
         }
         const session = this.restoreSessionBySelector(
           undefined,
-          stringParam(params, "user") ?? "defaultUser",
-          stringParam(params, "clientId") ?? "cli",
+          context.user,
+          context.clientId,
           execution.cwd ?? this.options.cwd,
           execution.args.trim(),
         );
@@ -651,14 +705,14 @@ export class SessionServer {
             handled: true,
             action: "deleteSession",
             output: this.formatDeleteSessions(
-              stringParam(params, "user") ?? "defaultUser",
+              context.user,
               execution.cwd ?? this.options.cwd,
               execution.sessionId,
             ),
           };
         }
         const deleted = this.deleteSessionBySelector(
-          stringParam(params, "user") ?? "defaultUser",
+          context.user,
           execution.cwd ?? this.options.cwd,
           execution.args.trim(),
           execution.sessionId,
@@ -1594,8 +1648,75 @@ function isPublicMethod(method: string | undefined): boolean {
   return (
     method === "initialize" ||
     method === "account/create" ||
-    method === "account/login"
+    method === "account/login" ||
+    method === "account/socialLogin"
   );
+}
+
+async function verifiedSocialProfile(
+  provider: string,
+  accessToken: string,
+): Promise<{ subject: string; email?: string; displayName?: string }> {
+  if (provider === "github") {
+    const profile = await fetchJsonWithBearer(
+      "https://api.github.com/user",
+      accessToken,
+    );
+    return {
+      subject: String(requiredProfileField(profile, "id")),
+      email: optionalProfileString(profile, "email"),
+      displayName:
+        optionalProfileString(profile, "login") ??
+        optionalProfileString(profile, "name"),
+    };
+  }
+  if (provider === "google") {
+    const profile = await fetchJsonWithBearer(
+      "https://openidconnect.googleapis.com/v1/userinfo",
+      accessToken,
+    );
+    return {
+      subject: String(requiredProfileField(profile, "sub")),
+      email: optionalProfileString(profile, "email"),
+      displayName: optionalProfileString(profile, "name"),
+    };
+  }
+  throw new Error(`unsupported social login provider: ${provider}`);
+}
+
+async function fetchJsonWithBearer(
+  url: string,
+  token: string,
+): Promise<unknown> {
+  const response = await fetch(url, {
+    headers: {
+      "accept": "application/json",
+      "authorization": `Bearer ${token}`,
+      "user-agent": "ndx-session-server",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`social login profile request failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+function requiredProfileField(profile: unknown, field: string): unknown {
+  if (profile === null || typeof profile !== "object" || !(field in profile)) {
+    throw new Error(`social login profile missing ${field}`);
+  }
+  return (profile as Record<string, unknown>)[field];
+}
+
+function optionalProfileString(
+  profile: unknown,
+  field: string,
+): string | undefined {
+  if (profile === null || typeof profile !== "object" || !(field in profile)) {
+    return undefined;
+  }
+  const value = (profile as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : undefined;
 }
 
 function listenHttp(

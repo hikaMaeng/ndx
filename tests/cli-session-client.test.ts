@@ -10,6 +10,7 @@ import {
 import type { SessionNotification } from "../src/session/client.js";
 
 const cliIdentity = { user: "defaultUser", clientId: "client-test" };
+const clientIdentity = { clientId: "client-test" };
 
 test("CLI session controller initializes socket, starts session, and renders status", async () => {
   const transport = new FakeTransport();
@@ -105,17 +106,56 @@ test("CLI session controller records initialization events outside prompt contex
       args: undefined,
       sessionId: "session-1",
       cwd: "/workspace",
-      ...cliIdentity,
+      ...clientIdentity,
     },
   });
 });
 
 test("interactive help advertises session client commands", () => {
   assert.equal(interactiveHelp().includes("/interrupt"), true);
+  assert.equal(interactiveHelp().includes("/login"), true);
   assert.equal(interactiveHelp().includes("/events"), true);
   assert.equal(interactiveHelp().includes("/session"), true);
   assert.equal(interactiveHelp().includes("/restoreSession"), true);
   assert.equal(interactiveHelp().includes("/deleteSession"), true);
+});
+
+test("CLI login command switches to default user and updates login store", async () => {
+  const transport = new FakeTransport();
+  const stdout: string[] = [];
+  const saved: unknown[] = [];
+  const controller = new CliSessionController({
+    client: transport,
+    cwd: "/workspace",
+    clientId: "client-test",
+    print: (message) => stdout.push(message),
+    question: async () => "4",
+    loginStore: {
+      load: () => ({
+        kind: "password",
+        username: "alice",
+        password: "secret",
+      }),
+      save: (login) => saved.push(login),
+      path: () => "/tmp/auth.json",
+    },
+  });
+
+  await controller.initialize();
+  const result = await controller.handleCommand("/login");
+
+  assert.deepEqual(result, { handled: true, shouldExit: false });
+  assert.deepEqual(
+    transport.requests
+      .filter((request) => request.method === "account/login")
+      .map((request) => request.params),
+    [
+      { username: "alice", password: "secret", clientId: "client-test" },
+      { username: "defaultUser", password: "", clientId: "client-test" },
+    ],
+  );
+  assert.deepEqual(saved, [{ kind: "default", username: "defaultUser" }]);
+  assert.equal(stdout.at(-1), "logged in as defaultUser");
 });
 
 test("welcome logo emits the configured robot art", () => {
@@ -175,7 +215,7 @@ test("CLI session controller switches active session after restoreSession comman
       args: "2",
       sessionId: "session-1",
       cwd: "/workspace",
-      ...cliIdentity,
+      ...clientIdentity,
     },
   });
 
@@ -235,7 +275,7 @@ test("CLI session controller prompts before deleting another workspace session",
       cwd: "/workspace",
       selector: "2",
       currentSessionId: "session-1",
-      ...cliIdentity,
+      ...clientIdentity,
     },
   });
 });

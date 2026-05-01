@@ -111,6 +111,12 @@ const NDX_SESSION_COMMANDS: SlashCommandDefinition[] = [
     implemented: true,
   },
   {
+    name: "login",
+    description: "change Google, GitHub, current, or default user login",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
     name: "session",
     description: "list sessions for the current workspace",
     placement: "session-builtin",
