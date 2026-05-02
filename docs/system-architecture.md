@@ -475,14 +475,14 @@ flowchart TB
 
 Tool layer rules:
 
-| Layer         | Contract                                                                |
-| ------------- | ----------------------------------------------------------------------- |
-| Task tools    | Built into TypeScript session tool tree.                                |
+| Layer         | Contract                                                           |
+| ------------- | ------------------------------------------------------------------ |
+| Task tools    | Built into TypeScript session tool tree.                           |
 | Core tools    | External `tool.json` packages installed under `.ndx/system/tools`. |
-| Project tools | Filesystem packages with folder name equal to function name.            |
-| Global tools  | User-level filesystem packages.                                         |
-| Plugin tools  | Discovered from plugin filesystem layer directories.                    |
-| MCP tools     | Queried with `tools/list` or loaded from static settings.               |
+| Project tools | Filesystem packages with folder name equal to function name.       |
+| Global tools  | User-level filesystem packages.                                    |
+| Plugin tools  | Discovered from plugin filesystem layer directories.               |
+| MCP tools     | Queried with `tools/list` or loaded from static settings.          |
 
 The agent loop only sees normalized function schemas and normalized tool
 results. Provider-specific tool block formats do not leak into `src/agent`.
@@ -623,11 +623,13 @@ objects.
 flowchart LR
   browser["Browser"]
   http["Dashboard HTTP listener"]
-  page["Minimal placeholder\nmain landmark named ndx Agent Service\nrole=status\ndata-testid=agent-dashboard-placeholder"]
+  page["Server dashboard\nmain landmark named Server Dashboard\nReload and Exit buttons\ndata-testid=ndx-dashboard"]
   socket["Authenticated WebSocket JSON-RPC"]
   note["Agent control remains socket-first"]
 
   browser -->|"GET / or /dashboard"| http --> page
+  page -->|"POST /api/reload"| http
+  page -->|"POST /api/exit"| http
   page -.-> note -.-> socket
 ```
 

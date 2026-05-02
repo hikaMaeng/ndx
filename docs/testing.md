@@ -57,11 +57,14 @@ npm run deploy
 - Session server API omits project listing and project creation.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
+- Dashboard Reload re-runs `.ndx` bootstrap and re-reads settings plus
+  `AGENTS.md` sources for later sessions.
+- CLI initialization output includes the connected server dashboard URL.
 - Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.
 - Account create/login/password-change methods and WebSocket client identity.
 - Social login account creation from a verified provider profile response.
 - Socket authentication requirement for session, command, and turn methods.
-- Dashboard placeholder HTTP response and stable browser locator contract.
+- Dashboard HTTP response, Reload action, and stable browser locator contract.
 - Workspace-scoped session listing, restore by session id or list number, and
   non-current session deletion.
 - Restore rebuilds provider-facing model conversation history from saved
@@ -95,12 +98,15 @@ npm run deploy
 
 ## Browser Verification
 
-The current browser surface is the dashboard placeholder served by the
-dashboard listener at `/` and `/dashboard`.
+The current browser surface is the dashboard served by the dashboard listener
+at `/` and `/dashboard`.
 
 Locator contract:
 
-- `main` landmark named by the `ndx Agent Service` heading.
-- `role="status"` for the placeholder status text.
-- `data-testid="agent-dashboard-placeholder"` for a stable non-user-facing
-  anchor.
+- `main` landmark named by the `Server Dashboard` heading.
+- `aside` named `Dashboard menu`.
+- Buttons named `Reload` and `Exit` inside `nav aria-label="Server actions"`.
+- `role="status"` for dashboard action status; `role="alert"` for failed
+  dashboard action status.
+- `data-testid="ndx-dashboard"`, `dashboard-action-status`,
+  `dashboard-sources`, and `dashboard-bootstrap` for stable anchors.

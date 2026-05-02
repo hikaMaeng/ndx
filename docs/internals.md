@@ -143,9 +143,11 @@ client implemented here generates a fresh client id per controller instance,
 logs in as `defaultUser` with an empty password, and includes user/client id in
 session and turn requests.
 
-HTTP `GET /` and `GET /dashboard` on the separate dashboard listener are
-intentionally minimal. They return the dashboard placeholder only. The
-dashboard has no authentication or authorization; agent interaction remains on
+HTTP `GET /` and `GET /dashboard` on the separate dashboard listener render the
+server dashboard. `POST /api/reload` re-runs global `.ndx` bootstrap and
+reloads settings plus discovered `AGENTS.md` sources for later sessions.
+`POST /api/exit` requests shutdown of the local server instance. The dashboard
+has no authentication or authorization; agent interaction remains on
 authenticated WebSocket JSON-RPC.
 
 ## Mock Client

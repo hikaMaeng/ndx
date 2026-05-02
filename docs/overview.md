@@ -27,8 +27,9 @@ ndx is a TypeScript-first local coding agent runtime.
   single value shared by CLI instances and is separate from `/home/.ndx` and
   project `.ndx`.
 - The server exposes a WebSocket socket port and a separate dashboard HTTP
-  port. The dashboard has no auth; the socket ignores non-login methods until
-  account login succeeds.
+  port. The dashboard has no auth and exposes server information plus Reload
+  and Exit actions; the socket ignores non-login methods until account login
+  succeeds.
 - Project-local settings are discovered from the current project folder's `.ndx/settings.json`.
 - `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
 - `keys` entries in settings are injected into shell tool executions.

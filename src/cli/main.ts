@@ -109,8 +109,8 @@ async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
       const settingsFile = await createGlobalSettingsWithWizard(
         resolveGlobalNdxDir(),
         {
-        question: (prompt) => rl.question(prompt),
-        print: (message) => console.error(message),
+          question: (prompt) => rl.question(prompt),
+          print: (message) => console.error(message),
         },
       );
       console.error(`[config] installed ${settingsFile}`);
@@ -230,7 +230,11 @@ async function runServer(options: {
   config: NdxConfig;
   sources: string[];
 }): Promise<void> {
-  const server = createSessionServer(options);
+  let finishFromDashboardExit!: () => void;
+  const dashboardExit = new Promise<void>((resolveExit) => {
+    finishFromDashboardExit = resolveExit;
+  });
+  const server = createSessionServer(options, finishFromDashboardExit);
   printWelcomeLogo();
   const address = await listen(
     server,
@@ -241,7 +245,7 @@ async function runServer(options: {
   if (address.dashboardUrl !== undefined) {
     console.error(`[dashboard] ${address.dashboardUrl}`);
   }
-  await waitForShutdown();
+  await Promise.race([waitForShutdown(), dashboardExit]);
   await server.close();
 }
 
@@ -270,9 +274,7 @@ async function runConnected(options: {
 
 async function runManagedWorkspace(args: CliArgs): Promise<void> {
   const rl =
-    args.interactive && process.stdin.isTTY
-      ? createCliPrompt()
-      : undefined;
+    args.interactive && process.stdin.isTTY ? createCliPrompt() : undefined;
   let localServer: SessionServer | undefined;
   try {
     const state = await ensureManagedServer({
@@ -289,6 +291,7 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
         sources: loaded.sources,
         createClient: (config) => createClient(args.mock, config),
         requireDockerSandbox: true,
+        packageVersion: readPackageVersion(),
       });
       const address = await localServer.listen(45123, "127.0.0.1", 45124);
       socketUrl = address.url;
@@ -376,23 +379,23 @@ async function withEmbeddedServer(
   }
 }
 
-function createSessionServer(options: {
-  args: CliArgs;
-  config: NdxConfig;
-  sources: string[];
-}): SessionServer {
-  const providerClient = options.args.mock
-    ? undefined
-    : createRoutedModelClient(options.config);
+function createSessionServer(
+  options: {
+    args: CliArgs;
+    config: NdxConfig;
+    sources: string[];
+  },
+  onDashboardExit?: () => void,
+): SessionServer {
   return new SessionServer({
     cwd: options.args.cwd,
     config: options.config,
     sources: options.sources,
-    createClient: (config) =>
-      providerClient ?? createClient(options.args.mock, config),
+    createClient: (config) => createClient(options.args.mock, config),
     requireDockerSandbox:
-      !options.args.mock &&
-      process.env.NDX_REQUIRE_DOCKER_SANDBOX !== "0",
+      !options.args.mock && process.env.NDX_REQUIRE_DOCKER_SANDBOX !== "0",
+    packageVersion: readPackageVersion(),
+    onDashboardExit,
   });
 }
 
@@ -402,9 +405,7 @@ function shouldUseManagedWorkspace(args: CliArgs): boolean {
   );
 }
 
-function requireReadline(
-  rl: CliPrompt | undefined,
-): CliPrompt {
+function requireReadline(rl: CliPrompt | undefined): CliPrompt {
   if (rl === undefined) {
     throw new Error("interactive CLI setup requires a TTY");
   }

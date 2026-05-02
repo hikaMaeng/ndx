@@ -51,10 +51,11 @@ containers, rebuilds the pinned tool-sandbox image, starts it with
 and tears compose down.
 
 `ndx serve` and `ndxserver` expose an authenticated WebSocket socket port plus
-an unauthenticated dashboard HTTP port. Accounts, social account links, and
-sessions are stored in SQLite under the user `.ndx/system` directory by default.
-Host CLI last-login state is stored in the CLI app-state directory, not in
-`.ndx`.
+an unauthenticated dashboard HTTP port. The dashboard shows server state,
+recognized settings and instruction sources, and server actions for Reload and
+Exit. Accounts, social account links, and sessions are stored in SQLite under
+the user `.ndx/system` directory by default. Host CLI last-login state is stored
+in the CLI app-state directory, not in `.ndx`.
 
 ## License
 

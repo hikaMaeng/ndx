@@ -158,10 +158,10 @@ not rely on later request params to choose the user.
 
 The service owns two listeners: a WebSocket socket port and a dashboard HTTP
 port. `ndx serve` and `ndxserver` print both addresses. Normal HTTP requests to
-`/` or `/dashboard` on the dashboard port return only a dashboard placeholder.
-The placeholder exposes one `main` landmark named by `ndx Agent Service`, a
-status message, and `data-testid="agent-dashboard-placeholder"` for browser
-verification.
+`/` or `/dashboard` on the dashboard port return the server dashboard. The
+dashboard exposes one `main` landmark named by `Server Dashboard`, a left
+action menu, source/bootstrap summaries, and Reload plus Exit buttons for local
+server operation.
 
 ## Docker Flow
 

@@ -468,7 +468,7 @@ test("session server keeps sessions on the base config while model routing happe
   }
 });
 
-test("session server exposes account methods, client identity, and dashboard placeholder", async () => {
+test("session server exposes account methods, client identity, and dashboard shell", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-accounts-"));
   const globalDir = join(root, "home", ".ndx");
   let server: SessionServer | undefined;
@@ -488,10 +488,11 @@ test("session server exposes account methods, client identity, and dashboard pla
     const dashboard = await fetch(address.dashboardUrl ?? "");
     assert.equal(dashboard.status, 200);
     const html = await dashboard.text();
-    assert.equal(
-      html.includes('data-testid="agent-dashboard-placeholder"'),
-      true,
-    );
+    assert.equal(html.includes('data-testid="ndx-dashboard"'), true);
+    assert.equal(html.includes('aria-label="Server actions"'), true);
+    assert.equal(html.includes(">Reload<"), true);
+    assert.equal(html.includes(">Exit<"), true);
+    assert.equal(html.includes("Version "), true);
     assert.equal(html.includes('role="status"'), true);
 
     client = await SessionClient.connect(address.url);
@@ -533,6 +534,93 @@ test("session server exposes account methods, client identity, and dashboard pla
   } finally {
     client?.close();
     await server?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dashboard reload re-reads settings and AGENTS sources", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-dashboard-reload-"));
+  const globalDir = join(root, "home", ".ndx");
+  const projectNdxDir = join(root, ".ndx");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    mkdirSync(globalDir, { recursive: true });
+    mkdirSync(projectNdxDir, { recursive: true });
+    writeFileSync(
+      join(globalDir, "settings.json"),
+      JSON.stringify(
+        {
+          model: "mock",
+          providers: baseConfig.providers,
+          models: baseConfig.models,
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(projectNdxDir, "settings.json"),
+      JSON.stringify(
+        {
+          model: "mock-reloaded",
+          providers: {
+            mock: {
+              type: "openai",
+              key: "",
+              url: "http://localhost/v1",
+            },
+          },
+          models: [{ name: "mock-reloaded", provider: "mock" }],
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(root, "AGENTS.md"),
+      "# Project Instructions\n\nUse test reload.\n",
+    );
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        paths: { globalDir, dataDir: join(root, "data") },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    const reload = await fetch(`${address.dashboardUrl}/api/reload`, {
+      method: "POST",
+    });
+    assert.equal(reload.status, 200);
+    const body = (await reload.json()) as {
+      ok?: boolean;
+      sources?: string[];
+    };
+    assert.equal(body.ok, true);
+    assert.equal(
+      body.sources?.includes(join(projectNdxDir, "settings.json")),
+      true,
+    );
+    assert.equal(body.sources?.includes(join(root, "AGENTS.md")), true);
+
+    const dashboard = await fetch(address.dashboardUrl ?? "");
+    const html = await dashboard.text();
+    assert.equal(html.includes("mock-reloaded"), true);
+    assert.equal(html.includes("AGENTS.md"), true);
+
+    client = await SessionClient.connect(address.url);
+    await loginClient(client);
+    const started = await client.request<{
+      session: { model: string };
+    }>("session/start", { cwd: root });
+    assert.equal(started.session.model, "mock-reloaded");
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -53,7 +53,8 @@ notifications; they are not authoritative session stores.
 The server also starts a separate HTTP dashboard listener. Socket methods other
 than `account/create`, `account/login`, and `account/socialLogin` require
 successful account login on that WebSocket connection. Unauthenticated
-non-login methods are ignored.
+non-login methods are ignored. The socket `initialize` result includes
+`dashboardUrl` after the dashboard listener has bound.
 
 Requests:
 
@@ -148,10 +149,16 @@ the CLI follows the server's socket protocol; the server itself creates or
 reuses a per-physical-project-folder Docker sandbox container for shell-like
 tools.
 
-HTTP `GET /` and `GET /dashboard` on the dashboard port return a minimal
-dashboard placeholder. The dashboard has no authentication or authorization.
-The agent service remains socket-first; this page is only an admin UI anchor
-until a real dashboard is implemented.
+HTTP `GET /` and `GET /dashboard` on the dashboard port return the server
+dashboard. The dashboard has no authentication or authorization. The agent
+service remains socket-first.
+
+Dashboard HTTP actions:
+
+| Method | Path          | Result                                                |
+| ------ | ------------- | ----------------------------------------------------- |
+| POST   | `/api/reload` | Re-run `.ndx` bootstrap and re-read settings sources. |
+| POST   | `/api/exit`   | Request shutdown of the local server instance.        |
 
 `initialize` returns `bootstrap`, and `session/configured` includes the
 same shape on `event.bootstrap`:
