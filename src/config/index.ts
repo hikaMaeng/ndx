@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, parse, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type {
   EnvMap,
   JsonObject,
@@ -72,7 +72,7 @@ export function configFiles(
   options: ConfigLoadOptions = {},
 ): string[] {
   const files = [join(resolveGlobalNdxDir(options), SETTINGS_FILE)];
-  const project = findProjectSettingsFile(cwd);
+  const project = projectSettingsFile(cwd);
   if (project !== undefined && project !== files[0]) {
     files.push(project);
   }
@@ -251,19 +251,9 @@ function writeJsonFile(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function findProjectSettingsFile(cwd: string): string | undefined {
-  let current = resolve(cwd);
-  while (true) {
-    const candidate = join(current, CONFIG_DIR, SETTINGS_FILE);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-    const parent = dirname(current);
-    if (parent === current || current === parse(current).root) {
-      return undefined;
-    }
-    current = parent;
-  }
+function projectSettingsFile(cwd: string): string | undefined {
+  const candidate = join(resolve(cwd), CONFIG_DIR, SETTINGS_FILE);
+  return existsSync(candidate) ? candidate : undefined;
 }
 
 function parseSettings(contents: string, file: string): PartialSettings {

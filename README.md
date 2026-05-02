@@ -22,9 +22,12 @@ and third-party trees are intentionally not part of this workspace.
 ## Quick Start
 
 ```bash
-npm install -g @neurondev/ndx
+npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
 ndx [SERVER_ADDRESS]
 ```
+
+Verdaccio is the default channel for install testing. Public npm releases are
+published only when explicitly requested.
 
 `SERVER_ADDRESS` is the only `ndx` startup argument. It defaults to
 `127.0.0.1:45123`. The CLI connects to that server first; if it is not

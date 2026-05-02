@@ -20,6 +20,8 @@ flow.
 - Build with `yarn build`.
 - Test with `yarn test`.
 - Deploy verification uses `npm run deploy`.
+- Publish install-test builds to Verdaccio at `https://verdaccio.neurondev.net/`.
+- Publish to public npm only when the user explicitly asks for public npm.
 
 ## Documentation
 

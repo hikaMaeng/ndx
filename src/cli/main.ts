@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { createLoginStore } from "./auth.js";
 import { createGlobalSettingsWithWizard } from "./settings-wizard.js";
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
     return;
   }
   if (args.version) {
-    console.log("0.1.2");
+    console.log(readPackageVersion());
     return;
   }
 
@@ -541,8 +542,26 @@ function printInteractiveHeader(config: NdxConfig): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, logs in with account credentials, initializes the socket, starts or restores a session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, logs in with account credentials, initializes the socket, starts or restores a session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then current project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
+}
+
+function readPackageVersion(): string {
+  let current = dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const candidate = join(current, "package.json");
+    if (existsSync(candidate)) {
+      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
+        version?: unknown;
+      };
+      return typeof parsed.version === "string" ? parsed.version : "unknown";
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return "unknown";
+    }
+    current = parent;
+  }
 }
 
 function parseListenAddress(

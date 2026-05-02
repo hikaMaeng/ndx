@@ -46,7 +46,7 @@ Plugin and capability tools are filesystem packages, not settings entries. Put e
 ## Host CLI
 
 ```bash
-npm install -g @neurondev/ndx
+npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
 cd /path/to/project
 ndx [SERVER_ADDRESS]
 ```
@@ -285,5 +285,5 @@ ndx "원하는 작업"
 
 The default compose service stays alive with `sleep infinity`. It does not copy
 repository settings into `/home/.ndx`; real model settings remain owned by the
-normal global/project settings cascade and the interactive wizard. Files created
+normal global/current-project settings cascade and the interactive wizard. Files created
 by sandbox commands persist in `./docker/volume/workspace`.

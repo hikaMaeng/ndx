@@ -21,14 +21,17 @@ npm test
 ### Run
 
 ```bash
-npm install -g @neurondev/ndx
+npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
 ndx
 ```
 
-Before public npm release, install from the Verdaccio registry:
+Verdaccio is the default channel for local install testing. Public npm is a
+manual release channel only when explicitly requested.
+
+For public npm:
 
 ```bash
-npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
+npm install -g @neurondev/ndx
 ndx
 ```
 

@@ -146,7 +146,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   start["CLI needs a session"]
-  settings{"settings.json exists?\n/home/.ndx or nearest project .ndx"}
+  settings{"settings.json exists?\n/home/.ndx or current project .ndx"}
   tty{"TTY available?"}
   wizard["Run settings wizard\nwrite /home/.ndx/settings.json"]
   fail["Fail config load\nnon-interactive startup cannot invent model settings"]
@@ -375,7 +375,7 @@ flowchart TD
   start["loadConfig(cwd)"]
   bootstrap["ensureGlobalNdxHome\ninstall missing system dirs and core tools"]
   global["Read /home/.ndx/settings.json if present"]
-  project["Read nearest ancestor .ndx/settings.json if present"]
+  project["Read current project .ndx/settings.json if present"]
   exists{"At least one settings file?"}
   merge["Merge settings\nglobal first, project overrides"]
   search["Read /home/.ndx/search.json"]
@@ -392,7 +392,7 @@ flowchart TD
 Settings load order:
 
 1. `/home/.ndx/settings.json`
-2. Nearest ancestor project `.ndx/settings.json`
+2. Current project `.ndx/settings.json`
 3. `/home/.ndx/search.json` for web-search parsing rules
 
 The bootstrap report is returned by `initialize` and included in
@@ -642,8 +642,8 @@ flowchart TD
   build["yarn build"]
   dist["dist/src"]
   files["npm package files\ndist/src, README.md, LICENSE, NOTICE"]
-  verdaccio["Verdaccio\nhttps://verdaccio.neurondev.net"]
-  npmjs["npmjs\nhttps://registry.npmjs.org"]
+  verdaccio["Default test channel\nVerdaccio\nhttps://verdaccio.neurondev.net"]
+  npmjs["Explicit public release only\nnpmjs\nhttps://registry.npmjs.org"]
   install["npm install -g @neurondev/ndx"]
   bins["ndx and ndxserver bins"]
 
@@ -660,10 +660,13 @@ Current published package contract:
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.2`                                      |
+| Version                                  | `0.1.4`                                      |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |
+
+Release policy: publish testable builds to Verdaccio by default. Publish to
+public npm only when explicitly requested.
 
 ## End-To-End Turn
 
@@ -677,8 +680,8 @@ flowchart TD
   init["Initialize and receive bootstrap"]
   sandbox["Server ensures Docker sandbox"]
   settings{"Settings available?"}
-  wizard["Settings wizard creates project .ndx/settings.json"]
-  project["Select or create project"]
+  wizard["Settings wizard creates /home/.ndx/settings.json"]
+  project["Use current folder as project"]
   session["Start or restore session"]
   prompt["User prompt"]
   runtime["AgentRuntime turn"]

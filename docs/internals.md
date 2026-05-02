@@ -3,7 +3,7 @@
 ## Config Loader
 
 `src/config/index.ts` owns config loading. `configFiles(cwd)` returns
-`/home/.ndx/settings.json` followed by the nearest ancestor `.ndx/settings.json`
+`/home/.ndx/settings.json` followed by the current project `.ndx/settings.json`
 when present. `loadConfig(cwd)` reads existing JSON files in order, merges them,
 fails if neither settings file exists, then loads `/home/.ndx/search.json` as
 search rules.

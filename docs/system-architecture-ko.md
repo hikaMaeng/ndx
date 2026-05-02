@@ -133,10 +133,10 @@ sequenceDiagram
     CLI->>Socket: connect
   else socket missing
     CLI-->>User: connection failure 보고
-    CLI->>Config: workspace settings resolve
+    CLI->>Config: current-folder settings resolve
     alt no settings and TTY
       Config-->>User: settings wizard
-      Config->>Config: write project .ndx/settings.json
+      Config->>Config: write /home/.ndx/settings.json
     else no settings and non-TTY
       Config-->>CLI: fail
     end
@@ -158,7 +158,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   start["CLI needs a session"]
-  settings{"settings.json exists?\n/home/.ndx or nearest project .ndx"}
+  settings{"settings.json exists?\n/home/.ndx or current project .ndx"}
   tty{"TTY available?"}
   wizard["Run settings wizard\nwrite /home/.ndx/settings.json"]
   fail["Fail config load\nnon-interactive startup cannot invent model settings"]
@@ -413,7 +413,7 @@ flowchart TD
   start["loadConfig(cwd)"]
   bootstrap["ensureGlobalNdxHome\ninstall missing system dirs and core tools"]
   global["Read /home/.ndx/settings.json if present"]
-  project["Read nearest ancestor .ndx/settings.json if present"]
+  project["Read current project .ndx/settings.json if present"]
   exists{"At least one settings file?"}
   merge["Merge settings\nglobal first, project overrides"]
   search["Read /home/.ndx/search.json"]
@@ -430,7 +430,7 @@ flowchart TD
 설정 load order:
 
 1. `/home/.ndx/settings.json`
-2. 가장 가까운 ancestor project `.ndx/settings.json`
+2. 현재 project `.ndx/settings.json`
 3. web-search parsing rule용 `/home/.ndx/search.json`
 
 `initialize`는 bootstrap report를 반환하고 `session/configured`도 같은 shape를
@@ -679,8 +679,8 @@ flowchart TD
   build["yarn build"]
   dist["dist/src"]
   files["npm package files\ndist/src, README.md, LICENSE, NOTICE"]
-  verdaccio["Verdaccio\nhttps://verdaccio.neurondev.net"]
-  npmjs["npmjs\nhttps://registry.npmjs.org"]
+  verdaccio["Default test channel\nVerdaccio\nhttps://verdaccio.neurondev.net"]
+  npmjs["Explicit public release only\nnpmjs\nhttps://registry.npmjs.org"]
   install["npm install -g @neurondev/ndx"]
   bins["ndx and ndxserver bins"]
 
@@ -697,10 +697,13 @@ flowchart TD
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.2`                                      |
+| Version                                  | `0.1.4`                                      |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |
+
+Release policy: test 가능한 빌드는 기본적으로 Verdaccio에 publish한다.
+Public npm publish는 사용자가 명시적으로 요청할 때만 수행한다.
 
 ## End-To-End Turn
 
@@ -714,8 +717,8 @@ flowchart TD
   init["Initialize and receive bootstrap"]
   sandbox["Server ensures Docker sandbox"]
   settings{"Settings available?"}
-  wizard["Settings wizard creates project .ndx/settings.json"]
-  project["Select or create project"]
+  wizard["Settings wizard creates /home/.ndx/settings.json"]
+  project["Use current folder as project"]
   session["Start or restore session"]
   prompt["User prompt"]
   runtime["AgentRuntime turn"]

@@ -38,7 +38,7 @@ context.
 ## Options
 
 - `--mock`: use deterministic local model behavior. No network or provider key required.
-- `--cwd PATH`: server or mock-mode working directory used by project settings discovery and shell commands.
+- `--cwd PATH`: server or mock-mode working directory used as the current project folder and shell command root.
 - `--listen HOST:PORT`: bind address for `ndx serve`. The default is `127.0.0.1:0`.
 - `--dashboard-listen HOST:PORT`: bind address for the dashboard HTTP listener in server mode. The default is `127.0.0.1:0`.
 - `--connect ws://HOST:PORT`: send the prompt to an existing session server.
@@ -181,7 +181,7 @@ Runtime configuration is JSON only.
 Load order:
 
 1. `/home/.ndx/settings.json`
-2. The nearest ancestor project file named `.ndx/settings.json`
+2. The current project folder file named `.ndx/settings.json`
 3. `/home/.ndx/search.json` for web-search parsing and interpretation rules
 
 Project settings override global settings. Only one project settings file is loaded.
@@ -302,7 +302,7 @@ At turn startup the registry scans every layer in fixed priority order. First ma
 | 3        | global         | `/home/.ndx/tools`                                            |
 | 4        | project plugin | `<project>/.ndx/plugins/<plugin>/tools`                       |
 | 5        | global plugin  | `/home/.ndx/plugins/<plugin>/tools`                           |
-| 6        | project MCP    | MCP servers declared by nearest project `.ndx/settings.json`. |
+| 6        | project MCP    | MCP servers declared by current project `.ndx/settings.json`. |
 | 7        | global MCP     | MCP servers declared by `/home/.ndx/settings.json`.           |
 
 Only task orchestration tools are agent-owned: `update_plan`, `request_user_input`, multi-agent task tools, and agent-job task tools. Shell, filesystem, patch, web, media, plugin, and other capability tools must be external `tool.json` packages.

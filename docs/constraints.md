@@ -7,7 +7,7 @@
   `dataPath`. Legacy `sessionPath` is accepted as a data-directory override.
 - Account, project, session, event, and ownership records are stored in
   `<dataDir>/ndx.sqlite`; omitted user means `defaultUser`.
-- Project settings path is `.ndx/settings.json` under the nearest ancestor project directory.
+- Project settings path is `.ndx/settings.json` under the current project directory.
 - No runtime environment variable is used to select model, provider URL, provider key, or ndx home.
 - Settings are JSON only; `config.toml`, `.codex`, `NDX_HOME`, `NDX_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are not part of the ndx TypeScript loader contract.
 - `keys` values must be strings because they are injected into external tool process environments.
