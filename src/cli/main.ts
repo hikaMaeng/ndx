@@ -6,7 +6,10 @@ import { createInterface } from "node:readline/promises";
 import { dirname, join, resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { createLoginStore } from "./auth.js";
-import { createGlobalSettingsWithWizard } from "./settings-wizard.js";
+import {
+  createGlobalSettingsWithWizard,
+  repairSettingsWithWizard,
+} from "./settings-wizard.js";
 import {
   CliSessionController,
   interactiveHelp,
@@ -102,7 +105,21 @@ async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
       };
     }
     if (!isMissingSettingsError(error) || !process.stdin.isTTY) {
-      throw error;
+      if (!process.stdin.isTTY) {
+        throw error;
+      }
+      const rl = createCliPrompt();
+      try {
+        console.error(`settings rewrite required: ${errorMessage(error)}`);
+        const repaired = await repairSettingsWithWizard(args.cwd, {
+          question: (prompt) => rl.question(prompt),
+          print: (message) => console.error(message),
+        });
+        console.error(`[config] repaired ${repaired.join(", ")}`);
+      } finally {
+        rl.close();
+      }
+      return loadConfig(args.cwd);
     }
     const rl = createCliPrompt();
     try {
@@ -119,6 +136,10 @@ async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
     }
     return loadConfig(args.cwd);
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function isMissingSettingsError(error: unknown): boolean {
@@ -543,7 +564,7 @@ function printInteractiveHeader(config: NdxConfig): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, logs in with account credentials, initializes the socket, starts or restores a session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then current project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, logs in with account credentials, initializes the socket, starts or restores a session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then current project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"version\": \"${readPackageVersion()}\", \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 

@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -11,6 +12,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   configFiles,
+  currentSettingsVersion,
   ensureGlobalNdxHome,
   loadConfig,
   resolveGlobalNdxDir,
@@ -229,6 +231,67 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
       "fast-local",
       "deep-local",
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("loadConfig silently updates settings versions when content is otherwise valid", () => {
+  const root = tempRoot();
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    const project = join(root, "repo");
+    mkdirSync(globalDir, { recursive: true });
+    mkdirSync(join(project, ".ndx"), { recursive: true });
+    const globalSettings = join(globalDir, "settings.json");
+    const projectSettings = join(project, ".ndx", "settings.json");
+
+    writeJson(globalSettings, {
+      version: "0.0.1",
+      model: "global-model",
+      providers: {
+        localOpenAi: {
+          type: "openai",
+          key: "",
+          url: "http://global.example/v1",
+        },
+      },
+      models: [
+        {
+          name: "global-model",
+          provider: "localOpenAi",
+          maxContext: 100,
+        },
+      ],
+    });
+    writeJson(projectSettings, {
+      model: "project-model",
+      providers: {
+        localOpenAi: {
+          type: "openai",
+          key: "",
+          url: "http://project.example/v1",
+        },
+      },
+      models: [
+        {
+          name: "project-model",
+          provider: "localOpenAi",
+          maxContext: 200,
+        },
+      ],
+    });
+
+    const loaded = loadConfig(project, { globalDir });
+    assert.equal(loaded.config.model, "project-model");
+    assert.equal(
+      JSON.parse(readFileSync(globalSettings, "utf8")).version,
+      currentSettingsVersion(),
+    );
+    assert.equal(
+      JSON.parse(readFileSync(projectSettings, "utf8")).version,
+      currentSettingsVersion(),
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

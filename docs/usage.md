@@ -17,7 +17,7 @@ npm test
 
 ## Settings
 
-Global settings live at `/home/.ndx/settings.json`. Project settings may still live at `.ndx/settings.json` in the project directory as an override, but first-run setup writes the global file. The repository includes a non-secret project settings file for the local LM Studio-compatible endpoint.
+Global settings live at `/home/.ndx/settings.json`. Project settings may still live at `.ndx/settings.json` in the project directory as an override, but first-run setup writes the global file. Every settings file must include `"version"` equal to the installed ndx package version. If a settings file is otherwise valid, startup or dashboard Reload silently updates only the version field. If required runtime model/provider content is missing, the TTY settings wizard repairs global settings first and then the current project's settings.
 
 Do not put real provider, Tavily, GitHub, Docker Hub, npm, or GitLab tokens in repository files. Put secrets in `/home/.ndx/settings.json` on the local machine.
 
@@ -83,8 +83,8 @@ On startup, config loading and the session server both enforce required global
 package files, and `system/skills/` are installed before session work begins. If
 neither global nor project settings exist and the CLI is attached to a TTY, ndx
 asks for permission mode, provider type, provider key, provider URL, model name,
-and max context, then writes `/home/.ndx/settings.json`. Non-TTY startup still
-requires an existing settings file. The socket initialization output includes a
+max context, and settings version, then writes `/home/.ndx/settings.json`.
+Non-TTY startup still requires an existing settings file. The socket initialization output includes a
 bootstrap report showing what was installed and what already existed. The
 loader also appends discovered `AGENTS.md` files from the current directory
 ancestry to the runtime instructions and lists them in initialization sources.
@@ -268,7 +268,8 @@ docker compose build --no-cache ndx-sandbox
 
 This repository does not ship a project `.ndx/settings.json` with a default
 real model. If neither `/home/.ndx/settings.json` nor a project settings file is
-found, interactive CLI startup uses the settings wizard to create one.
+found, interactive CLI startup uses the settings wizard to create the global
+settings file.
 
 Start the local server with `ndx` or `ndx serve`. The default compose service
 starts only the tool sandbox; it does not publish ndx service ports:

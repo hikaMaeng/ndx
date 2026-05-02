@@ -40,7 +40,9 @@ except for the two `.gitkeep` directory anchors.
    the current folder. If Docker cannot provide the pinned sandbox image or
    container, server startup fails and the CLI exits with that warning.
 5. If no settings file exists, the interactive settings wizard writes global
-   `/home/.ndx/settings.json`.
+   `/home/.ndx/settings.json` with the current package version. If settings are
+   incomplete, the wizard repairs global settings first and project settings
+   second when present.
 6. The current folder is the session `cwd`; the CLI does not ask for a
    workspace folder or project selection.
 7. Session server startup re-checks required global `.ndx/system` elements and installs any missing system tool package files and skills directory before accepting session work.
