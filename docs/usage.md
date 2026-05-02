@@ -86,14 +86,16 @@ package files, and `system/skills/` are installed before session work begins. If
 neither global nor project settings exist and the CLI is attached to a TTY, ndx
 asks for permission mode, provider type, provider key, provider URL, model name,
 max context, and settings version, then writes `/home/.ndx/settings.json`.
-Non-TTY startup still requires an existing settings file. The socket initialization output includes a
-server package version, protocol number, and a bootstrap report showing what
-was installed and what already existed. Protocol `1` is the current ndx
-WebSocket JSON-RPC method/event contract. Session initialization output prints
-restored context as used/model-context tokens and percentage when the active
-model declares `maxContext`. The
-loader also appends discovered `AGENTS.md` files from the current directory
-ancestry to the runtime instructions and lists them in initialization sources.
+Non-TTY startup still requires an existing settings file. Before the startup
+login prompt, the CLI prints public connected-server identity: server package
+version, host Node process runtime, Docker tool sandbox image, dashboard URL,
+and protocol number. The socket initialization output after login adds methods
+and a bootstrap report showing what was installed and what already existed.
+Protocol `1` is the current ndx WebSocket JSON-RPC method/event contract.
+Session initialization output prints restored context as used/model-context
+tokens and percentage when the active model declares `maxContext`. The loader
+also appends discovered `AGENTS.md` files from the current directory ancestry to
+the runtime instructions and lists them in initialization sources.
 
 ## Session Server
 

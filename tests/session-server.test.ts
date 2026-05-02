@@ -98,6 +98,18 @@ test("session server owns session events, subscribers, and SQLite persistence", 
       subscriberNotifications.push(notification),
     );
 
+    const info = await client.request<{
+      server: string;
+      version: string;
+      runtime: { kind: string; node: string };
+      toolSandbox: { kind: string; image: string };
+    }>("server/info");
+    assert.equal(info.server, "ndx-ts-session-server");
+    assert.equal(info.runtime.kind, "host-process");
+    assert.equal(info.runtime.node.startsWith("v"), true);
+    assert.equal(info.toolSandbox.kind, "disabled");
+    assert.equal(info.toolSandbox.image, "hika00/ndx-sandbox:0.1.0");
+
     await loginClient(client);
     const initialize = await client.request<{
       bootstrap: {

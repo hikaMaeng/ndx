@@ -31,7 +31,8 @@ ndx is a TypeScript-first local coding agent runtime.
   project `.ndx`.
 - The server exposes a WebSocket socket port and a separate dashboard HTTP
   port. The dashboard has no auth and exposes server information plus Reload
-  and Exit actions; the socket ignores non-login methods until account login
+  and Exit actions; the socket exposes public `server/info` for pre-login
+  identity display and ignores other non-login methods until account login
   succeeds.
 - Project-local settings are discovered from the current project folder's `.ndx/settings.json`.
 - Settings files carry the installed ndx package version. Valid stale files are

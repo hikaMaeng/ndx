@@ -30,7 +30,13 @@ test("CLI session controller initializes socket, starts session, and renders sta
 
   assert.deepEqual(
     transport.requests.map((request) => request.method),
-    ["account/login", "initialize", "session/start", "command/execute"],
+    [
+      "server/info",
+      "account/login",
+      "initialize",
+      "session/start",
+      "command/execute",
+    ],
   );
   assert.deepEqual(status, { handled: true, shouldExit: false });
   assert.equal(
@@ -40,13 +46,55 @@ test("CLI session controller initializes socket, starts session, and renders sta
   assert.equal(
     stderr
       .join("\n")
-      .includes("[methods] initialize, command/list, command/execute"),
+      .includes("[methods] server/info, initialize, command/list"),
     true,
   );
   assert.equal(
     stderr.join("\n").includes("[dashboard] http://127.0.0.1:45124"),
     true,
   );
+  assert.equal(
+    stderr.join("\n").includes("[server-runtime] host-process node-test"),
+    true,
+  );
+  assert.equal(
+    stderr.join("\n").includes("[tool-sandbox] docker hika00/ndx-sandbox:test"),
+    true,
+  );
+  assert.equal(stderr.join("\n").includes("[server/info]"), false);
+});
+
+test("CLI session controller prints server info before startup login prompt", async () => {
+  const transport = new FakeTransport();
+  const events: string[] = [];
+  const controller = new CliSessionController({
+    client: transport,
+    cwd: "/workspace",
+    ...cliIdentity,
+    print: (message) => events.push(`out:${message}`),
+    printError: (message) => events.push(`err:${message}`),
+    question: async (prompt) => {
+      events.push(`question:${prompt}`);
+      return "1";
+    },
+  });
+
+  await controller.initialize();
+
+  const serverInfoIndex = events.findIndex((event) =>
+    event.includes("[session-server] ndx-ts-session-server 0.1.9"),
+  );
+  const loginMenuIndex = events.findIndex((event) =>
+    event.startsWith("out:login"),
+  );
+  const loginPromptIndex = events.findIndex(
+    (event) => event === "question:login> ",
+  );
+  assert.notEqual(serverInfoIndex, -1);
+  assert.notEqual(loginMenuIndex, -1);
+  assert.notEqual(loginPromptIndex, -1);
+  assert.equal(serverInfoIndex < loginMenuIndex, true);
+  assert.equal(serverInfoIndex < loginPromptIndex, true);
 });
 
 test("CLI session controller records initialization events outside prompt context", async () => {
@@ -302,17 +350,30 @@ class FakeTransport implements CliSessionTransport {
     if (method === "initialize") {
       return {
         server: "ndx-ts-session-server",
-        version: "0.1.8",
+        version: "0.1.9",
         protocolVersion: 1,
         dashboardUrl: "http://127.0.0.1:45124",
+        runtime: runtimeInfo(),
+        toolSandbox: toolSandboxInfo(),
         bootstrap: bootstrapReport("/home/.ndx"),
         methods: [
+          "server/info",
           "initialize",
           "command/list",
           "command/execute",
           "session/start",
           "turn/start",
         ],
+      } as T;
+    }
+    if (method === "server/info") {
+      return {
+        server: "ndx-ts-session-server",
+        version: "0.1.9",
+        protocolVersion: 1,
+        dashboardUrl: "http://127.0.0.1:45124",
+        runtime: runtimeInfo(),
+        toolSandbox: toolSandboxInfo(),
       } as T;
     }
     if (method === "account/login") {
@@ -446,6 +507,24 @@ class FakeTransport implements CliSessionTransport {
       handler(notification);
     }
   }
+}
+
+function runtimeInfo(): unknown {
+  return {
+    kind: "host-process",
+    node: "node-test",
+    platform: "test-os",
+    arch: "test-arch",
+  };
+}
+
+function toolSandboxInfo(): unknown {
+  return {
+    kind: "docker",
+    image: "hika00/ndx-sandbox:test",
+    workspaceMount: "/workspace",
+    globalMount: "/home/.ndx",
+  };
 }
 
 function bootstrapReport(globalDir: string) {

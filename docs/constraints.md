@@ -66,9 +66,9 @@
   bootstrap plus settings and `AGENTS.md` source loading for new sessions.
 - The dashboard Exit action is unauthenticated and requests shutdown of the
   local server instance that owns the dashboard listener.
-- WebSocket methods other than `account/create`, `account/login`, and
-  `account/socialLogin` require successful account login on that connection.
-  Unauthenticated non-login requests are ignored.
+- WebSocket methods other than `server/info`, `account/create`,
+  `account/login`, and `account/socialLogin` require successful account login
+  on that connection. Unauthenticated non-login requests are ignored.
 - Password authentication checks username and password. Social authentication
   validates the supplied access token against the provider profile endpoint and
   maps the account to `provider:subject`.

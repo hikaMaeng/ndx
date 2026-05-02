@@ -51,15 +51,20 @@ The session server is a WebSocket JSON-RPC endpoint. It owns live session state,
 event fan-out, and SQLite persistence. Clients send requests and receive
 notifications; they are not authoritative session stores.
 The server also starts a separate HTTP dashboard listener. Socket methods other
-than `account/create`, `account/login`, and `account/socialLogin` require
-successful account login on that WebSocket connection. Unauthenticated
-non-login methods are ignored. The socket `initialize` result includes
-`dashboardUrl` after the dashboard listener has bound.
+than `server/info`, `account/create`, `account/login`, and
+`account/socialLogin` require successful account login on that WebSocket
+connection. Unauthenticated non-login methods are ignored. The public
+`server/info` result lets CLI clients print the connected server version,
+host-process runtime, Docker tool sandbox image, dashboard URL, and protocol
+before showing the startup login prompt. The socket `initialize` result includes
+the same server identity plus `dashboardUrl` after the dashboard listener has
+bound.
 
 Requests:
 
 | Method                     | Params                                                          | Result                                                   |
 | -------------------------- | --------------------------------------------------------------- | -------------------------------------------------------- |
+| `server/info`              | none                                                            | server name, version, runtime, tool sandbox, protocol    |
 | `initialize`               | none                                                            | server name, version, protocol, methods, bootstrap       |
 | `command/list`             | none                                                            | `{ commands }`                                           |
 | `account/create`           | `{ username, password? }`                                       | `{ username, createdAt }`                                |
@@ -218,7 +223,7 @@ Canonical shape:
 
 ```json
 {
-  "version": "0.1.8",
+  "version": "0.1.9",
   "model": {
     "session": ["local-main-a", "local-main-b"],
     "worker": ["local-worker-a", "local-worker-b"],

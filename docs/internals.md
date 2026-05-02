@@ -142,11 +142,12 @@ identity yet.
 
 The account methods are in-process JSON-RPC controls for the current service
 instance: `account/create`, `account/login`, `account/delete`, and
-`account/changePassword`. `initialize`, `account/create`, and `account/login`
-are public. Other socket methods require a successful login on the WebSocket
-connection. Login stores user and client id on the connection. The CLI
-generates a fresh client id per controller instance, asks interactive users for
-startup login choice, and includes user/client id in session and turn requests.
+`account/changePassword`. `server/info`, `account/create`, `account/login`, and
+`account/socialLogin` are public. Other socket methods, including `initialize`,
+require a successful login on the WebSocket connection. Login stores user and
+client id on the connection. The CLI generates a fresh client id per controller
+instance, prints public server identity before startup login choice, and
+includes user/client id in session and turn requests.
 
 HTTP `GET /` and `GET /dashboard` on the separate dashboard listener render the
 server dashboard. `POST /api/reload` re-runs global `.ndx` bootstrap and

@@ -15,8 +15,8 @@ persistence, dashboard, deploy, and package distribution boundaries.
   project listing, Docker sandbox creation, and tool execution.
 - The CLI is a client of the server. It may render status and cache UI state,
   but it is not the authoritative session store.
-- Non-login WebSocket JSON-RPC methods require a successful login. The server
-  ignores unauthenticated non-login requests.
+- Non-login WebSocket JSON-RPC methods require a successful login except public
+  `server/info`. The server ignores unauthenticated non-login requests.
 - The server depends on a pinned sandbox image. The default image is
   `hika00/ndx-sandbox:0.1.0`.
 - Sandbox image changes require a new Docker Hub tag under `hika00`, a pushed
@@ -174,8 +174,10 @@ sequenceDiagram
   participant Store as SqliteSessionStore
 
   Client->>Server: WebSocket open
+  Client->>Server: server/info
+  Server-->>Client: server version, runtime, sandbox, protocol
   Client->>Server: initialize or session/start without login
-  Server-->>Client: ignored if method is not public login method
+  Server-->>Client: ignored if method is not public
   Client->>Server: account/login defaultUser
   Server->>Store: verify or create local default account
   Store-->>Server: user record
@@ -190,6 +192,7 @@ Public socket methods:
 
 | Method                | Purpose                                                   |
 | --------------------- | --------------------------------------------------------- |
+| `server/info`         | Return server identity for pre-login CLI display.         |
 | `account/create`      | Create an account in the local service database.          |
 | `account/login`       | Authenticate username and password or local default user. |
 | `account/socialLogin` | Validate provider token and map `provider:subject`.       |
@@ -662,7 +665,7 @@ Current published package contract:
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.8`                                      |
+| Version                                  | `0.1.9`                                      |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |

@@ -35,8 +35,33 @@ export interface InitializeResult {
   version?: string;
   protocolVersion?: number;
   dashboardUrl?: string;
+  runtime?: ServerRuntimeInfo;
+  toolSandbox?: ToolSandboxInfo;
   methods?: string[];
   bootstrap?: NdxBootstrapReport;
+}
+
+export interface ServerInfoResult {
+  server?: string;
+  version?: string;
+  protocolVersion?: number;
+  dashboardUrl?: string;
+  runtime?: ServerRuntimeInfo;
+  toolSandbox?: ToolSandboxInfo;
+}
+
+interface ServerRuntimeInfo {
+  kind?: string;
+  node?: string;
+  platform?: string;
+  arch?: string;
+}
+
+interface ToolSandboxInfo {
+  kind?: string;
+  image?: string;
+  workspaceMount?: string;
+  globalMount?: string;
 }
 
 export interface SessionSummary {
@@ -96,6 +121,7 @@ export class CliSessionController {
   private sessionConfigured: SessionConfiguredEvent | undefined;
   private deletedSessionMessage: string | undefined;
   private printedBootstrapGlobalDir: string | undefined;
+  private printedServerInfo = false;
 
   constructor(options: CliSessionRuntime) {
     this.client = options.client;
@@ -134,11 +160,14 @@ export class CliSessionController {
   }
 
   async initialize(): Promise<void> {
+    await this.printPublicServerInfo();
     await this.selectStartupLogin();
     await this.loginWithStoredIdentity(this.login);
     this.initializeResult =
       await this.client.request<InitializeResult>("initialize");
-    this.printError(formatInitializeResult(this.initializeResult));
+    this.printError(
+      formatInitializeResult(this.initializeResult, !this.printedServerInfo),
+    );
     this.printLoginStatus(this.login);
     this.printedBootstrapGlobalDir = this.initializeResult.bootstrap?.globalDir;
   }
@@ -299,6 +328,23 @@ export class CliSessionController {
       password: login.kind === "password" ? login.password : "",
       clientId: this.clientId,
     });
+  }
+
+  private async printPublicServerInfo(): Promise<void> {
+    try {
+      const result = await this.client.request<ServerInfoResult | null>(
+        "server/info",
+      );
+      if (isServerInfoResult(result)) {
+        this.printError(formatServerInfo(result));
+        this.printedServerInfo = true;
+        return;
+      }
+    } catch {
+      // Older servers do not expose pre-login info; initialize will still run.
+    }
+    this.printError("[socket] connected");
+    this.printedServerInfo = true;
   }
 
   private async selectStartupLogin(): Promise<void> {
@@ -562,20 +608,45 @@ export function runtimeEvent(
   return event as RuntimeEventMsg;
 }
 
-function formatInitializeResult(result: InitializeResult): string {
+function formatInitializeResult(
+  result: InitializeResult,
+  includeServerInfo = true,
+): string {
+  const lines: string[] = [];
+  if (includeServerInfo) {
+    lines.push(formatServerInfo(result));
+  }
+  const methods = result.methods?.join(", ") ?? "none";
+  lines.push(`[methods] ${methods}`, formatBootstrap(result.bootstrap));
+  return lines.join("\n");
+}
+
+function formatServerInfo(result: ServerInfoResult): string {
   const server = result.server ?? "unknown";
   const version = result.version ?? "unknown";
   const protocol = result.protocolVersion ?? "unknown";
   const dashboard = result.dashboardUrl ?? "unknown";
-  const methods = result.methods?.join(", ") ?? "none";
+  const runtime = result.runtime;
+  const runtimeKind = runtime?.kind ?? "unknown";
+  const node = runtime?.node ?? "unknown-node";
+  const platform = [runtime?.platform, runtime?.arch].filter(Boolean).join("/");
+  const sandbox = result.toolSandbox;
+  const sandboxKind = sandbox?.kind ?? "unknown";
+  const sandboxImage = sandbox?.image ?? "unknown-image";
+  const workspaceMount = sandbox?.workspaceMount ?? "/workspace";
+  const globalMount = sandbox?.globalMount ?? "/home/.ndx";
   return [
     "[socket] connected",
     `[session-server] ${server} ${version}`,
+    `[server-runtime] ${runtimeKind} ${node}${platform.length > 0 ? ` (${platform})` : ""}`,
+    `[tool-sandbox] ${sandboxKind} ${sandboxImage} (${workspaceMount}, ${globalMount})`,
     `[dashboard] ${dashboard}`,
     `[protocol] ${protocol}`,
-    `[methods] ${methods}`,
-    formatBootstrap(result.bootstrap),
   ].join("\n");
+}
+
+function isServerInfoResult(value: unknown): value is ServerInfoResult {
+  return value !== null && typeof value === "object";
 }
 
 function formatSessionStarted(session: SessionSummary): string {

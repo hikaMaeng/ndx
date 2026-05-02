@@ -34,11 +34,13 @@ import type { RuntimeEvent, RuntimeEventMsg } from "../shared/protocol.js";
 import type {
   ModelClient,
   ModelSettings,
+  JsonObject,
   NdxBootstrapReport,
   NdxConfig,
   SessionContextSummary,
 } from "../shared/types.js";
 import {
+  defaultDockerSandboxImage,
   ensureDockerSandbox,
   hostPathToSandboxPath,
   reclaimDockerSandboxes,
@@ -657,12 +659,10 @@ export class SessionServer {
     switch (request.method) {
       case "initialize":
         return {
-          server: "ndx-ts-session-server",
-          version: this.options.packageVersion ?? readPackageVersion(),
-          protocolVersion: 1,
-          dashboardUrl: this.address?.dashboardUrl,
+          ...this.serverInfo(),
           bootstrap: this.bootstrap,
           methods: [
+            "server/info",
             "initialize",
             "command/list",
             "command/execute",
@@ -682,6 +682,8 @@ export class SessionServer {
             "account/changePassword",
           ],
         };
+      case "server/info":
+        return this.serverInfo();
       case "account/create":
         return this.createAccount(request.params);
       case "account/login":
@@ -795,6 +797,39 @@ export class SessionServer {
       username,
       clientId,
       sessionRoot: this.dataDir(),
+    };
+  }
+
+  private serverInfo(): JsonObject {
+    const sandboxImage =
+      this.options.dockerSandboxImage ??
+      this.config.tools.dockerSandboxImage ??
+      defaultDockerSandboxImage();
+    return {
+      server: "ndx-ts-session-server",
+      version: this.options.packageVersion ?? readPackageVersion(),
+      protocolVersion: 1,
+      dashboardUrl: this.address?.dashboardUrl,
+      runtime: {
+        kind: "host-process",
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+      },
+      toolSandbox:
+        this.options.requireDockerSandbox === true
+          ? {
+              kind: "docker",
+              image: sandboxImage,
+              workspaceMount: "/workspace",
+              globalMount: "/home/.ndx",
+            }
+          : {
+              kind: "disabled",
+              image: sandboxImage,
+              workspaceMount: "/workspace",
+              globalMount: "/home/.ndx",
+            },
     };
   }
 
@@ -2078,6 +2113,7 @@ function isFileSystemError(error: unknown, code: string): boolean {
 
 function isPublicMethod(method: string | undefined): boolean {
   return (
+    method === "server/info" ||
     method === "account/create" ||
     method === "account/login" ||
     method === "account/socialLogin"

@@ -62,6 +62,8 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Dashboard Reload re-runs `.ndx` bootstrap and re-reads settings plus
   `AGENTS.md` sources for later sessions.
 - CLI initialization output includes the connected server dashboard URL.
+- CLI startup output prints public `server/info` version, host runtime, tool
+  sandbox image, and protocol before the login prompt.
 - Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.
 - Account create/login/password-change methods and WebSocket client identity.
 - Social login account creation from a verified provider profile response.
@@ -102,8 +104,9 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
   before initialization, fetch the dashboard through the local dashboard port,
   and verify that external tools plus restored sessions execute through the
   pinned Docker sandbox.
-- CLI session-client tests cover startup login prompting, server version
-  display, compact bootstrap output, and restored context usage formatting.
+- CLI session-client tests cover pre-login server info display, startup login
+  prompting, server version display, compact bootstrap output, and restored
+  context usage formatting.
 - Repository hygiene checks keep the root package as the only package and keep
   generated dependency, build, and Docker runtime state out of tracked source.
 - Yarn Plug'n'Play with the global cache enabled is the package-install

@@ -34,35 +34,38 @@ except for the two `.gitkeep` directory anchors.
    settings for the current folder, starts a local default `SessionServer` at the
    default address, and connects to that local process. `--mock` and
    `NDX_EMBEDDED_SERVER=1` remain source-tree development paths.
-3. After WebSocket connect, an interactive CLI asks for startup login choice:
-   `defaultUser`, the previous non-default login, or new Google device login.
-   Non-interactive clients continue to replay stored login or `defaultUser`.
-   The server ignores unauthenticated non-login JSON-RPC methods.
-4. After login and initialization, the server ensures a Docker tool sandbox for
+3. After WebSocket connect, the CLI calls public `server/info` and prints the
+   connected server version, host Node process runtime, Docker tool sandbox
+   image, dashboard URL, and protocol before any login prompt.
+4. An interactive CLI asks for startup login choice: `defaultUser`, the previous
+   non-default login, or new Google device login. Non-interactive clients
+   continue to replay stored login or `defaultUser`. The server ignores
+   unauthenticated non-login JSON-RPC methods except `server/info`.
+5. After login and initialization, the server ensures a Docker tool sandbox for
    the current folder. If Docker cannot provide the pinned sandbox image or
    container, server startup fails and the CLI exits with that warning.
-5. If no settings file exists, the interactive settings wizard writes global
+6. If no settings file exists, the interactive settings wizard writes global
    `/home/.ndx/settings.json` with the current package version. If settings are
    incomplete, the wizard repairs global settings first and project settings
    second when present.
-6. The current folder is the session `cwd`; the CLI does not ask for a
+7. The current folder is the session `cwd`; the CLI does not ask for a
    workspace folder or project selection.
-7. Session server startup re-checks required global `.ndx/system` elements and installs any missing system tool package files and skills directory before accepting session work.
-8. The CLI is a session-server client. `CliSessionController` logs in, sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
-9. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
-10. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
-11. The session server stores accounts, social account links, sessions, request
+8. Session server startup re-checks required global `.ndx/system` elements and installs any missing system tool package files and skills directory before accepting session work.
+9. The CLI is a session-server client. `CliSessionController` logs in, sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
+10. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
+11. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
+12. The session server stores accounts, social account links, sessions, request
     records, runtime events, notifications, and ownership in SQLite under the
     configured data directory.
-12. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
-13. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
-14. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
-15. Function schemas from that registry are sent to the model.
-16. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
-17. External capability tools and configured MCP stdio commands execute inside
+13. The session server broadcasts notifications to subscribed WebSocket clients. CLI, TUI, VS Code, and other UIs are peers on this boundary.
+14. `runAgent` sends the local client-side conversation stack to the model client through the runtime. It never relies on provider-side response continuation.
+15. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
+16. Function schemas from that registry are sent to the model.
+17. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
+18. External capability tools and configured MCP stdio commands execute inside
     the current-folder Docker sandbox by using `docker exec` against the
     server-managed container. Task tools run inside the worker.
-18. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
+19. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
 
 ## Model Routing And Context
 
@@ -101,11 +104,14 @@ The server translates runtime events into JSON-RPC notifications:
 
 Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live session state and durable SQLite records. Session initialization detail is displayed by the CLI and kept in client-local status/history only; it is not sent back as prompt context.
 
-`initialize` responses include the server package version, protocol version,
-and bootstrap report. `session/configured` events include restored-context
-summary as estimated tokens over the active model context when the model
-declares `maxContext`. The CLI suppresses duplicate bootstrap detail after
-startup and prints it as already initialized for the same global directory.
+`server/info` is public and returns only server identity, version, host runtime,
+tool sandbox, dashboard URL, and protocol for pre-login display. `initialize`
+responses require login and include the same server package version, protocol
+version, methods, and bootstrap report. `session/configured` events include
+restored-context summary as estimated tokens over the active model context when
+the model declares `maxContext`. The CLI suppresses duplicate bootstrap detail
+after startup and prints it as already initialized for the same global
+directory.
 
 ## CLI Client Boundary
 
@@ -157,10 +163,11 @@ holding that session detects the deleted SQLite row on the next prompt or turn
 completion, emits `session/deleted`, closes its socket clients, and terminates.
 
 The socket server requires authentication for non-login JSON-RPC methods.
-`account/create`, `account/login`, and `account/socialLogin` are public;
-session, command, turn, account mutation, delete, project, and `initialize`
-methods require a successful login. Unauthenticated non-login requests are
-ignored. The CLI assigns a fresh client id per controller instance.
+`server/info`, `account/create`, `account/login`, and `account/socialLogin` are
+public; session, command, turn, account mutation, delete, project, and
+`initialize` methods require a successful login. Unauthenticated non-login
+requests are ignored. The CLI assigns a fresh client id per controller
+instance.
 The server treats the authenticated connection user as authoritative and does
 not rely on later request params to choose the user.
 
