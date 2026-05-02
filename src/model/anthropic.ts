@@ -61,6 +61,7 @@ export class AnthropicMessagesAdapter {
         max_tokens: this.options.limitResponseLength ?? 4096,
         messages: this.messages,
         tools: normalizeAnthropicTools(tools),
+        ...optionalAnthropicParameters(this.options),
       },
     );
     if (!response.ok) {
@@ -130,6 +131,22 @@ export class AnthropicMessagesAdapter {
     }
     this.messages.push({ role: "user", content: JSON.stringify(input) });
   }
+}
+
+function optionalAnthropicParameters(
+  options: ProviderRequestOptions,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (options.temperature !== undefined) {
+    payload.temperature = options.temperature;
+  }
+  if (options.topP !== undefined) {
+    payload.top_p = options.topP;
+  }
+  if (options.topK !== undefined) {
+    payload.top_k = options.topK;
+  }
+  return payload;
 }
 
 function isMessage(

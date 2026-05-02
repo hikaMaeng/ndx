@@ -72,6 +72,9 @@ export function optionalProviderParameters(
     payload.max_tokens = options.limitResponseLength;
     payload.max_output_tokens = options.limitResponseLength;
   }
+  if (options.temperature !== undefined) {
+    payload.temperature = options.temperature;
+  }
   if (options.topK !== undefined) {
     payload.top_k = options.topK;
   }

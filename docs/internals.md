@@ -143,9 +143,11 @@ client implemented here generates a fresh client id per controller instance,
 logs in as `defaultUser` with an empty password, and includes user/client id in
 session and turn requests.
 
-HTTP `GET /` and `GET /dashboard` on the separate dashboard listener are
-intentionally minimal. They return the dashboard placeholder only. The
-dashboard has no authentication or authorization; agent interaction remains on
+HTTP `GET /` and `GET /dashboard` on the separate dashboard listener render the
+server dashboard. `POST /api/reload` re-runs global `.ndx` bootstrap and
+reloads settings plus discovered `AGENTS.md` sources for later sessions.
+`POST /api/exit` requests shutdown of the local server instance. The dashboard
+has no authentication or authorization; agent interaction remains on
 authenticated WebSocket JSON-RPC.
 
 ## Mock Client
@@ -160,4 +162,6 @@ project directory. Compose mounts `./docker/volume/workspace` to `/workspace`.
 The live server manages tool containers by resolved physical project folder,
 stores that path in Docker labels, and reuses the labeled running container
 instead of creating another one for the same folder.
+On startup, a sandboxed server removes existing containers labeled as ndx
+server-owned tool sandboxes before creating the current workspace sandbox.
 The ndx server is a local process and owns session state outside Docker.

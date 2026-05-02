@@ -85,7 +85,9 @@ neither global nor project settings exist and the CLI is attached to a TTY, ndx
 asks for permission mode, provider type, provider key, provider URL, model name,
 and max context, then writes `/home/.ndx/settings.json`. Non-TTY startup still
 requires an existing settings file. The socket initialization output includes a
-bootstrap report showing what was installed and what already existed.
+bootstrap report showing what was installed and what already existed. The
+loader also appends discovered `AGENTS.md` files from the current directory
+ancestry to the runtime instructions and lists them in initialization sources.
 
 ## Session Server
 
@@ -115,9 +117,19 @@ persistence. Each CLI controller instance sends a fresh `clientId` and logs in
 before using session, command, or turn methods. The server tracks distinct
 connections even when user, workspace, and session are the same.
 
-Open the printed dashboard URL for the dashboard placeholder when the server is
-running. The dashboard listener has no authentication or authorization. Agent
-interaction remains on authenticated WebSocket JSON-RPC.
+Open the printed dashboard URL when the server is running. CLI initialization
+also prints the dashboard URL returned by the connected server. The dashboard
+listener has no authentication or authorization. Agent interaction remains on
+authenticated WebSocket JSON-RPC.
+
+Dashboard actions:
+
+```text
+Reload  Re-run global .ndx bootstrap and re-read settings plus AGENTS.md sources.
+Exit    Request the local server process to stop.
+```
+
+Dashboard UI copy is English-only.
 
 ## Interactive Commands
 
@@ -205,6 +217,7 @@ parameters:
       "effort": ["low", "medium", "high"],
       "think": true,
       "limitResponseLength": 4096,
+      "temperature": 0.2,
       "topK": 40,
       "repeatPenalty": 1.05,
       "presencePenalty": 0.1,
@@ -239,6 +252,11 @@ with `./docker/volume/workspace` mounted at `/workspace`, writes
 ```bash
 npm run deploy
 ```
+
+Every completed code change must bump the package version, publish the new
+version to Verdaccio, install that exact version from
+`https://verdaccio.neurondev.net/`, and verify the installed `ndx`/`ndxserver`
+entrypoints. Public npm publishing still requires an explicit user request.
 
 Build the sandbox image explicitly with:
 

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import type {
   EnvMap,
   JsonObject,
@@ -120,6 +120,15 @@ export function loadConfig(
       searchFile,
     );
     sources.push(searchFile);
+  }
+
+  const instructionFiles = agentsFiles(cwd);
+  if (instructionFiles.length > 0) {
+    merged.instructions = [
+      expectString(merged.instructions, "instructions"),
+      formatAgentsInstructions(instructionFiles),
+    ].join("\n\n");
+    sources.push(...instructionFiles);
   }
 
   return {
@@ -254,6 +263,32 @@ function writeJsonFile(path: string, value: unknown): void {
 function projectSettingsFile(cwd: string): string | undefined {
   const candidate = join(resolve(cwd), CONFIG_DIR, SETTINGS_FILE);
   return existsSync(candidate) ? candidate : undefined;
+}
+
+function agentsFiles(cwd: string): string[] {
+  const files: string[] = [];
+  let current = resolve(cwd);
+  const root = parse(current).root;
+  while (true) {
+    const candidate = join(current, "AGENTS.md");
+    if (existsSync(candidate)) {
+      files.unshift(candidate);
+    }
+    if (current === root) {
+      return files;
+    }
+    current = dirname(current);
+  }
+}
+
+function formatAgentsInstructions(files: string[]): string {
+  return [
+    "AGENTS.md instructions:",
+    ...files.flatMap((file) => [
+      `--- ${file} ---`,
+      readFileSync(file, "utf8").trimEnd(),
+    ]),
+  ].join("\n");
 }
 
 function parseSettings(contents: string, file: string): PartialSettings {
@@ -691,6 +726,7 @@ function assertModelSettings(
   assertOptionalBoolean(model.think, `${field}.think`, file);
   for (const key of [
     "limitResponseLength",
+    "temperature",
     "topK",
     "repeatPenalty",
     "presencePenalty",

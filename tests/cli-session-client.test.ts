@@ -43,6 +43,10 @@ test("CLI session controller initializes socket, starts session, and renders sta
       .includes("[methods] initialize, command/list, command/execute"),
     true,
   );
+  assert.equal(
+    stderr.join("\n").includes("[dashboard] http://127.0.0.1:45124"),
+    true,
+  );
 });
 
 test("CLI session controller records initialization events outside prompt context", async () => {
@@ -292,6 +296,7 @@ class FakeTransport implements CliSessionTransport {
       return {
         server: "ndx-ts-session-server",
         protocolVersion: 1,
+        dashboardUrl: "http://127.0.0.1:45124",
         bootstrap: bootstrapReport("/home/.ndx"),
         methods: [
           "initialize",

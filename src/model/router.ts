@@ -94,6 +94,7 @@ export class RoundRobinModelRouter implements ModelClient {
       effort: activeModel?.activeEffort,
       think: activeModel?.activeThink,
       limitResponseLength: activeModel?.limitResponseLength,
+      temperature: activeModel?.temperature,
       topK: activeModel?.topK,
       repeatPenalty: activeModel?.repeatPenalty,
       presencePenalty: activeModel?.presencePenalty,

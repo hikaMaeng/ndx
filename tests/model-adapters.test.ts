@@ -107,6 +107,7 @@ test("model request options expose effort, thinking, and sampling parameters", (
       effort: "high",
       think: false,
       limitResponseLength: 1024,
+      temperature: 0.2,
       topK: 40,
       repeatPenalty: 1.1,
       presencePenalty: 0.2,
@@ -118,6 +119,7 @@ test("model request options expose effort, thinking, and sampling parameters", (
       think: false,
       max_tokens: 1024,
       max_output_tokens: 1024,
+      temperature: 0.2,
       top_k: 40,
       repeat_penalty: 1.1,
       presence_penalty: 0.2,
@@ -221,6 +223,63 @@ test("OpenAI responses adapter always sends client-side context without previous
   }
 });
 
+test("OpenAI provider sends configured inference parameters to responses and chat fallback", async () => {
+  const bodies: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    bodies.push(await readJson(request));
+    if (request.url === "/v1/responses") {
+      writeJson(response, 404, { error: "missing" });
+      return;
+    }
+    assert.equal(request.url, "/v1/chat/completions");
+    writeJson(response, 200, {
+      choices: [{ message: { content: "chat-ok" } }],
+    });
+  });
+  const baseUrl = await listen(server);
+  try {
+    const client = createProviderModelClient(
+      configFor("openai", `${baseUrl}/v1`, {
+        limitResponseLength: 1024,
+        temperature: 0.2,
+        topK: 40,
+        repeatPenalty: 1.1,
+        presencePenalty: 0.2,
+        topP: 0.9,
+        MinP: 0.05,
+      }),
+    );
+    await client.create("hello", []);
+
+    assert.deepEqual(
+      bodies.map((body) => pickInferenceParams(body)),
+      [
+        {
+          max_tokens: 1024,
+          max_output_tokens: 1024,
+          temperature: 0.2,
+          top_k: 40,
+          repeat_penalty: 1.1,
+          presence_penalty: 0.2,
+          top_p: 0.9,
+          min_p: 0.05,
+        },
+        {
+          max_tokens: 1024,
+          temperature: 0.2,
+          top_k: 40,
+          repeat_penalty: 1.1,
+          presence_penalty: 0.2,
+          top_p: 0.9,
+          min_p: 0.05,
+        },
+      ],
+    );
+  } finally {
+    await close(server);
+  }
+});
+
 test("normalizes chat completions function calls", () => {
   const normalized = normalizeChatResponse({
     choices: [
@@ -308,6 +367,39 @@ test("OpenAI provider prefers responses and falls back to chat completions on mi
   }
 });
 
+test("Anthropic provider sends supported inference parameters", async () => {
+  const bodies: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    assert.equal(request.url, "/v1/messages");
+    bodies.push(await readJson(request));
+    writeJson(response, 200, {
+      id: "msg-1",
+      content: [{ type: "text", text: "anthropic-ok" }],
+    });
+  });
+  const baseUrl = await listen(server);
+  try {
+    const client = createProviderModelClient(
+      configFor("anthropic", `${baseUrl}/v1`, {
+        limitResponseLength: 1024,
+        temperature: 0.2,
+        topK: 40,
+        topP: 0.9,
+      }),
+    );
+    const response = await client.create("hello", []);
+    assert.equal(response.text, "anthropic-ok");
+    assert.deepEqual(pickInferenceParams(bodies[0]), {
+      max_tokens: 1024,
+      temperature: 0.2,
+      top_k: 40,
+      top_p: 0.9,
+    });
+  } finally {
+    await close(server);
+  }
+});
+
 test("model router keeps a sticky model per selected pool and honors custom prompt keywords", async () => {
   const models: string[] = [];
   const router = new RoundRobinModelRouter(configWithPools(), (config) => {
@@ -340,7 +432,16 @@ test("model router keeps a sticky model per selected pool and honors custom prom
   ]);
 });
 
-function configFor(type: "openai" | "anthropic", url: string): NdxConfig {
+function configFor(
+  type: "openai" | "anthropic",
+  url: string,
+  modelOptions: Partial<NdxConfig["activeModel"]> = {},
+): NdxConfig {
+  const activeModel = {
+    name: "test-model",
+    provider: "test",
+    ...modelOptions,
+  };
   return {
     model: "test-model",
     modelPools: {
@@ -361,8 +462,8 @@ function configFor(type: "openai" | "anthropic", url: string): NdxConfig {
         url,
       },
     },
-    models: [{ name: "test-model", provider: "test" }],
-    activeModel: { name: "test-model", provider: "test" },
+    models: [activeModel],
+    activeModel,
     activeProvider: { type, key: "", url },
     permissions: { defaultMode: "danger-full-access" },
     websearch: {},
@@ -374,6 +475,26 @@ function configFor(type: "openai" | "anthropic", url: string): NdxConfig {
     tools: { imageGeneration: false },
     paths: { globalDir: "/tmp/ndx-empty-global" },
   };
+}
+
+function pickInferenceParams(value: unknown): Record<string, unknown> {
+  assert.equal(typeof value, "object");
+  assert.notEqual(value, null);
+  const body = value as Record<string, unknown>;
+  return Object.fromEntries(
+    [
+      "max_tokens",
+      "max_output_tokens",
+      "temperature",
+      "top_k",
+      "repeat_penalty",
+      "presence_penalty",
+      "top_p",
+      "min_p",
+    ]
+      .filter((key) => key in body)
+      .map((key) => [key, body[key]]),
+  );
 }
 
 function writeJson(

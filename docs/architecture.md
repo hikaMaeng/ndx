@@ -158,10 +158,10 @@ not rely on later request params to choose the user.
 
 The service owns two listeners: a WebSocket socket port and a dashboard HTTP
 port. `ndx serve` and `ndxserver` print both addresses. Normal HTTP requests to
-`/` or `/dashboard` on the dashboard port return only a dashboard placeholder.
-The placeholder exposes one `main` landmark named by `ndx Agent Service`, a
-status message, and `data-testid="agent-dashboard-placeholder"` for browser
-verification.
+`/` or `/dashboard` on the dashboard port return the server dashboard. The
+dashboard exposes one `main` landmark named by `Server Dashboard`, a left
+action menu, source/bootstrap summaries, and Reload plus Exit buttons for local
+server operation.
 
 ## Docker Flow
 
@@ -182,5 +182,8 @@ The live server creates or reuses one Docker tool container per resolved
 physical project folder. It finds existing containers through Docker labels,
 uses `ndx-tool-<folder-name>` as the preferred name, and adds a deterministic
 hash suffix only when two different physical folders share the same basename.
+When a sandboxed server starts, it first removes prior ndx server-owned tool
+sandbox containers by label so stale workspace containers do not survive a new
+server instance.
 The image itself contains the baseline shell/tool runtime; startup only binds
 the user `.ndx`, project folder, and Docker socket volumes.

@@ -1,12 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createServer, type IncomingMessage, type Server } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import type { Socket } from "node:net";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   configForModel,
   defaultModelEffort,
   defaultModelThink,
   ensureGlobalNdxHome,
+  loadConfig,
 } from "../config/index.js";
 import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
@@ -32,6 +40,7 @@ import type {
 import {
   ensureDockerSandbox,
   hostPathToSandboxPath,
+  reclaimDockerSandboxes,
   type DockerSandboxState,
 } from "./docker-sandbox.js";
 
@@ -64,6 +73,8 @@ export interface SessionServerOptions {
   persistenceDir?: string;
   requireDockerSandbox?: boolean;
   dockerSandboxImage?: string;
+  packageVersion?: string;
+  onDashboardExit?: () => void;
 }
 
 /** Concrete loopback address chosen by the session server listener. */
@@ -128,23 +139,29 @@ export class SessionServer {
   private readonly server: Server;
   private readonly dashboardServer: Server;
   private readonly options: SessionServerOptions;
+  private config: NdxConfig;
+  private sources: string[];
   private readonly sessions = new Map<string, LiveSession>();
   private readonly clients = new Set<WebSocketConnection>();
   private readonly store: SqliteSessionStore;
-  private readonly bootstrap: NdxBootstrapReport;
+  private bootstrap: NdxBootstrapReport;
+  private address: SessionServerAddress | undefined;
   private readonly serverId = randomUUID();
   private readonly sandboxes = new Map<string, DockerSandboxState>();
+  private reclaimedDockerSandboxes = false;
   private closing = false;
 
   constructor(options: SessionServerOptions) {
     this.options = options;
-    this.bootstrap = ensureGlobalNdxHome(options.config.paths.globalDir);
+    this.config = options.config;
+    this.sources = options.sources ?? [];
+    this.bootstrap = ensureGlobalNdxHome(this.config.paths.globalDir);
     this.server = createServer();
     this.dashboardServer = createServer();
     this.store = SqliteSessionStore.open(
       options.dataDir ??
         options.persistenceDir ??
-        options.config.paths.dataDir ??
+        this.config.paths.dataDir ??
         "/home/.ndx/system",
     );
     this.server.on("upgrade", (request, socket) => {
@@ -155,25 +172,336 @@ export class SessionServer {
       response.end("ndx socket server\n");
     });
     this.dashboardServer.on("request", (request, response) => {
-      if (request.url === "/" || request.url === "/dashboard") {
-        response.writeHead(200, {
-          "content-type": "text/html; charset=utf-8",
+      void this.handleDashboardRequest(request, response).catch((error) => {
+        response.writeHead(500, {
+          "content-type": "application/json; charset=utf-8",
         });
-        response.end(DASHBOARD_HTML);
-        return;
-      }
-      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-      response.end("not found\n");
+        response.end(JSON.stringify({ ok: false, error: errorMessage(error) }));
+      });
     });
   }
 
   private nextSessionConfig(): NdxConfig {
-    return this.options.config;
+    return this.config;
   }
 
   private configForPersistedSession(session: PersistedSessionState): NdxConfig {
     void session;
-    return this.options.config;
+    return this.config;
+  }
+
+  private async handleDashboardRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    if (
+      request.method === "GET" &&
+      (url.pathname === "/" || url.pathname === "/dashboard")
+    ) {
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+      });
+      response.end(this.renderDashboardHtml());
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/reload") {
+      response.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify(this.reloadConfiguration()));
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/exit") {
+      response.writeHead(202, {
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(
+        JSON.stringify({ ok: true, message: "Server exit requested." }),
+      );
+      setImmediate(() => {
+        void this.close().finally(() => this.options.onDashboardExit?.());
+      });
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("not found\n");
+  }
+
+  private reloadConfiguration(): Record<string, unknown> {
+    this.bootstrap = ensureGlobalNdxHome(this.config.paths.globalDir);
+    try {
+      const loaded = loadConfig(this.options.cwd, {
+        globalDir: this.config.paths.globalDir,
+      });
+      this.config = loaded.config;
+      this.sources = loaded.sources;
+      this.sandboxes.clear();
+      return {
+        ok: true,
+        message: "Configuration reloaded.",
+        checkedAt: this.bootstrap.checkedAt,
+        sources: this.sources,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: errorMessage(error),
+        checkedAt: this.bootstrap.checkedAt,
+        sources: this.sources,
+      };
+    }
+  }
+
+  private renderDashboardHtml(): string {
+    const version = this.options.packageVersion ?? readPackageVersion();
+    const socketUrl = this.address?.url ?? "not listening";
+    const dashboardUrl = this.address?.dashboardUrl ?? "not listening";
+    const sources =
+      this.sources.length === 0
+        ? "<li>None</li>"
+        : this.sources
+            .map((source) => `<li><code>${escapeHtml(source)}</code></li>`)
+            .join("");
+    const bootstrapRows = this.bootstrap.elements
+      .map(
+        (element) =>
+          `<li><span>${escapeHtml(element.status)}</span><code>${escapeHtml(element.name)}</code><small>${escapeHtml(element.path)}</small></li>`,
+      )
+      .join("");
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NDX Dashboard</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f8f5;
+        color: #1f2428;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #f7f8f5;
+        color: #1f2428;
+      }
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr);
+      }
+      aside {
+        border-right: 1px solid #d7ddd2;
+        background: #ffffff;
+        padding: 24px 18px;
+      }
+      .brand {
+        margin-bottom: 28px;
+      }
+      .brand strong {
+        display: block;
+        font-size: 30px;
+        line-height: 1;
+      }
+      .brand small {
+        display: block;
+        margin-top: 6px;
+        color: #647067;
+        font-size: 13px;
+      }
+      nav {
+        display: grid;
+        gap: 10px;
+      }
+      button {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid #cbd4c6;
+        border-radius: 6px;
+        background: #eef3ed;
+        color: #1f2428;
+        font: inherit;
+        font-weight: 650;
+        text-align: left;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      button:hover { background: #e2ebdf; }
+      button.danger {
+        border-color: #e1b7ad;
+        background: #fff0ec;
+      }
+      button.danger:hover { background: #ffe3dc; }
+      main {
+        padding: 28px;
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+        gap: 24px;
+        align-items: start;
+      }
+      h1 {
+        margin: 0 0 14px;
+        font-size: 28px;
+        line-height: 1.15;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+      pre {
+        margin: 0;
+        overflow: auto;
+        border: 1px solid #d7ddd2;
+        border-radius: 6px;
+        background: #151a1e;
+        color: #d9f3df;
+        padding: 18px;
+        font: 14px/1.35 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      }
+      section {
+        margin-bottom: 22px;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 128px minmax(0, 1fr);
+        gap: 8px 14px;
+        margin: 0;
+      }
+      dt {
+        color: #647067;
+        font-weight: 650;
+      }
+      dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      }
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+      .bootstrap-list {
+        display: grid;
+        gap: 8px;
+        padding-left: 0;
+        list-style: none;
+      }
+      .bootstrap-list li {
+        display: grid;
+        grid-template-columns: 72px minmax(120px, 180px) minmax(0, 1fr);
+        gap: 10px;
+        align-items: baseline;
+      }
+      .bootstrap-list span {
+        color: #346b45;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .bootstrap-list small {
+        color: #647067;
+        overflow-wrap: anywhere;
+      }
+      [role="status"], [role="alert"] {
+        min-height: 24px;
+        margin-top: 16px;
+        color: #346b45;
+        font-weight: 650;
+      }
+      [role="alert"] { color: #a33a27; }
+      @media (max-width: 760px) {
+        .shell { grid-template-columns: 1fr; }
+        aside {
+          position: static;
+          border-right: 0;
+          border-bottom: 1px solid #d7ddd2;
+        }
+        .hero { grid-template-columns: 1fr; }
+        dl { grid-template-columns: 1fr; }
+        .bootstrap-list li { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside aria-label="Dashboard menu">
+        <div class="brand" aria-label="NDX version">
+          <strong>NDX</strong>
+          <small>Version ${escapeHtml(version)}</small>
+        </div>
+        <nav aria-label="Server actions">
+          <button type="button" id="reload-button">Reload</button>
+          <button type="button" id="exit-button" class="danger">Exit</button>
+        </nav>
+        <p id="action-status" role="status" data-testid="dashboard-action-status">Dashboard is running.</p>
+      </aside>
+      <main aria-labelledby="dashboard-title" data-testid="ndx-dashboard">
+        <div class="hero">
+          <section aria-labelledby="dashboard-title">
+            <h1 id="dashboard-title">Server Dashboard</h1>
+            <pre aria-label="NDX ASCII art">${DASHBOARD_ASCII_ART}</pre>
+          </section>
+          <section aria-labelledby="server-info-title">
+            <h2 id="server-info-title">Server Information</h2>
+            <dl>
+              <dt>Socket</dt>
+              <dd><code>${escapeHtml(socketUrl)}</code></dd>
+              <dt>Dashboard</dt>
+              <dd><code>${escapeHtml(dashboardUrl)}</code></dd>
+              <dt>Project</dt>
+              <dd><code>${escapeHtml(resolve(this.options.cwd))}</code></dd>
+              <dt>Model</dt>
+              <dd><code>${escapeHtml(this.config.model)}</code></dd>
+              <dt>Bootstrap</dt>
+              <dd>${escapeHtml(new Date(this.bootstrap.checkedAt).toISOString())}</dd>
+            </dl>
+          </section>
+        </div>
+        <section aria-labelledby="sources-title">
+          <h2 id="sources-title">Recognized Sources</h2>
+          <ul data-testid="dashboard-sources">${sources}</ul>
+        </section>
+        <section aria-labelledby="bootstrap-title">
+          <h2 id="bootstrap-title">Bootstrap Elements</h2>
+          <ul class="bootstrap-list" data-testid="dashboard-bootstrap">${bootstrapRows}</ul>
+        </section>
+      </main>
+    </div>
+    <script>
+      const status = document.getElementById("action-status");
+      async function postAction(path, pending) {
+        status.setAttribute("role", "status");
+        status.textContent = pending;
+        const response = await fetch(path, { method: "POST" });
+        const body = await response.json();
+        if (!response.ok || body.ok === false) {
+          status.setAttribute("role", "alert");
+          status.textContent = body.message || "Action failed.";
+          return body;
+        }
+        status.textContent = body.message || "Action completed.";
+        return body;
+      }
+      document.getElementById("reload-button").addEventListener("click", async () => {
+        const body = await postAction("/api/reload", "Reloading configuration.");
+        if (body.ok !== false) {
+          window.location.reload();
+        }
+      });
+      document.getElementById("exit-button").addEventListener("click", () => {
+        void postAction("/api/exit", "Requesting server exit.");
+      });
+    </script>
+  </body>
+</html>`;
   }
 
   private clientContext(
@@ -200,6 +528,7 @@ export class SessionServer {
     dashboardHost = host,
   ): Promise<SessionServerAddress> {
     if (this.options.requireDockerSandbox === true) {
+      await this.reclaimPriorDockerSandboxes();
       await this.ensureWorkspaceSandbox(this.options.cwd);
     }
     const socket = await listenHttp(this.server, port, host, "session server");
@@ -209,7 +538,7 @@ export class SessionServer {
       dashboardHost,
       "dashboard server",
     );
-    return {
+    this.address = {
       host,
       port: socket.port,
       url: `ws://${host}:${socket.port}`,
@@ -217,6 +546,7 @@ export class SessionServer {
       dashboardPort: dashboard.port,
       dashboardUrl: `http://${dashboardHost}:${dashboard.port}`,
     };
+    return this.address;
   }
 
   async close(): Promise<void> {
@@ -328,6 +658,7 @@ export class SessionServer {
         return {
           server: "ndx-ts-session-server",
           protocolVersion: 1,
+          dashboardUrl: this.address?.dashboardUrl,
           bootstrap: this.bootstrap,
           methods: [
             "initialize",
@@ -402,7 +733,7 @@ export class SessionServer {
       cwd,
       config,
       client: this.options.createClient(config),
-      sources: this.options.sources,
+      sources: this.sources,
       bootstrap: this.bootstrap,
     });
     const now = Date.now();
@@ -533,13 +864,21 @@ export class SessionServer {
     }
     const sandbox = await ensureDockerSandbox({
       workspaceDir,
-      globalDir: this.options.config.paths.globalDir,
+      globalDir: this.config.paths.globalDir,
       image:
-        this.options.dockerSandboxImage ??
-        this.options.config.tools.dockerSandboxImage,
+        this.options.dockerSandboxImage ?? this.config.tools.dockerSandboxImage,
     });
     this.sandboxes.set(workspaceDir, sandbox);
     return sandbox;
+  }
+
+  private async reclaimPriorDockerSandboxes(): Promise<void> {
+    if (this.reclaimedDockerSandboxes) {
+      return;
+    }
+    this.reclaimedDockerSandboxes = true;
+    await reclaimDockerSandboxes();
+    this.sandboxes.clear();
   }
 
   private configWithSandbox(
@@ -1038,7 +1377,7 @@ export class SessionServer {
       client: this.options.createClient(config),
       sessionId: persisted.id,
       history: conversationHistoryFromRuntimeEvents(persisted.events),
-      sources: this.options.sources,
+      sources: this.sources,
       bootstrap: this.bootstrap,
     });
     const liveSession: LiveSession = {
@@ -1617,7 +1956,7 @@ export class SessionServer {
         client: this.options.createClient(config),
         sessionId: persisted.id,
         history: conversationHistoryFromRuntimeEvents(persisted.events),
-        sources: this.options.sources,
+        sources: this.sources,
         bootstrap: this.bootstrap,
       }),
       events: persisted.events,
@@ -1651,8 +1990,8 @@ export class SessionServer {
     return (
       this.options.dataDir ??
       this.options.persistenceDir ??
-      this.options.config.paths.dataDir ??
-      this.options.config.paths.sessionDir ??
+      this.config.paths.dataDir ??
+      this.config.paths.sessionDir ??
       "/home/.ndx/system"
     );
   }
@@ -1822,46 +2161,39 @@ function userFromLogKey(logKey: string): string {
   return logKey.split("/")[0] || "defaultUser";
 }
 
-const DASHBOARD_HTML = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ndx Agent Service</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: Canvas;
-        color: CanvasText;
-      }
-      main {
-        width: min(720px, calc(100vw - 48px));
-      }
-      h1 {
-        margin: 0 0 12px;
-        font-size: 32px;
-        font-weight: 650;
-      }
-      p {
-        margin: 0;
-        line-height: 1.5;
-      }
-    </style>
-  </head>
-  <body>
-    <main aria-labelledby="dashboard-title" data-testid="agent-dashboard-placeholder">
-      <h1 id="dashboard-title">ndx Agent Service</h1>
-      <p role="status">Dashboard placeholder is running.</p>
-    </main>
-  </body>
-</html>`;
+const DASHBOARD_ASCII_ART = [
+  String.raw` _   _ ____  __  __`,
+  String.raw`| \ | |  _ \ \ \/ /`,
+  String.raw`|  \| | | | | \  /`,
+  String.raw`| |\  | |_| | /  \ `,
+  String.raw`|_| \_|____/ /_/\_\ `,
+].join("\n");
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function readPackageVersion(): string {
+  let current = dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const candidate = join(current, "package.json");
+    if (existsSync(candidate)) {
+      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
+        version?: unknown;
+      };
+      return typeof parsed.version === "string" ? parsed.version : "unknown";
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return "unknown";
+    }
+    current = parent;
+  }
+}
 
 function sleepSync(ms: number): void {
   const signal = new Int32Array(new SharedArrayBuffer(4));

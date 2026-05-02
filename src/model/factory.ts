@@ -21,6 +21,7 @@ export function createProviderModelClient(config: NdxConfig): ModelClient {
       effort: config.activeModel.activeEffort,
       think: config.activeModel.activeThink,
       limitResponseLength: config.activeModel.limitResponseLength,
+      temperature: config.activeModel.temperature,
       topK: config.activeModel.topK,
       repeatPenalty: config.activeModel.repeatPenalty,
       presencePenalty: config.activeModel.presencePenalty,

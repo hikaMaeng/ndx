@@ -26,6 +26,9 @@
 - The global `.ndx/system` directory is self-healing at startup for required directories and built-in `/system/tools` packages.
 - `/home/.ndx/system` bootstrap information remains code-managed and is not stored in SQLite.
 - The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing `/home/.ndx/settings.json`; non-TTY loading still fails before model selection.
+- `AGENTS.md` files discovered from the current working directory ancestry are
+  appended to runtime instructions after settings are merged. They are reported
+  as initialization sources and are re-read by dashboard Reload.
 
 ## Host CLI State
 
@@ -53,6 +56,10 @@
 - Docker compose must not be treated as the server owner. The root compose file
   owns only the `ndx-sandbox` service used for tool execution.
 - The dashboard has no authentication or authorization.
+- The dashboard Reload action is unauthenticated and re-runs global `.ndx`
+  bootstrap plus settings and `AGENTS.md` source loading for new sessions.
+- The dashboard Exit action is unauthenticated and requests shutdown of the
+  local server instance that owns the dashboard listener.
 - WebSocket methods other than `account/create`, `account/login`, and
   `account/socialLogin` require successful account login on that connection.
   Unauthenticated non-login requests are ignored.
@@ -89,6 +96,12 @@
   created with the project folder mounted at `/workspace`, the user `.ndx`
   mounted at `/home/.ndx`, and `/var/run/docker.sock` mounted for Docker
   externalization.
+- Server-managed sandbox containers carry `dev.ndx.owner=ndx-server`,
+  `dev.ndx.role=tool-sandbox`, `dev.ndx.workspace=<host-path>`, and
+  `dev.ndx.image=<image>` Docker labels.
+- A server process with Docker sandboxing enabled removes all prior ndx
+  server-owned sandbox containers at startup before creating its current
+  workspace sandbox.
 - The server must manage exactly one running tool sandbox per resolved physical
   project folder. It records the physical folder in Docker labels so a later
   server process can find the same container again. If two physical folders have
@@ -128,13 +141,19 @@
 
 ## Browser Markup
 
-The only rendered frontend view is the agent-service dashboard placeholder at
-`GET /` and `GET /dashboard` on the dashboard listener.
+The rendered frontend view is the agent-service dashboard at `GET /` and
+`GET /dashboard` on the dashboard listener.
 
-- The page exposes one `main` landmark named by the visible `ndx Agent Service`
+- The page exposes one `main` landmark named by the visible `Server Dashboard`
   heading.
-- The status text uses `role="status"`.
-- The stable machine-only locator is
-  `data-testid="agent-dashboard-placeholder"`.
+- The left menu is an `aside` named `Dashboard menu`; action controls are in
+  `nav aria-label="Server actions"`.
+- `Reload` and `Exit` are native buttons with stable accessible names.
+- The action result text uses `role="status"` and may switch to `role="alert"`
+  on failure.
+- Stable machine-only locators are `data-testid="ndx-dashboard"`,
+  `data-testid="dashboard-action-status"`, `data-testid="dashboard-sources"`,
+  and `data-testid="dashboard-bootstrap"`.
+- TUI and dashboard user-facing copy must remain English-only.
 
 No other UI selectors are part of the contract yet.

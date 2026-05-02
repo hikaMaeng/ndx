@@ -20,6 +20,7 @@ export interface ProviderRequestOptions {
   effort?: string;
   think?: boolean;
   limitResponseLength?: number;
+  temperature?: number;
   topK?: number;
   repeatPenalty?: number;
   presencePenalty?: number;

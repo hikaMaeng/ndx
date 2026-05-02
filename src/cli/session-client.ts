@@ -33,6 +33,7 @@ export interface CliSessionTransport {
 export interface InitializeResult {
   server?: string;
   protocolVersion?: number;
+  dashboardUrl?: string;
   methods?: string[];
   bootstrap?: NdxBootstrapReport;
 }
@@ -518,10 +519,12 @@ export function runtimeEvent(
 function formatInitializeResult(result: InitializeResult): string {
   const server = result.server ?? "unknown";
   const protocol = result.protocolVersion ?? "unknown";
+  const dashboard = result.dashboardUrl ?? "unknown";
   const methods = result.methods?.join(", ") ?? "none";
   return [
     "[socket] connected",
     `[session-server] ${server}`,
+    `[dashboard] ${dashboard}`,
     `[protocol] ${protocol}`,
     `[methods] ${methods}`,
     formatBootstrap(result.bootstrap),

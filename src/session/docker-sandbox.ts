@@ -25,7 +25,10 @@ const CONTAINER_WORKSPACE_DIR = "/workspace";
 const CONTAINER_GLOBAL_DIR = "/home/.ndx";
 const SANDBOX_ROLE_LABEL = "dev.ndx.role";
 const SANDBOX_WORKSPACE_LABEL = "dev.ndx.workspace";
+const SANDBOX_OWNER_LABEL = "dev.ndx.owner";
+const SANDBOX_IMAGE_LABEL = "dev.ndx.image";
 const SANDBOX_ROLE = "tool-sandbox";
+const SANDBOX_OWNER = "ndx-server";
 
 /** Resolve the Docker sandbox image pinned by this server build. */
 export function defaultDockerSandboxImage(): string {
@@ -47,6 +50,47 @@ export function dockerSandboxState(
     containerWorkspaceDir: CONTAINER_WORKSPACE_DIR,
     containerGlobalDir: CONTAINER_GLOBAL_DIR,
   };
+}
+
+/** Return Docker labels that identify containers opened by the ndx server. */
+export function dockerSandboxLabels(state: DockerSandboxState): string[] {
+  return [
+    `${SANDBOX_ROLE_LABEL}=${SANDBOX_ROLE}`,
+    `${SANDBOX_OWNER_LABEL}=${SANDBOX_OWNER}`,
+    `${SANDBOX_WORKSPACE_LABEL}=${state.workspaceDir}`,
+    `${SANDBOX_IMAGE_LABEL}=${state.image}`,
+  ];
+}
+
+/** Remove all server-owned tool sandbox containers from prior server runs. */
+export async function reclaimDockerSandboxes(): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const label of [
+    `${SANDBOX_OWNER_LABEL}=${SANDBOX_OWNER}`,
+    `${SANDBOX_ROLE_LABEL}=${SANDBOX_ROLE}`,
+  ]) {
+    const found = await run("docker", [
+      "ps",
+      "-aq",
+      "--filter",
+      `label=${label}`,
+    ]);
+    if (found.exitCode !== 0) {
+      continue;
+    }
+    for (const id of found.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)) {
+      ids.add(id);
+    }
+  }
+  if (ids.size === 0) {
+    return [];
+  }
+  const names = [...ids];
+  await runDocker(["rm", "-f", ...names]);
+  return names;
 }
 
 /** Ensure Docker can provide the workspace-bound tool sandbox. */
@@ -75,10 +119,7 @@ export async function ensureDockerSandbox(
     "-d",
     "--name",
     container.name,
-    "--label",
-    `${SANDBOX_ROLE_LABEL}=${SANDBOX_ROLE}`,
-    "--label",
-    `${SANDBOX_WORKSPACE_LABEL}=${state.workspaceDir}`,
+    ...dockerSandboxLabels(state).flatMap((label) => ["--label", label]),
     "-v",
     `${state.globalDir}:${state.containerGlobalDir}`,
     "-v",
