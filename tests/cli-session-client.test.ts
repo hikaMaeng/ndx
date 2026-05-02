@@ -77,6 +77,11 @@ test("CLI session controller records initialization events outside prompt contex
         sandboxMode: "danger-full-access",
         sources: ["/home/.ndx/settings.json", "/workspace/.ndx/settings.json"],
         bootstrap: bootstrapReport("/home/.ndx"),
+        context: {
+          restoredItems: 6,
+          estimatedTokens: 120,
+          maxContextTokens: 1000,
+        },
       },
     },
   });
@@ -128,12 +133,13 @@ test("CLI login command switches to default user and updates login store", async
   const transport = new FakeTransport();
   const stdout: string[] = [];
   const saved: unknown[] = [];
+  const answers = ["2", "4"];
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
     clientId: "client-test",
     print: (message) => stdout.push(message),
-    question: async () => "4",
+    question: async () => answers.shift() ?? "4",
     loginStore: {
       load: () => ({
         kind: "password",
@@ -251,6 +257,7 @@ test("CLI session controller prompts before deleting another workspace session",
   const transport = new FakeTransport();
   const stdout: string[] = [];
   const questions: string[] = [];
+  const answers = ["1", "2"];
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
@@ -258,7 +265,7 @@ test("CLI session controller prompts before deleting another workspace session",
     print: (message) => stdout.push(message),
     question: async (prompt) => {
       questions.push(prompt);
-      return "2";
+      return answers.shift() ?? "";
     },
   });
 
@@ -267,7 +274,7 @@ test("CLI session controller prompts before deleting another workspace session",
   const result = await controller.handleCommand("/deleteSession");
 
   assert.deepEqual(result, { handled: true, shouldExit: false });
-  assert.deepEqual(questions, ["deleteSession> "]);
+  assert.deepEqual(questions, ["login> ", "deleteSession> "]);
   assert.equal(stdout.at(-1), "deleted session 2: restored title");
   assert.deepEqual(
     transport.requests.map((request) => request.method).slice(-2),
@@ -295,6 +302,7 @@ class FakeTransport implements CliSessionTransport {
     if (method === "initialize") {
       return {
         server: "ndx-ts-session-server",
+        version: "0.1.7",
         protocolVersion: 1,
         dashboardUrl: "http://127.0.0.1:45124",
         bootstrap: bootstrapReport("/home/.ndx"),
@@ -374,6 +382,7 @@ class FakeTransport implements CliSessionTransport {
             "  model: mock",
             "  approval: never",
             "  sandbox: danger-full-access",
+            "  context: restored 6 items, 120/1000 tokens (12.0%)",
             "  sources: /home/.ndx/settings.json, /workspace/.ndx/settings.json",
             "[bootstrap] /home/.ndx",
             "  installed: 0",

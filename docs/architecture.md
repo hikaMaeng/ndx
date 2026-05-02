@@ -34,8 +34,10 @@ except for the two `.gitkeep` directory anchors.
    settings for the current folder, starts a local default `SessionServer` at the
    default address, and connects to that local process. `--mock` and
    `NDX_EMBEDDED_SERVER=1` remain source-tree development paths.
-3. After WebSocket connect, the CLI logs in immediately. The server ignores
-   unauthenticated non-login JSON-RPC methods.
+3. After WebSocket connect, an interactive CLI asks for startup login choice:
+   `defaultUser`, the previous non-default login, or new Google device login.
+   Non-interactive clients continue to replay stored login or `defaultUser`.
+   The server ignores unauthenticated non-login JSON-RPC methods.
 4. After login and initialization, the server ensures a Docker tool sandbox for
    the current folder. If Docker cannot provide the pinned sandbox image or
    container, server startup fails and the CLI exits with that warning.
@@ -57,9 +59,9 @@ except for the two `.gitkeep` directory anchors.
 14. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
 15. Function schemas from that registry are sent to the model.
 16. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
-17. Shell-like core tools execute inside the current-folder Docker sandbox by using
-    `docker exec` against the server-managed container. MCP tools are executed
-    through the configured MCP stdio command. Task tools run inside the worker.
+17. External capability tools and configured MCP stdio commands execute inside
+    the current-folder Docker sandbox by using `docker exec` against the
+    server-managed container. Task tools run inside the worker.
 18. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
 
 ## Model Routing And Context
@@ -99,14 +101,18 @@ The server translates runtime events into JSON-RPC notifications:
 
 Client programs must not maintain authoritative live session or persistence state. They may cache what they receive, but the server is the owner of live session state and durable SQLite records. Session initialization detail is displayed by the CLI and kept in client-local status/history only; it is not sent back as prompt context.
 
-`initialize` responses and `session/configured` events include a bootstrap report. The report lists each required `.ndx` element, absolute path, and whether it already existed or was installed during startup.
+`initialize` responses include the server package version, protocol version,
+and bootstrap report. `session/configured` events include restored-context
+summary as estimated tokens over the active model context when the model
+declares `maxContext`. The CLI suppresses duplicate bootstrap detail after
+startup and prints it as already initialized for the same global directory.
 
 ## CLI Client Boundary
 
 `src/cli/session-client.ts` owns CLI-only session behavior:
 
 - robot plus uppercase `NDX` startup logo and socket initialization display
-- last-login replay from host CLI app state
+- startup login choice and last-login replay from host CLI app state
 - `/login` menu for Google, GitHub, current account, and `defaultUser`
 - session start status display
 - `/status`, `/init`, `/events`, `/session`, `/restoreSession`,
@@ -187,5 +193,7 @@ hash suffix only when two different physical folders share the same basename.
 When a sandboxed server starts, it first removes prior ndx server-owned tool
 sandbox containers by label so stale workspace containers do not survive a new
 server instance.
-The image itself contains the baseline shell/tool runtime; startup only binds
+Restored sessions rebind their runtime to the current workspace sandbox before
+handling the next turn, so continued work uses `/workspace` rather than host
+paths. The image itself contains the baseline shell/tool runtime; startup only binds
 the user `.ndx`, project folder, and Docker socket volumes.

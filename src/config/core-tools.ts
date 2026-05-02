@@ -142,7 +142,7 @@ ${READ_STDIN}
 const request = await readRequest();
 const args = request.arguments ?? {};
 const entries = [];
-await collectEntries(resolve(String(args.dir_path ?? "")), Math.max(1, Number(args.depth ?? 1)), entries);
+await collectEntries(toRuntimePath(String(args.dir_path ?? "")), Math.max(1, Number(args.depth ?? 1)), entries);
 const offset = Math.max(1, Number(args.offset ?? 1));
 const limit = Math.max(0, Number(args.limit ?? 200));
 process.stdout.write(JSON.stringify({
@@ -161,6 +161,20 @@ async function collectEntries(dir, depth, entries) {
       await collectEntries(path, depth - 1, entries);
     }
   }
+}
+function toRuntimePath(path) {
+  const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
+  const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
+  if (hostRoot.length > 0) {
+    if (path === hostRoot) return sandboxRoot;
+    if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
+  }
+  if (hostGlobal.length > 0) {
+    if (path === hostGlobal) return "/home/.ndx";
+    if (path.startsWith(hostGlobal + "/")) return "/home/.ndx" + path.slice(hostGlobal.length);
+  }
+  return resolve(path || process.env.NDX_TOOL_CWD || process.cwd());
 }
 `,
   },
@@ -182,7 +196,7 @@ import { extname } from "node:path";
 ${READ_STDIN}
 const request = await readRequest();
 const args = request.arguments ?? {};
-const path = String(args.path ?? "");
+const path = toRuntimePath(String(args.path ?? ""));
 const data = await readFile(path);
 process.stdout.write(JSON.stringify({
   image_url: "data:" + mimeType(path) + ";base64," + data.toString("base64"),
@@ -202,6 +216,20 @@ function mimeType(path) {
     default:
       return "image/png";
   }
+}
+function toRuntimePath(path) {
+  const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
+  const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
+  if (hostRoot.length > 0) {
+    if (path === hostRoot) return sandboxRoot;
+    if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
+  }
+  if (hostGlobal.length > 0) {
+    if (path === hostGlobal) return "/home/.ndx";
+    if (path.startsWith(hostGlobal + "/")) return "/home/.ndx" + path.slice(hostGlobal.length);
+  }
+  return path;
 }
 `,
   },

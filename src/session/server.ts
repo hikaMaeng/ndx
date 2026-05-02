@@ -36,6 +36,7 @@ import type {
   ModelSettings,
   NdxBootstrapReport,
   NdxConfig,
+  SessionContextSummary,
 } from "../shared/types.js";
 import {
   ensureDockerSandbox,
@@ -657,6 +658,7 @@ export class SessionServer {
       case "initialize":
         return {
           server: "ndx-ts-session-server",
+          version: this.options.packageVersion ?? readPackageVersion(),
           protocolVersion: 1,
           dashboardUrl: this.address?.dashboardUrl,
           bootstrap: this.bootstrap,
@@ -872,6 +874,28 @@ export class SessionServer {
     return sandbox;
   }
 
+  private async ensureSessionRuntimeForCwd(
+    session: LiveSession,
+    cwd: string,
+  ): Promise<LiveSession> {
+    const sandbox = await this.ensureWorkspaceSandbox(cwd);
+    const config = this.configWithSandbox(session.config, sandbox, cwd);
+    if (config === session.config) {
+      return session;
+    }
+    session.config = config;
+    session.runtime = new AgentRuntime({
+      cwd: session.cwd,
+      config,
+      client: this.options.createClient(config),
+      sessionId: session.id,
+      history: conversationHistoryFromRuntimeEvents(session.events),
+      sources: this.sources,
+      bootstrap: this.bootstrap,
+    });
+    return session;
+  }
+
   private async reclaimPriorDockerSandboxes(): Promise<void> {
     if (this.reclaimedDockerSandboxes) {
       return;
@@ -889,6 +913,15 @@ export class SessionServer {
     if (sandbox === undefined) {
       return config;
     }
+    const sandboxCwd = hostPathToSandboxPath(sandbox, cwd);
+    if (
+      config.env.NDX_SANDBOX_CONTAINER === sandbox.containerName &&
+      config.env.NDX_SANDBOX_HOST_WORKSPACE === sandbox.workspaceDir &&
+      config.env.NDX_SANDBOX_WORKSPACE === sandbox.containerWorkspaceDir &&
+      config.env.NDX_SANDBOX_CWD === sandboxCwd
+    ) {
+      return config;
+    }
     return {
       ...config,
       env: {
@@ -896,7 +929,7 @@ export class SessionServer {
         NDX_SANDBOX_CONTAINER: sandbox.containerName,
         NDX_SANDBOX_HOST_WORKSPACE: sandbox.workspaceDir,
         NDX_SANDBOX_WORKSPACE: sandbox.containerWorkspaceDir,
-        NDX_SANDBOX_CWD: hostPathToSandboxPath(sandbox, cwd),
+        NDX_SANDBOX_CWD: sandboxCwd,
       },
     };
   }
@@ -1155,6 +1188,7 @@ export class SessionServer {
       return Promise.resolve({ turn: { status: "deleted" } });
     }
     const cwd = stringParam(params, "cwd") ?? session.cwd;
+    session = await this.ensureSessionRuntimeForCwd(session, cwd);
     const turnId = randomUUID();
     const context = this.clientContext(connection, params);
     session.clientIds.add(context.clientId);
@@ -1790,6 +1824,7 @@ export class SessionServer {
       `  model: ${event.model}`,
       `  approval: ${event.approvalPolicy}`,
       `  sandbox: ${event.sandboxMode}`,
+      `  context: ${formatContext(event.context)}`,
       `  sources: ${sources}`,
       formatBootstrap(event.bootstrap),
     ].join("\n");
@@ -2489,13 +2524,59 @@ function formatBootstrap(bootstrap: NdxBootstrapReport): string {
     (element) => element.status === "installed",
   );
   const existing = bootstrap.elements.length - installed.length;
-  const rows = bootstrap.elements.map(
-    (element) => `  ${element.status}: ${element.name} (${element.path})`,
-  );
+  const rows = summarizedBootstrapRows(bootstrap);
   return [
     `[bootstrap] ${bootstrap.globalDir}`,
     `  installed: ${installed.length}`,
     `  existing: ${existing}`,
     ...rows,
   ].join("\n");
+}
+
+function formatContext(context: SessionContextSummary | undefined): string {
+  if (context === undefined) {
+    return "restored 0 items, token estimate unavailable";
+  }
+  if (context.maxContextTokens === undefined) {
+    return `restored ${context.restoredItems} items, ${context.estimatedTokens}/unknown tokens`;
+  }
+  const percent =
+    context.maxContextTokens <= 0
+      ? 0
+      : (context.estimatedTokens / context.maxContextTokens) * 100;
+  return `restored ${context.restoredItems} items, ${context.estimatedTokens}/${context.maxContextTokens} tokens (${percent.toFixed(1)}%)`;
+}
+
+function summarizedBootstrapRows(bootstrap: NdxBootstrapReport): string[] {
+  const byName = new Map(
+    bootstrap.elements.map((element) => [element.name, element]),
+  );
+  const used = new Set<string>();
+  const rows: string[] = [];
+  for (const element of bootstrap.elements) {
+    if (used.has(element.name)) {
+      continue;
+    }
+    if (element.name.endsWith(" tool")) {
+      const base = element.name.slice(0, -" tool".length);
+      const manifest = byName.get(`${base} manifest`);
+      const runtime = byName.get(`${base} runtime`);
+      used.add(element.name);
+      used.add(`${base} manifest`);
+      used.add(`${base} runtime`);
+      rows.push(
+        `  ${element.status}: ${base} tool (${element.path}; manifest: ${manifest?.status ?? "missing"}, runtime: ${runtime?.status ?? "missing"})`,
+      );
+      continue;
+    }
+    if (
+      element.name.endsWith(" manifest") ||
+      element.name.endsWith(" runtime")
+    ) {
+      continue;
+    }
+    used.add(element.name);
+    rows.push(`  ${element.status}: ${element.name} (${element.path})`);
+  }
+  return rows;
 }

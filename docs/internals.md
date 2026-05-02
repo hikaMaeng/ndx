@@ -144,10 +144,9 @@ The account methods are in-process JSON-RPC controls for the current service
 instance: `account/create`, `account/login`, `account/delete`, and
 `account/changePassword`. `initialize`, `account/create`, and `account/login`
 are public. Other socket methods require a successful login on the WebSocket
-connection. Login stores user and client id on the connection. The first CLI
-client implemented here generates a fresh client id per controller instance,
-logs in as `defaultUser` with an empty password, and includes user/client id in
-session and turn requests.
+connection. Login stores user and client id on the connection. The CLI
+generates a fresh client id per controller instance, asks interactive users for
+startup login choice, and includes user/client id in session and turn requests.
 
 HTTP `GET /` and `GET /dashboard` on the separate dashboard listener render the
 server dashboard. `POST /api/reload` re-runs global `.ndx` bootstrap and
@@ -171,3 +170,8 @@ instead of creating another one for the same folder.
 On startup, a sandboxed server removes existing containers labeled as ndx
 server-owned tool sandboxes before creating the current workspace sandbox.
 The ndx server is a local process and owns session state outside Docker.
+External manifest tools and MCP stdio servers execute inside the sandbox when
+`NDX_SANDBOX_CONTAINER` is present. The host worker remains only the process
+supervisor that starts `docker exec`, passes stdin, and handles cancellation.
+Restored sessions rebuild their `AgentRuntime` with sandbox environment before
+the next turn so model-selected file writes target `/workspace`.

@@ -11,6 +11,7 @@ import type {
   ModelClient,
   NdxBootstrapReport,
   NdxConfig,
+  SessionContextSummary,
 } from "../shared/types.js";
 import type { ModelConversationItem } from "../model/types.js";
 
@@ -35,6 +36,7 @@ export class AgentRuntime {
   private readonly sources: string[];
   private readonly bootstrap: NdxBootstrapReport;
   private readonly history: ModelConversationItem[];
+  private readonly context: SessionContextSummary;
   private configured = false;
   private activeTurn: ActiveTurn | undefined;
   private readonly abortedTurnIds = new Set<string>();
@@ -47,6 +49,7 @@ export class AgentRuntime {
     this.history = options.history ?? [];
     this.sources = options.sources ?? [];
     this.bootstrap = options.bootstrap;
+    this.context = summarizeContext(this.history, this.config);
   }
 
   async submit(
@@ -179,6 +182,7 @@ export class AgentRuntime {
         sandboxMode: this.config.permissions.defaultMode,
         sources: this.sources,
         bootstrap: this.bootstrap,
+        context: this.context,
       },
       onEvent,
     );
@@ -284,6 +288,18 @@ export class AgentRuntime {
   private emit(msg: RuntimeEventMsg, onEvent?: RuntimeEventHandler): void {
     onEvent?.({ id: randomUUID(), msg });
   }
+}
+
+function summarizeContext(
+  history: ModelConversationItem[],
+  config: NdxConfig,
+): SessionContextSummary {
+  const serialized = history.length === 0 ? "" : JSON.stringify(history);
+  return {
+    restoredItems: history.length,
+    estimatedTokens: Math.ceil(serialized.length / 4),
+    maxContextTokens: config.activeModel.maxContext,
+  };
 }
 
 interface ActiveTurn {

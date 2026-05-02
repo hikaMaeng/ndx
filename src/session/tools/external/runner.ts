@@ -13,47 +13,51 @@ export async function runExternalTool(
   signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
   const timeoutMs = runtime.timeoutMs ?? context.timeoutMs;
-  const cwd = runtime.cwd ?? runtime.toolDir;
+  const cwd = resolve(runtime.cwd ?? runtime.toolDir);
+  const sandbox = context.env.NDX_SANDBOX_CONTAINER;
+  const toolCwd =
+    sandbox === undefined || sandbox.length === 0
+      ? cwd
+      : mapHostPathToSandbox(context, cwd);
+  const requestCwd =
+    sandbox === undefined || sandbox.length === 0
+      ? context.cwd
+      : mapHostPathToSandbox(context, context.cwd);
+  const env =
+    sandbox === undefined || sandbox.length === 0
+      ? hostToolEnv(runtime, context, args)
+      : sandboxToolEnv(runtime, context, args, requestCwd);
+  const command =
+    sandbox === undefined || sandbox.length === 0
+      ? runtime.command
+      : sandboxCommand(runtime.command);
+  const commandArgs =
+    sandbox === undefined || sandbox.length === 0
+      ? runtime.args
+      : [
+          "exec",
+          "-i",
+          "-w",
+          toolCwd,
+          ...Object.entries(env).flatMap(([key, value]) => [
+            "-e",
+            `${key}=${value}`,
+          ]),
+          sandbox,
+          command,
+          ...runtime.args.map((arg) => mapHostPathToSandbox(context, arg)),
+        ];
   const result = await runProcess({
-    command: runtime.command,
-    args: runtime.args,
-    cwd: resolve(cwd),
-    env: {
-      ...process.env,
-      ...context.env,
-      ...runtime.env,
-      NDX_TOOL_ARGS: JSON.stringify(args),
-      NDX_TOOL_CWD: context.cwd,
-      NDX_GLOBAL_DIR: context.config.paths.globalDir,
-      NDX_CORE_TOOLS_DIR: resolve(
-        context.config.paths.globalDir,
-        "system",
-        "tools",
-      ),
-      NDX_SYSTEM_TOOLS_DIR: resolve(
-        context.config.paths.globalDir,
-        "system",
-        "tools",
-      ),
-      NDX_GLOBAL_TOOLS_DIR: resolve(context.config.paths.globalDir, "tools"),
-      NDX_GLOBAL_PLUGINS_DIR: resolve(
-        context.config.paths.globalDir,
-        "plugins",
-      ),
-      NDX_PROJECT_TOOLS_DIR:
-        context.config.paths.projectNdxDir === undefined
-          ? ""
-          : resolve(context.config.paths.projectNdxDir, "tools"),
-      NDX_PROJECT_PLUGINS_DIR:
-        context.config.paths.projectNdxDir === undefined
-          ? ""
-          : resolve(context.config.paths.projectNdxDir, "plugins"),
-      NDX_WEBSEARCH_API_KEY: String(context.config.websearch.apiKey ?? ""),
-      NDX_WEBSEARCH_PROVIDER: String(context.config.websearch.provider ?? ""),
-    },
+    command: sandbox === undefined || sandbox.length === 0 ? command : "docker",
+    args: commandArgs,
+    cwd,
+    env:
+      sandbox === undefined || sandbox.length === 0
+        ? { ...process.env, ...env }
+        : process.env,
     input: `${JSON.stringify({
       arguments: args,
-      cwd: context.cwd,
+      cwd: requestCwd,
     })}\n`,
     timeoutMs,
     signal,
@@ -67,4 +71,98 @@ export async function runExternalTool(
       cancelled: result.cancelled,
     }),
   };
+}
+
+function hostToolEnv(
+  runtime: ExternalToolRuntime,
+  context: ToolContext,
+  args: Record<string, unknown>,
+): Record<string, string> {
+  return {
+    ...context.env,
+    ...runtime.env,
+    NDX_TOOL_ARGS: JSON.stringify(args),
+    NDX_TOOL_CWD: context.cwd,
+    NDX_GLOBAL_DIR: context.config.paths.globalDir,
+    NDX_CORE_TOOLS_DIR: resolve(
+      context.config.paths.globalDir,
+      "system",
+      "tools",
+    ),
+    NDX_SYSTEM_TOOLS_DIR: resolve(
+      context.config.paths.globalDir,
+      "system",
+      "tools",
+    ),
+    NDX_GLOBAL_TOOLS_DIR: resolve(context.config.paths.globalDir, "tools"),
+    NDX_GLOBAL_PLUGINS_DIR: resolve(context.config.paths.globalDir, "plugins"),
+    NDX_PROJECT_TOOLS_DIR:
+      context.config.paths.projectNdxDir === undefined
+        ? ""
+        : resolve(context.config.paths.projectNdxDir, "tools"),
+    NDX_PROJECT_PLUGINS_DIR:
+      context.config.paths.projectNdxDir === undefined
+        ? ""
+        : resolve(context.config.paths.projectNdxDir, "plugins"),
+    NDX_WEBSEARCH_API_KEY: String(context.config.websearch.apiKey ?? ""),
+    NDX_WEBSEARCH_PROVIDER: String(context.config.websearch.provider ?? ""),
+  };
+}
+
+function sandboxToolEnv(
+  runtime: ExternalToolRuntime,
+  context: ToolContext,
+  args: Record<string, unknown>,
+  requestCwd: string,
+): Record<string, string> {
+  const hostEnv = hostToolEnv(runtime, context, args);
+  return {
+    ...hostEnv,
+    NDX_TOOL_EXECUTION_ENV: "container",
+    NDX_TOOL_CWD: requestCwd,
+    NDX_GLOBAL_DIR: "/home/.ndx",
+    NDX_CORE_TOOLS_DIR: "/home/.ndx/system/tools",
+    NDX_SYSTEM_TOOLS_DIR: "/home/.ndx/system/tools",
+    NDX_GLOBAL_TOOLS_DIR: "/home/.ndx/tools",
+    NDX_GLOBAL_PLUGINS_DIR: "/home/.ndx/plugins",
+    NDX_SANDBOX_HOST_GLOBAL: context.config.paths.globalDir,
+    NDX_PROJECT_TOOLS_DIR:
+      context.config.paths.projectNdxDir === undefined
+        ? ""
+        : `${mapHostPathToSandbox(context, context.config.paths.projectNdxDir)}/tools`,
+    NDX_PROJECT_PLUGINS_DIR:
+      context.config.paths.projectNdxDir === undefined
+        ? ""
+        : `${mapHostPathToSandbox(context, context.config.paths.projectNdxDir)}/plugins`,
+    NDX_SANDBOX_CONTAINER: "",
+  };
+}
+
+function sandboxCommand(command: string): string {
+  return command === process.execPath ? "node" : command;
+}
+
+function mapHostPathToSandbox(context: ToolContext, value: string): string {
+  const hostWorkspace = context.env.NDX_SANDBOX_HOST_WORKSPACE;
+  const sandboxWorkspace = context.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  const sandboxCwd = context.env.NDX_SANDBOX_CWD ?? sandboxWorkspace;
+  const hostGlobal = context.config.paths.globalDir;
+  const resolved = value.startsWith("/") ? resolve(value) : value;
+  if (hostWorkspace !== undefined && hostWorkspace.length > 0) {
+    const workspace = resolve(hostWorkspace);
+    if (resolved === workspace) {
+      return sandboxWorkspace;
+    }
+    if (resolved.startsWith(`${workspace}/`)) {
+      return `${sandboxWorkspace}${resolved.slice(workspace.length)}`;
+    }
+  }
+  const global = resolve(hostGlobal);
+  if (resolved === global) {
+    return "/home/.ndx";
+  }
+  if (resolved.startsWith(`${global}/`)) {
+    return `/home/.ndx${resolved.slice(global.length)}`;
+  }
+  return value.startsWith("/") ? sandboxCwd : value;
 }

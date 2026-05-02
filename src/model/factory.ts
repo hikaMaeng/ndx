@@ -1,5 +1,6 @@
 import type { ModelClient, NdxConfig } from "../shared/types.js";
 import { AnthropicMessagesAdapter } from "./anthropic.js";
+import { withOperationalInstructions } from "./instructions.js";
 import { OpenAiResponsesClient } from "./openai.js";
 import { RoundRobinModelRouter } from "./router.js";
 import type { ProviderRequestOptions } from "./types.js";
@@ -15,7 +16,7 @@ export function createProviderModelClient(config: NdxConfig): ModelClient {
   if (config.activeProvider.type === "anthropic") {
     const options: ProviderRequestOptions = {
       model: config.activeModel.name,
-      instructions: config.instructions,
+      instructions: withOperationalInstructions(config.instructions),
       apiKey: config.activeProvider.key,
       baseUrl: config.activeProvider.url.replace(/\/$/, ""),
       effort: config.activeModel.activeEffort,

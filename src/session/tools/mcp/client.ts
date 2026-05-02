@@ -31,20 +31,32 @@ export async function callMcpTool(
       isError: true,
     };
   }
-  return await callJsonRpc(server, "tools/call", {
+  return await callConfiguredMcpTool(config, server, toolName, args);
+}
+
+export async function callConfiguredMcpTool(
+  config: NdxConfig,
+  server: McpServerSettings,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  return await callJsonRpc(config, server, "tools/call", {
     name: toolName,
     arguments: args,
   });
 }
 
-export async function listMcpServerTools(server: McpServerSettings): Promise<
+export async function listMcpServerTools(
+  config: NdxConfig,
+  server: McpServerSettings,
+): Promise<
   Array<{
     name: string;
     description?: string;
     inputSchema?: Record<string, unknown>;
   }>
 > {
-  const result = await callJsonRpc(server, "tools/list", {});
+  const result = await callJsonRpc(config, server, "tools/list", {});
   if (
     typeof result === "object" &&
     result !== null &&
@@ -127,16 +139,47 @@ function selectServers(
 }
 
 async function callJsonRpc(
+  config: NdxConfig,
   server: McpServerSettings,
   method: string,
   params: Record<string, unknown>,
 ): Promise<unknown> {
   return await new Promise((resolveCall, reject) => {
-    const child = spawn(server.command ?? "", server.args ?? [], {
-      cwd: server.cwd === undefined ? undefined : resolve(server.cwd),
-      env: { ...process.env, ...(server.env ?? {}) },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const sandbox = config.env.NDX_SANDBOX_CONTAINER;
+    const useSandbox = sandbox !== undefined && sandbox.length > 0;
+    const child = spawn(
+      useSandbox ? "docker" : (server.command ?? ""),
+      useSandbox
+        ? [
+            "exec",
+            "-i",
+            "-w",
+            server.cwd === undefined
+              ? (config.env.NDX_SANDBOX_CWD ?? "/workspace")
+              : mapHostPathToSandbox(config, server.cwd),
+            ...Object.entries(sandboxMcpEnv(config, server)).flatMap(
+              ([key, value]) => ["-e", `${key}=${value}`],
+            ),
+            sandbox,
+            sandboxCommand(server.command ?? ""),
+            ...(server.args ?? []).map((arg) =>
+              mapHostPathToSandbox(config, arg),
+            ),
+          ]
+        : (server.args ?? []),
+      {
+        cwd:
+          server.cwd === undefined
+            ? undefined
+            : useSandbox
+              ? undefined
+              : resolve(server.cwd),
+        env: useSandbox
+          ? process.env
+          : { ...process.env, ...(server.env ?? {}) },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -172,6 +215,48 @@ async function callJsonRpc(
     writeRequest(child.stdin, 2, method, params);
     child.stdin.end();
   });
+}
+
+function sandboxMcpEnv(
+  config: NdxConfig,
+  server: McpServerSettings,
+): Record<string, string> {
+  return {
+    ...config.env,
+    ...(server.env ?? {}),
+    NDX_TOOL_EXECUTION_ENV: "container",
+    NDX_GLOBAL_DIR: "/home/.ndx",
+    NDX_SANDBOX_CONTAINER: "",
+  };
+}
+
+function sandboxCommand(command: string): string {
+  return command === process.execPath ? "node" : command;
+}
+
+function mapHostPathToSandbox(config: NdxConfig, value: string): string {
+  const hostWorkspace = config.env.NDX_SANDBOX_HOST_WORKSPACE;
+  const sandboxWorkspace = config.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  const sandboxCwd = config.env.NDX_SANDBOX_CWD ?? sandboxWorkspace;
+  const hostGlobal = config.paths.globalDir;
+  const resolved = value.startsWith("/") ? resolve(value) : value;
+  if (hostWorkspace !== undefined && hostWorkspace.length > 0) {
+    const workspace = resolve(hostWorkspace);
+    if (resolved === workspace) {
+      return sandboxWorkspace;
+    }
+    if (resolved.startsWith(`${workspace}/`)) {
+      return `${sandboxWorkspace}${resolved.slice(workspace.length)}`;
+    }
+  }
+  const global = resolve(hostGlobal);
+  if (resolved === global) {
+    return "/home/.ndx";
+  }
+  if (resolved.startsWith(`${global}/`)) {
+    return `/home/.ndx${resolved.slice(global.length)}`;
+  }
+  return value.startsWith("/") ? sandboxCwd : value;
 }
 
 function writeRequest(

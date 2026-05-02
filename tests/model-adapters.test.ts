@@ -2,6 +2,7 @@ import { createServer, type ServerResponse } from "node:http";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createProviderModelClient } from "../src/model/factory.js";
+import { withOperationalInstructions } from "../src/model/instructions.js";
 import { RoundRobinModelRouter } from "../src/model/router.js";
 import { normalizeAnthropicResponse } from "../src/model/anthropic.js";
 import { normalizeChatResponse } from "../src/model/openai-chat.js";
@@ -12,6 +13,17 @@ import {
   responsesTools,
 } from "../src/model/openai-responses.js";
 import type { ModelResponse, NdxConfig } from "../src/shared/types.js";
+
+test("provider instructions require real tool use for file changes", () => {
+  const instructions = withOperationalInstructions("base");
+
+  assert.equal(instructions.includes("base"), true);
+  assert.equal(instructions.includes("use the available tools"), true);
+  assert.equal(
+    instructions.includes("Do not respond with only code blocks"),
+    true,
+  );
+});
 
 test("normalizes OpenAI responses function calls and usage", () => {
   assert.deepEqual(

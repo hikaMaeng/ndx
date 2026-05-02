@@ -32,6 +32,7 @@ export interface CliSessionTransport {
 
 export interface InitializeResult {
   server?: string;
+  version?: string;
   protocolVersion?: number;
   dashboardUrl?: string;
   methods?: string[];
@@ -94,6 +95,7 @@ export class CliSessionController {
   private session: SessionSummary | undefined;
   private sessionConfigured: SessionConfiguredEvent | undefined;
   private deletedSessionMessage: string | undefined;
+  private printedBootstrapGlobalDir: string | undefined;
 
   constructor(options: CliSessionRuntime) {
     this.client = options.client;
@@ -107,7 +109,9 @@ export class CliSessionController {
       options.loginStore?.load() ??
       (options.user === undefined
         ? defaultLogin()
-        : { kind: "password", username: options.user, password: "" });
+        : options.user === "defaultUser"
+          ? defaultLogin()
+          : { kind: "password", username: options.user, password: "" });
     this.client.onNotification((notification) => {
       if (notification.method !== "session/deleted") {
         return;
@@ -130,10 +134,13 @@ export class CliSessionController {
   }
 
   async initialize(): Promise<void> {
+    await this.selectStartupLogin();
     await this.loginWithStoredIdentity(this.login);
     this.initializeResult =
       await this.client.request<InitializeResult>("initialize");
     this.printError(formatInitializeResult(this.initializeResult));
+    this.printLoginStatus(this.login);
+    this.printedBootstrapGlobalDir = this.initializeResult.bootstrap?.globalDir;
   }
 
   async startSession(): Promise<string> {
@@ -186,7 +193,9 @@ export class CliSessionController {
         }
         if (msg.type === "session_configured") {
           this.sessionConfigured = msg;
-          this.printError(formatSessionConfigured(msg));
+          this.printError(
+            formatSessionConfigured(msg, this.printedBootstrapGlobalDir),
+          );
           return;
         }
         if (msg.type === "tool_call") {
@@ -290,6 +299,43 @@ export class CliSessionController {
       password: login.kind === "password" ? login.password : "",
       clientId: this.clientId,
     });
+  }
+
+  private async selectStartupLogin(): Promise<void> {
+    if (this.question === undefined) {
+      return;
+    }
+    const choices = startupLoginChoices(this.login);
+    this.print(["login", ...choices.map(formatStartupLoginChoice)].join("\n"));
+    const answer = (await this.question("login> ")).trim();
+    const selected =
+      choices.find((choice) => choice.key === answer) ?? choices[0];
+    if (selected.action === "previous" || selected.action === "default") {
+      this.login = selected.login;
+      if (selected.action === "default") {
+        this.loginStore?.save(this.login);
+      }
+      return;
+    }
+    const social = await performSocialDeviceLogin("google", {
+      question: this.question,
+      print: this.print,
+    });
+    this.login = {
+      kind: "social",
+      provider: social.provider,
+      username: social.username,
+      subject: social.subject,
+      email: social.email,
+      displayName: social.displayName,
+      accessToken: social.accessToken,
+      refreshToken: social.refreshToken,
+    };
+    this.loginStore?.save(this.login);
+  }
+
+  private printLoginStatus(login: StoredLogin): void {
+    this.printError(`[login] ${describeLogin(login)}`);
   }
 
   private async handleLoginCommand(): Promise<void> {
@@ -518,12 +564,13 @@ export function runtimeEvent(
 
 function formatInitializeResult(result: InitializeResult): string {
   const server = result.server ?? "unknown";
+  const version = result.version ?? "unknown";
   const protocol = result.protocolVersion ?? "unknown";
   const dashboard = result.dashboardUrl ?? "unknown";
   const methods = result.methods?.join(", ") ?? "none";
   return [
     "[socket] connected",
-    `[session-server] ${server}`,
+    `[session-server] ${server} ${version}`,
     `[dashboard] ${dashboard}`,
     `[protocol] ${protocol}`,
     `[methods] ${methods}`,
@@ -560,7 +607,10 @@ function formatSessionChoices(
   ].join("\n");
 }
 
-function formatSessionConfigured(event: SessionConfiguredEvent): string {
+function formatSessionConfigured(
+  event: SessionConfiguredEvent,
+  initializedBootstrapGlobalDir?: string,
+): string {
   const sources =
     event.sources.length === 0 ? "none" : event.sources.join(", ");
   return [
@@ -570,8 +620,11 @@ function formatSessionConfigured(event: SessionConfiguredEvent): string {
     `  model: ${event.model}`,
     `  approval: ${event.approvalPolicy}`,
     `  sandbox: ${event.sandboxMode}`,
+    `  context: ${formatContext(event.context)}`,
     `  sources: ${sources}`,
-    formatBootstrap(event.bootstrap),
+    initializedBootstrapGlobalDir === event.bootstrap.globalDir
+      ? `[bootstrap] already initialized for ${event.bootstrap.globalDir}`
+      : formatBootstrap(event.bootstrap),
   ].join("\n");
 }
 
@@ -583,13 +636,114 @@ function formatBootstrap(bootstrap: NdxBootstrapReport | undefined): string {
     (element) => element.status === "installed",
   );
   const existing = bootstrap.elements.length - installed.length;
-  const rows = bootstrap.elements.map(
-    (element) => `  ${element.status}: ${element.name} (${element.path})`,
-  );
+  const rows = summarizedBootstrapRows(bootstrap);
   return [
     `[bootstrap] ${bootstrap.globalDir}`,
     `  installed: ${installed.length}`,
     `  existing: ${existing}`,
     ...rows,
   ].join("\n");
+}
+
+interface StartupLoginChoice {
+  key: string;
+  label: string;
+  action: "default" | "previous" | "google";
+  login: StoredLogin;
+}
+
+function startupLoginChoices(login: StoredLogin): StartupLoginChoice[] {
+  const choices: StartupLoginChoice[] = [];
+  let key = 1;
+  choices.push({
+    key: String(key),
+    label: "Use default user (defaultUser)",
+    action: "default",
+    login: defaultLogin(),
+  });
+  key += 1;
+  if (login.kind !== "default") {
+    choices.push({
+      key: String(key),
+      label: `Continue previous login (${describeLogin(login)})`,
+      action: "previous",
+      login,
+    });
+    key += 1;
+  }
+  choices.push({
+    key: String(key),
+    label: "New Google login",
+    action: "google",
+    login,
+  });
+  return choices;
+}
+
+function formatStartupLoginChoice(choice: StartupLoginChoice): string {
+  return `${choice.key}. ${choice.label}`;
+}
+
+function describeLogin(login: StoredLogin): string {
+  if (login.kind === "default") {
+    return "defaultUser";
+  }
+  if (login.kind === "social") {
+    const suffix =
+      login.displayName !== undefined || login.email !== undefined
+        ? ` ${[login.displayName, login.email].filter(Boolean).join(" ")}`
+        : "";
+    return `${login.username}${suffix}`;
+  }
+  return login.username;
+}
+
+function formatContext(
+  context: SessionConfiguredEvent["context"] | undefined,
+): string {
+  if (context === undefined) {
+    return "restored 0 items, token estimate unavailable";
+  }
+  if (context.maxContextTokens === undefined) {
+    return `restored ${context.restoredItems} items, ${context.estimatedTokens}/unknown tokens`;
+  }
+  const percent =
+    context.maxContextTokens <= 0
+      ? 0
+      : (context.estimatedTokens / context.maxContextTokens) * 100;
+  return `restored ${context.restoredItems} items, ${context.estimatedTokens}/${context.maxContextTokens} tokens (${percent.toFixed(1)}%)`;
+}
+
+function summarizedBootstrapRows(bootstrap: NdxBootstrapReport): string[] {
+  const byName = new Map(
+    bootstrap.elements.map((element) => [element.name, element]),
+  );
+  const used = new Set<string>();
+  const rows: string[] = [];
+  for (const element of bootstrap.elements) {
+    if (used.has(element.name)) {
+      continue;
+    }
+    if (element.name.endsWith(" tool")) {
+      const base = element.name.slice(0, -" tool".length);
+      const manifest = byName.get(`${base} manifest`);
+      const runtime = byName.get(`${base} runtime`);
+      used.add(element.name);
+      used.add(`${base} manifest`);
+      used.add(`${base} runtime`);
+      rows.push(
+        `  ${element.status}: ${base} tool (${element.path}; manifest: ${manifest?.status ?? "missing"}, runtime: ${runtime?.status ?? "missing"})`,
+      );
+      continue;
+    }
+    if (
+      element.name.endsWith(" manifest") ||
+      element.name.endsWith(" runtime")
+    ) {
+      continue;
+    }
+    used.add(element.name);
+    rows.push(`  ${element.status}: ${element.name} (${element.path})`);
+  }
+  return rows;
 }

@@ -1,7 +1,11 @@
-import type { JsonObject, McpSettings, NdxConfig } from "../../../shared/types.js";
+import type {
+  JsonObject,
+  McpSettings,
+  NdxConfig,
+} from "../../../shared/types.js";
 import { functionTool } from "../schema.js";
 import type { ToolDefinition } from "../types.js";
-import { callMcpTool, listMcpServerTools } from "./client.js";
+import { callConfiguredMcpTool, listMcpServerTools } from "./client.js";
 
 export async function mcpToolDefinitions(
   config: NdxConfig,
@@ -13,7 +17,7 @@ export async function mcpToolDefinitions(
     const namespace = server.namespace ?? `mcp__${serverName}__`;
     const declaredTools = [...(server.tools ?? [])];
     if (server.command !== undefined) {
-      declaredTools.push(...(await listMcpServerTools(server)));
+      declaredTools.push(...(await listMcpServerTools(config, server)));
     }
     definitions.push(
       ...declaredTools.map((tool) => {
@@ -30,7 +34,12 @@ export async function mcpToolDefinitions(
           ),
           execute: async (args, context) => ({
             output: JSON.stringify(
-              await callMcpTool(context.config, serverName, tool.name, args),
+              await callConfiguredMcpTool(
+                context.config,
+                server,
+                tool.name,
+                args,
+              ),
             ),
           }),
         } satisfies ToolDefinition;

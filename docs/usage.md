@@ -57,8 +57,8 @@ the miss, starts a local default server at the default address, and then
 connects over WebSocket.
 
 The current folder is the project folder. Docker is used only after the server
-is running, as a per-folder sandbox for shell-like tools with the project
-mounted at `/workspace`.
+is running, as a per-folder sandbox for external capability tools and MCP stdio
+commands with the project mounted at `/workspace`.
 
 Use `NDX_SANDBOX_IMAGE` to override the sandbox image for explicit verification.
 Use `NDX_CLI_STATE_DIR` to move host CLI app state. Host CLI login state is not
@@ -71,8 +71,10 @@ NDX_EMBEDDED_SERVER=1 node dist/src/cli/main.js --mock "create a file named tmp/
 ```
 
 `--mock` starts an embedded loopback session server for source-tree development,
-connects over WebSocket, sends `initialize`, logs in from CLI app state or
-`defaultUser`, starts a session, and sends the prompt as a user turn. The server
+connects over WebSocket, logs in, sends `initialize`, starts a session, and
+sends the prompt as a user turn. Interactive startup asks for `defaultUser`,
+previous non-default login, or new Google login before the socket login call.
+The server
 owns the live session and writes accounts plus sessions to
 `/home/.ndx/system/ndx.sqlite` once the first prompt is submitted. Set optional
 `dataPath` in settings to move the SQLite data directory; legacy `sessionPath`
@@ -85,7 +87,11 @@ neither global nor project settings exist and the CLI is attached to a TTY, ndx
 asks for permission mode, provider type, provider key, provider URL, model name,
 max context, and settings version, then writes `/home/.ndx/settings.json`.
 Non-TTY startup still requires an existing settings file. The socket initialization output includes a
-bootstrap report showing what was installed and what already existed. The
+server package version, protocol number, and a bootstrap report showing what
+was installed and what already existed. Protocol `1` is the current ndx
+WebSocket JSON-RPC method/event contract. Session initialization output prints
+restored context as used/model-context tokens and percentage when the active
+model declares `maxContext`. The
 loader also appends discovered `AGENTS.md` files from the current directory
 ancestry to the runtime instructions and lists them in initialization sources.
 

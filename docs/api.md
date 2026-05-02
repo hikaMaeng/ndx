@@ -60,7 +60,7 @@ Requests:
 
 | Method                     | Params                                                          | Result                                                   |
 | -------------------------- | --------------------------------------------------------------- | -------------------------------------------------------- |
-| `initialize`               | none                                                            | server name, protocol, methods, bootstrap                |
+| `initialize`               | none                                                            | server name, version, protocol, methods, bootstrap       |
 | `command/list`             | none                                                            | `{ commands }`                                           |
 | `account/create`           | `{ username, password? }`                                       | `{ username, createdAt }`                                |
 | `account/login`            | `{ username?, password?, clientId? }`                           | `{ username, clientId, sessionRoot }`                    |
@@ -142,6 +142,9 @@ Files:
 
 The last-login value is independent from `clientId`. Each CLI process still
 creates its own runtime `clientId`; the stored login only chooses the `userId`.
+Interactive startup asks before replaying login state. Choices are default
+user, previous non-default login, and new Google device login; the previous
+option is omitted when the stored login is `defaultUser`.
 
 The host CLI no longer generates Docker compose files for the server. If the
 requested server is unavailable, it starts a local server process. After that,
@@ -160,8 +163,11 @@ Dashboard HTTP actions:
 | POST   | `/api/reload` | Re-run `.ndx` bootstrap and re-read settings sources. |
 | POST   | `/api/exit`   | Request shutdown of the local server instance.        |
 
-`initialize` returns `bootstrap`, and `session/configured` includes the
-same shape on `event.bootstrap`:
+`initialize` returns `server`, `version`, `protocolVersion`, `methods`, and
+`bootstrap`. Protocol version `1` is the current ndx WebSocket JSON-RPC
+contract, not a model or package version.
+
+`session/configured` includes `event.context` and `event.bootstrap`:
 
 ```json
 {
@@ -180,6 +186,16 @@ same shape on `event.bootstrap`:
 `status` is either `installed` or `existing`. Settings files are not included in
 the bootstrap report because startup never generates them. The session server
 performs this bootstrap check before starting session work.
+
+`event.context` reports restored conversation size as:
+
+```json
+{
+  "restoredItems": 12,
+  "estimatedTokens": 3421,
+  "maxContextTokens": 32768
+}
+```
 
 ## Settings
 

@@ -1,4 +1,5 @@
 import type { ModelClient, ModelResponse, NdxConfig } from "../shared/types.js";
+import { withOperationalInstructions } from "./instructions.js";
 import { OpenAiChatCompletionsAdapter } from "./openai-chat.js";
 import { OpenAiResponsesAdapter } from "./openai-responses.js";
 import type { ModelInput, ProviderRequestOptions } from "./types.js";
@@ -16,7 +17,7 @@ export class OpenAiResponsesClient implements ModelClient {
     }
     const options: ProviderRequestOptions = {
       model: config.activeModel.name,
-      instructions: config.instructions,
+      instructions: withOperationalInstructions(config.instructions),
       apiKey: config.activeProvider.key,
       baseUrl: config.activeProvider.url.replace(/\/$/, ""),
       effort: config.activeModel.activeEffort,

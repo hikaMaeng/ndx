@@ -90,14 +90,18 @@
 - Tool folder name must equal the OpenAI function `name`.
 - Tool manifests must include an OpenAI function schema plus command execution fields.
 - The command execution field set is `command`, optional `args`, optional `cwd`, optional `env`, and optional `timeoutMs`.
-- Every model tool call runs in a separate worker Node process. No capability tool executes inside the agent process.
+- Every model tool call runs in a separate worker Node process. No capability
+  tool executes inside the agent process.
 - Multiple tool calls in one model response are launched in parallel. Sequential behavior is achieved by model turns queuing later asynchronous calls.
 - The default tool timeout is `shellTimeoutMs` from settings unless a tool manifest declares `timeoutMs`.
-- Turn cancellation is propagated to worker processes and to the immediate external manifest command process.
+- Turn cancellation is propagated to worker processes and to the immediate
+  external manifest command process.
 - External tools that spawn their own children must handle cleanup for that deeper process tree.
-- Shell-like core tools run through `docker exec` when the server provides
-  `NDX_SANDBOX_CONTAINER`. The default pinned image is
-  `hika00/ndx-sandbox:0.1.0`.
+- When the server provides `NDX_SANDBOX_CONTAINER`, external manifest tools and
+  configured MCP stdio commands run through `docker exec` in the workspace
+  sandbox. The default pinned image is `hika00/ndx-sandbox:0.1.0`.
+- Restored persisted sessions must rebind their runtime config to the current
+  workspace sandbox before handling the next turn.
 - Server-managed sandbox containers are named `ndx-tool-<folder-name>` and are
   created with the project folder mounted at `/workspace`, the user `.ndx`
   mounted at `/home/.ndx`, and `/var/run/docker.sock` mounted for Docker
@@ -123,6 +127,9 @@
 ## Model Providers
 
 - Real model execution uses the active model's provider from `settings.json`.
+- Provider system instructions always include the operational rule that local
+  file-changing requests must use tools in the active `cwd`; models must not
+  answer with only code blocks unless explicitly asked for code text only.
 - OpenAI-compatible execution uses Responses first. `404` and `405` from `/responses` permanently switch that client instance to Chat Completions fallback.
 - OpenAI-compatible Responses execution must not send `previous_response_id`; server-side conversation continuation is intentionally unused.
 - Every model request must include the local client-side conversation stack needed for that request, including prior user turns, assistant text, tool calls, and tool outputs.

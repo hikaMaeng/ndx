@@ -33,8 +33,9 @@ version and verifies the installed Verdaccio package.
 `SERVER_ADDRESS` is the only `ndx` startup argument. It defaults to
 `127.0.0.1:45123`. The CLI connects to that server first; if it is not
 reachable, it reports the miss, starts a local default server at the default
-address, logs in, and continues with session selection for the current folder.
-Docker is used only as the per-folder tool sandbox, not as the server process.
+address, asks interactive users which login to use, and continues with session
+selection for the current folder. Docker is used only as the per-folder tool
+sandbox for external tools and MCP stdio commands, not as the server process.
 
 Use a real model by configuring provider settings in local global
 `/home/.ndx/settings.json`. Project `.ndx/settings.json` remains supported as

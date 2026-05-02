@@ -1,4 +1,8 @@
-import type { NdxBootstrapReport, TokenUsage } from "./types.js";
+import type {
+  NdxBootstrapReport,
+  SessionContextSummary,
+  TokenUsage,
+} from "./types.js";
 
 export type RuntimeOp =
   | { type: "user_turn"; prompt: string; cwd?: string }
@@ -35,6 +39,7 @@ export interface SessionConfiguredEvent {
   sandboxMode: string;
   sources: string[];
   bootstrap: NdxBootstrapReport;
+  context: SessionContextSummary;
 }
 
 export interface TurnStartedEvent {

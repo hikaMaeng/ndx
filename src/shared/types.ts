@@ -194,3 +194,9 @@ export interface TokenUsage {
   outputTokens?: number;
   totalTokens?: number;
 }
+
+export interface SessionContextSummary {
+  restoredItems: number;
+  estimatedTokens: number;
+  maxContextTokens?: number;
+}

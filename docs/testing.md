@@ -100,7 +100,10 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
   Verdaccio version through installed `ndx`/`ndxserver` binaries.
 - Server startup verification should run the local server, confirm it logs in
   before initialization, fetch the dashboard through the local dashboard port,
-  and verify that shell-like tools execute through the pinned Docker sandbox.
+  and verify that external tools plus restored sessions execute through the
+  pinned Docker sandbox.
+- CLI session-client tests cover startup login prompting, server version
+  display, compact bootstrap output, and restored context usage formatting.
 - Repository hygiene checks keep the root package as the only package and keep
   generated dependency, build, and Docker runtime state out of tracked source.
 - Yarn Plug'n'Play with the global cache enabled is the package-install
