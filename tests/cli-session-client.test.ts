@@ -302,7 +302,7 @@ class FakeTransport implements CliSessionTransport {
     if (method === "initialize") {
       return {
         server: "ndx-ts-session-server",
-        version: "0.1.7",
+        version: "0.1.8",
         protocolVersion: 1,
         dashboardUrl: "http://127.0.0.1:45124",
         bootstrap: bootstrapReport("/home/.ndx"),
