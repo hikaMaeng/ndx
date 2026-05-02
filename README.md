@@ -1,15 +1,16 @@
 ndx is a TypeScript-first local coding agent derived from openai/codex.
 
-| Goal               | File                        |
-| ------------------ | --------------------------- |
-| Understand purpose | docs/overview.md            |
-| Architecture       | docs/architecture.md        |
-| System map         | docs/system-architecture.md |
-| API reference      | docs/api.md                 |
-| Usage              | docs/usage.md               |
-| Constraints        | docs/constraints.md         |
-| Internals          | docs/internals.md           |
-| Testing            | docs/testing.md             |
+| Goal               | File                           |
+| ------------------ | ------------------------------ |
+| Understand purpose | docs/overview.md               |
+| Architecture       | docs/architecture.md           |
+| System map         | docs/system-architecture.md    |
+| System map (KO)    | docs/system-architecture-ko.md |
+| API reference      | docs/api.md                    |
+| Usage              | docs/usage.md                  |
+| Constraints        | docs/constraints.md            |
+| Internals          | docs/internals.md              |
+| Testing            | docs/testing.md                |
 
 ## Status
 
