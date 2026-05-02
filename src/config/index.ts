@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { dirname, join, parse, resolve } from "node:path";
 import type {
   EnvMap,
@@ -32,6 +33,7 @@ export interface ConfigLoadOptions {
 }
 
 interface PartialSettings {
+  version?: string;
   model?: string | PartialModelPools;
   dataPath?: string;
   sessionPath?: string;
@@ -96,7 +98,10 @@ export function loadConfig(
     if (!existsSync(file)) {
       continue;
     }
-    const parsed = parseSettings(readFileSync(file, "utf8"), file);
+    const parsed = normalizeSettingsVersion(
+      parseSettings(readFileSync(file, "utf8"), file),
+      file,
+    );
     if (file === join(globalDir, SETTINGS_FILE)) {
       globalMcp = parsed.mcp ?? {};
     } else {
@@ -293,6 +298,7 @@ function formatAgentsInstructions(files: string[]): string {
 
 function parseSettings(contents: string, file: string): PartialSettings {
   const parsed = parseJsonObject(contents, file) as PartialSettings;
+  assertOptionalString(parsed.version, "version", file);
   assertOptionalModelSelection(parsed.model, "model", file);
   assertOptionalString(parsed.dataPath, "dataPath", file);
   assertOptionalString(parsed.sessionPath, "sessionPath", file);
@@ -306,6 +312,41 @@ function parseSettings(contents: string, file: string): PartialSettings {
   assertMcp(parsed.mcp, file);
   assertPlugins(parsed.plugins, file);
   assertTools(parsed.tools, file);
+  return parsed;
+}
+
+/** Return the package version that settings.json must declare. */
+export function currentSettingsVersion(): string {
+  let current = dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const candidate = join(current, "package.json");
+    if (existsSync(candidate)) {
+      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
+        version?: unknown;
+      };
+      if (typeof parsed.version === "string" && parsed.version.length > 0) {
+        return parsed.version;
+      }
+      throw new Error(`${candidate} must contain a package version`);
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      throw new Error("package.json was not found for settings version");
+    }
+    current = parent;
+  }
+}
+
+function normalizeSettingsVersion(
+  parsed: PartialSettings,
+  file: string,
+): PartialSettings {
+  const version = currentSettingsVersion();
+  if (parsed.version === version) {
+    return parsed;
+  }
+  parsed.version = version;
+  writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`);
   return parsed;
 }
 

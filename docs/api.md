@@ -192,11 +192,17 @@ Load order:
 3. `/home/.ndx/search.json` for web-search parsing and interpretation rules
 
 Project settings override global settings. Only one project settings file is loaded.
+Both settings files must declare the current package `"version"`. Valid files
+with only a missing or stale version are updated in place during startup or
+dashboard Reload. If the merged runtime settings are incomplete, TTY CLI startup
+uses the settings wizard to repair `/home/.ndx/settings.json` first and the
+current project `.ndx/settings.json` second when it exists.
 
 Canonical shape:
 
 ```json
 {
+  "version": "0.1.7",
   "model": {
     "session": ["local-main-a", "local-main-b"],
     "worker": ["local-worker-a", "local-worker-b"],

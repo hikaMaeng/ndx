@@ -91,6 +91,9 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Docker sandbox labels identify ndx server-owned containers, and sandboxed
   server startup reclaims prior ndx-owned containers before creating the current
   workspace sandbox.
+- Settings version compatibility: valid global and project settings with stale
+  or missing `"version"` are updated in place; incomplete settings are repaired
+  by the TTY wizard in global-then-project order.
 - Deploy verification uses non-interactive `docker compose exec -T` for sandbox
   shell execution.
 - Each code change bumps the package version and verifies the exact published

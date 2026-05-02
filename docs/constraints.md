@@ -8,6 +8,8 @@
 - Account, project, session, event, and ownership records are stored in
   `<dataDir>/ndx.sqlite`; omitted user means `defaultUser`.
 - Project settings path is `.ndx/settings.json` under the current project directory.
+- Every settings file must contain a `"version"` string matching the installed
+  ndx package version.
 - No runtime environment variable is used to select model, provider URL, provider key, or ndx home.
 - Settings are JSON only; `config.toml`, `.codex`, `NDX_HOME`, `NDX_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are not part of the ndx TypeScript loader contract.
 - `keys` values must be strings because they are injected into external tool process environments.
@@ -25,7 +27,11 @@
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
 - The global `.ndx/system` directory is self-healing at startup for required directories and built-in `/system/tools` packages.
 - `/home/.ndx/system` bootstrap information remains code-managed and is not stored in SQLite.
-- The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing `/home/.ndx/settings.json`; non-TTY loading still fails before model selection.
+- The config loader does not invent model/provider settings, but it may update
+  only `"version"` in otherwise valid settings files. TTY CLI startup handles
+  missing or incomplete settings by asking setup questions, repairing global
+  settings first, and then repairing the current project settings when present;
+  non-TTY loading still fails before model selection.
 - `AGENTS.md` files discovered from the current working directory ancestry are
   appended to runtime instructions after settings are merged. They are reported
   as initialization sources and are re-read by dashboard Reload.

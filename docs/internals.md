@@ -8,10 +8,16 @@ when present. `loadConfig(cwd)` reads existing JSON files in order, merges them,
 fails if neither settings file exists, then loads `/home/.ndx/search.json` as
 search rules.
 
-`src/cli/settings-wizard.ts` owns interactive first-run settings creation. When
-the CLI is attached to a TTY and `loadConfig` reports missing settings, the
-wizard writes `/home/.ndx/settings.json` from permission, provider, model, and
-context answers, then the CLI reruns `loadConfig`.
+Each settings file carries a `"version"` equal to the installed package version.
+`loadConfig` updates only that field when the file is otherwise readable and
+valid for the current cascade.
+
+`src/cli/settings-wizard.ts` owns interactive first-run settings creation and
+repair. When the CLI is attached to a TTY and `loadConfig` reports missing or
+incomplete settings, the wizard writes or repairs `/home/.ndx/settings.json`
+first from permission, provider, model, and context answers, then repairs the
+current project `.ndx/settings.json` when it exists. The CLI then reruns
+`loadConfig`.
 
 ## Settings Merge
 
@@ -23,7 +29,7 @@ Scalar fields such as `model`, `dataPath`, `sessionPath`, `instructions`, `maxTu
 
 The active root config resolves to the first `session` model for display and provider validation. Sessions keep that base config. `RoundRobinModelRouter` now binds each selected pool to one model for the live session. `@key` prompts select `model.custom.<key>` and tool follow-up requests keep using that pool. Explicit `/model` changes update `config.model`, `activeModel`, effort, and thinking state; the next provider request uses a new provider-client cache key when those values change.
 
-`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global system directories and built-in `/system/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
+`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global system directories and built-in `/system/tools` packages only. It never creates model/provider settings, so model and provider selection must come from a real settings file or the TTY wizard.
 
 ## Model Adapters
 

@@ -31,6 +31,8 @@ ndx is a TypeScript-first local coding agent runtime.
   and Exit actions; the socket ignores non-login methods until account login
   succeeds.
 - Project-local settings are discovered from the current project folder's `.ndx/settings.json`.
+- Settings files carry the installed ndx package version. Valid stale files are
+  version-bumped in place; incomplete files require TTY wizard repair.
 - `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
 - `keys` entries in settings are injected into shell tool executions.
 - Docker is a per-physical-project-folder tool sandbox only. The server is a

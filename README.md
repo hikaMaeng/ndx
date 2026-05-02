@@ -38,7 +38,10 @@ Docker is used only as the per-folder tool sandbox, not as the server process.
 
 Use a real model by configuring provider settings in local global
 `/home/.ndx/settings.json`. Project `.ndx/settings.json` remains supported as
-an override, but first-run setup writes global settings.
+an override, but first-run setup writes global settings. Every settings file
+must declare `"version"` equal to the installed ndx package version; valid older
+files are upgraded in place, and incomplete files are repaired by the TTY
+settings wizard before startup continues.
 
 ## Docker Verification
 
