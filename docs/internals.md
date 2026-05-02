@@ -174,5 +174,8 @@ The ndx server is a local process and owns session state outside Docker.
 External manifest tools and MCP stdio servers execute inside the sandbox when
 `NDX_SANDBOX_CONTAINER` is present. The host worker remains only the process
 supervisor that starts `docker exec`, passes stdin, and handles cancellation.
+Before calling `docker exec`, the server maps Windows and POSIX host paths to
+the Linux sandbox namespace so `-w` is always `/workspace`, `/home/.ndx`, or a
+child path under those roots.
 Restored sessions rebuild their `AgentRuntime` with sandbox environment before
 the next turn so model-selected file writes target `/workspace`.

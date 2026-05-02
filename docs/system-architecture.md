@@ -510,7 +510,7 @@ sequenceDiagram
   else external tool.json
     Worker->>External: run manifest command through runProcess
     alt shell-like and NDX_SANDBOX_CONTAINER present
-      External->>Docker: docker exec in workspace sandbox
+      External->>Docker: docker exec -w mapped Linux sandbox path
       Docker-->>External: stdout, stderr, exit code
     else normal external command
       External-->>Worker: stdout, stderr, exit code
@@ -665,7 +665,7 @@ Current published package contract:
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.9`                                      |
+| Version                                  | `0.1.10`                                     |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |

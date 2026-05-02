@@ -23,6 +23,10 @@ test("provider instructions require real tool use for file changes", () => {
     instructions.includes("Do not respond with only code blocks"),
     true,
   );
+  assert.equal(
+    instructions.includes("do not ask the user to copy files"),
+    true,
+  );
 });
 
 test("normalizes OpenAI responses function calls and usage", () => {

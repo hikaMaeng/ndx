@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { runProcess } from "../../../process/index.js";
+import { mapHostPathToSandboxPath } from "../../sandbox-paths.js";
 import type {
   ExternalToolRuntime,
   ToolContext,
@@ -143,26 +144,11 @@ function sandboxCommand(command: string): string {
 }
 
 function mapHostPathToSandbox(context: ToolContext, value: string): string {
-  const hostWorkspace = context.env.NDX_SANDBOX_HOST_WORKSPACE;
-  const sandboxWorkspace = context.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
-  const sandboxCwd = context.env.NDX_SANDBOX_CWD ?? sandboxWorkspace;
-  const hostGlobal = context.config.paths.globalDir;
-  const resolved = value.startsWith("/") ? resolve(value) : value;
-  if (hostWorkspace !== undefined && hostWorkspace.length > 0) {
-    const workspace = resolve(hostWorkspace);
-    if (resolved === workspace) {
-      return sandboxWorkspace;
-    }
-    if (resolved.startsWith(`${workspace}/`)) {
-      return `${sandboxWorkspace}${resolved.slice(workspace.length)}`;
-    }
-  }
-  const global = resolve(hostGlobal);
-  if (resolved === global) {
-    return "/home/.ndx";
-  }
-  if (resolved.startsWith(`${global}/`)) {
-    return `/home/.ndx${resolved.slice(global.length)}`;
-  }
-  return value.startsWith("/") ? sandboxCwd : value;
+  return mapHostPathToSandboxPath(value, {
+    hostWorkspace: context.env.NDX_SANDBOX_HOST_WORKSPACE,
+    sandboxWorkspace: context.env.NDX_SANDBOX_WORKSPACE,
+    sandboxCwd: context.env.NDX_SANDBOX_CWD,
+    hostGlobal: context.config.paths.globalDir,
+    sandboxGlobal: "/home/.ndx",
+  });
 }

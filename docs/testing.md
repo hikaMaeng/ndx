@@ -69,6 +69,7 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Social login account creation from a verified provider profile response.
 - Socket authentication requirement for session, command, and turn methods.
 - Dashboard HTTP response, Reload action, and stable browser locator contract.
+- Windows host path mapping for Docker sandbox `exec -w` values.
 - Workspace-scoped session listing, restore by session id or list number, and
   non-current session deletion.
 - Restore rebuilds provider-facing model conversation history from saved

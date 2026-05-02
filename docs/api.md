@@ -223,7 +223,7 @@ Canonical shape:
 
 ```json
 {
-  "version": "0.1.9",
+  "version": "0.1.10",
   "model": {
     "session": ["local-main-a", "local-main-b"],
     "worker": ["local-worker-a", "local-worker-b"],

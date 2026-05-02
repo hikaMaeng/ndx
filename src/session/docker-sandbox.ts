@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
+import { mapHostPathToSandboxPath } from "./sandbox-paths.js";
 
 export interface DockerSandboxOptions {
   workspaceDir: string;
@@ -232,14 +233,13 @@ export function hostPathToSandboxPath(
   state: DockerSandboxState,
   path: string,
 ): string {
-  const resolved = resolve(path);
-  if (resolved === state.workspaceDir) {
-    return state.containerWorkspaceDir;
-  }
-  if (resolved.startsWith(`${state.workspaceDir}/`)) {
-    return `${state.containerWorkspaceDir}${resolved.slice(state.workspaceDir.length)}`;
-  }
-  return state.containerWorkspaceDir;
+  return mapHostPathToSandboxPath(path, {
+    hostWorkspace: state.workspaceDir,
+    sandboxWorkspace: state.containerWorkspaceDir,
+    sandboxCwd: state.containerWorkspaceDir,
+    hostGlobal: state.globalDir,
+    sandboxGlobal: state.containerGlobalDir,
+  });
 }
 
 async function runDocker(

@@ -74,10 +74,40 @@ process.stdout.write(JSON.stringify(result) + "\n");
 function toSandboxPath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
-  if (hostRoot.length === 0) return process.env.NDX_SANDBOX_CWD ?? path;
-  if (path === hostRoot) return sandboxRoot;
-  if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
-  return process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
+  return mapPath(path, [
+    [hostRoot, sandboxRoot],
+    [hostGlobal, "/home/.ndx"],
+  ], sandboxCwd);
+}
+function mapPath(path, mappings, fallback) {
+  if (path.length === 0) return fallback;
+  const absolute = isAbsolutePath(path);
+  const normalized = absolute ? normalizePath(path) : path;
+  for (const root of [fallback, "/workspace", "/home/.ndx"]) {
+    if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
+  }
+  for (const [host, sandbox] of mappings) {
+    if (!host) continue;
+    const root = normalizePath(host);
+    if (pathKey(normalized) === pathKey(root)) return sandbox;
+    if (pathKey(normalized).startsWith(pathKey(root) + "/")) return sandbox + normalized.slice(root.length);
+  }
+  return absolute ? fallback : path;
+}
+function isAbsolutePath(path) {
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
+}
+function normalizePath(path) {
+  let normalized = path.replace(/\\/g, "/");
+  while (normalized.length > 1 && !/^[a-zA-Z]:\/$/.test(normalized) && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+function pathKey(path) {
+  return /^[a-zA-Z]:\//.test(path) ? path.toLowerCase() : path;
 }
 `,
   },
@@ -116,10 +146,40 @@ process.stdout.write(JSON.stringify(result) + "\n");
 function toSandboxPath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
-  if (hostRoot.length === 0) return process.env.NDX_SANDBOX_CWD ?? path;
-  if (path === hostRoot) return sandboxRoot;
-  if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
-  return process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
+  return mapPath(path, [
+    [hostRoot, sandboxRoot],
+    [hostGlobal, "/home/.ndx"],
+  ], sandboxCwd);
+}
+function mapPath(path, mappings, fallback) {
+  if (path.length === 0) return fallback;
+  const absolute = isAbsolutePath(path);
+  const normalized = absolute ? normalizePath(path) : path;
+  for (const root of [fallback, "/workspace", "/home/.ndx"]) {
+    if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
+  }
+  for (const [host, sandbox] of mappings) {
+    if (!host) continue;
+    const root = normalizePath(host);
+    if (pathKey(normalized) === pathKey(root)) return sandbox;
+    if (pathKey(normalized).startsWith(pathKey(root) + "/")) return sandbox + normalized.slice(root.length);
+  }
+  return absolute ? fallback : path;
+}
+function isAbsolutePath(path) {
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
+}
+function normalizePath(path) {
+  let normalized = path.replace(/\\/g, "/");
+  while (normalized.length > 1 && !/^[a-zA-Z]:\/$/.test(normalized) && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+function pathKey(path) {
+  return /^[a-zA-Z]:\//.test(path) ? path.toLowerCase() : path;
 }
 `,
   },
@@ -165,16 +225,44 @@ async function collectEntries(dir, depth, entries) {
 function toRuntimePath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
   const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
-  if (hostRoot.length > 0) {
-    if (path === hostRoot) return sandboxRoot;
-    if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
-  }
-  if (hostGlobal.length > 0) {
-    if (path === hostGlobal) return "/home/.ndx";
-    if (path.startsWith(hostGlobal + "/")) return "/home/.ndx" + path.slice(hostGlobal.length);
-  }
+  const sandboxActive = process.env.NDX_TOOL_EXECUTION_ENV === "container" || hostRoot.length > 0 || hostGlobal.length > 0;
+  if (!sandboxActive) return resolve(path || process.env.NDX_TOOL_CWD || process.cwd());
+  const mapped = mapPath(path, [
+    [hostRoot, sandboxRoot],
+    [hostGlobal, "/home/.ndx"],
+  ], sandboxCwd);
+  if (mapped !== path) return mapped;
   return resolve(path || process.env.NDX_TOOL_CWD || process.cwd());
+}
+function mapPath(path, mappings, fallback) {
+  if (path.length === 0) return fallback;
+  const absolute = isAbsolutePath(path);
+  const normalized = absolute ? normalizePath(path) : path;
+  for (const root of [fallback, "/workspace", "/home/.ndx"]) {
+    if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
+  }
+  for (const [host, sandbox] of mappings) {
+    if (!host) continue;
+    const root = normalizePath(host);
+    if (pathKey(normalized) === pathKey(root)) return sandbox;
+    if (pathKey(normalized).startsWith(pathKey(root) + "/")) return sandbox + normalized.slice(root.length);
+  }
+  return absolute ? fallback : path;
+}
+function isAbsolutePath(path) {
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
+}
+function normalizePath(path) {
+  let normalized = path.replace(/\\/g, "/");
+  while (normalized.length > 1 && !/^[a-zA-Z]:\/$/.test(normalized) && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+function pathKey(path) {
+  return /^[a-zA-Z]:\//.test(path) ? path.toLowerCase() : path;
 }
 `,
   },
@@ -220,16 +308,42 @@ function mimeType(path) {
 function toRuntimePath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
   const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
-  if (hostRoot.length > 0) {
-    if (path === hostRoot) return sandboxRoot;
-    if (path.startsWith(hostRoot + "/")) return sandboxRoot + path.slice(hostRoot.length);
+  const sandboxActive = process.env.NDX_TOOL_EXECUTION_ENV === "container" || hostRoot.length > 0 || hostGlobal.length > 0;
+  if (!sandboxActive) return path;
+  return mapPath(path, [
+    [hostRoot, sandboxRoot],
+    [hostGlobal, "/home/.ndx"],
+  ], sandboxCwd);
+}
+function mapPath(path, mappings, fallback) {
+  if (path.length === 0) return fallback;
+  const absolute = isAbsolutePath(path);
+  const normalized = absolute ? normalizePath(path) : path;
+  for (const root of [fallback, "/workspace", "/home/.ndx"]) {
+    if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
   }
-  if (hostGlobal.length > 0) {
-    if (path === hostGlobal) return "/home/.ndx";
-    if (path.startsWith(hostGlobal + "/")) return "/home/.ndx" + path.slice(hostGlobal.length);
+  for (const [host, sandbox] of mappings) {
+    if (!host) continue;
+    const root = normalizePath(host);
+    if (pathKey(normalized) === pathKey(root)) return sandbox;
+    if (pathKey(normalized).startsWith(pathKey(root) + "/")) return sandbox + normalized.slice(root.length);
   }
-  return path;
+  return absolute ? fallback : path;
+}
+function isAbsolutePath(path) {
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
+}
+function normalizePath(path) {
+  let normalized = path.replace(/\\/g, "/");
+  while (normalized.length > 1 && !/^[a-zA-Z]:\/$/.test(normalized) && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+function pathKey(path) {
+  return /^[a-zA-Z]:\//.test(path) ? path.toLowerCase() : path;
 }
 `,
   },

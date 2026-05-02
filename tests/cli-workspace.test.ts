@@ -10,6 +10,7 @@ import {
   dockerSandboxState,
   hostPathToSandboxPath,
 } from "../src/session/docker-sandbox.js";
+import { mapHostPathToSandboxPath } from "../src/session/sandbox-paths.js";
 import type { NdxConfig } from "../src/shared/types.js";
 import {
   ensureManagedServer,
@@ -143,4 +144,38 @@ test("docker sandbox state is stable per workspace and maps host paths", () => {
     "/workspace/src/index.ts",
   );
   assert.equal(hostPathToSandboxPath(state, "/tmp/other"), "/workspace");
+});
+
+test("sandbox path mapping accepts Windows host paths for docker exec cwd", () => {
+  const state = {
+    workspaceDir: "F:\\dev\\test1",
+    globalDir: "C:\\Users\\hika0\\.ndx",
+    image: "hika00/ndx-sandbox:test",
+    containerName: "ndx-tool-test1",
+    containerWorkspaceDir: "/workspace",
+    containerGlobalDir: "/home/.ndx",
+  };
+
+  assert.equal(hostPathToSandboxPath(state, "F:\\dev\\test1"), "/workspace");
+  assert.equal(
+    hostPathToSandboxPath(state, "F:\\dev\\test1\\src\\index.html"),
+    "/workspace/src/index.html",
+  );
+  assert.equal(
+    hostPathToSandboxPath(
+      state,
+      "C:\\Users\\hika0\\.ndx\\system\\tools\\apply_patch",
+    ),
+    "/home/.ndx/system/tools/apply_patch",
+  );
+  assert.equal(
+    mapHostPathToSandboxPath("F:\\other\\outside", {
+      hostWorkspace: state.workspaceDir,
+      sandboxWorkspace: state.containerWorkspaceDir,
+      sandboxCwd: state.containerWorkspaceDir,
+      hostGlobal: state.globalDir,
+      sandboxGlobal: state.containerGlobalDir,
+    }),
+    "/workspace",
+  );
 });
