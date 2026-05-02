@@ -58,7 +58,7 @@ When Codex knows which client started the turn, the legacy notify JSON payload a
 
 ## JSON Schema
 
-Configuration is loaded from `/home/.ndx/settings.json` and the nearest project `.ndx/settings.json`.
+Configuration is loaded from `/home/.ndx/settings.json` and the current project `.ndx/settings.json`.
 
 ## SQLite State DB
 

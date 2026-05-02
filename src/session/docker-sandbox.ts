@@ -1,22 +1,31 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, resolve } from "node:path";
 
 export interface DockerSandboxOptions {
   workspaceDir: string;
+  globalDir?: string;
   image?: string;
   containerName?: string;
 }
 
 export interface DockerSandboxState {
   workspaceDir: string;
+  globalDir: string;
   image: string;
   containerName: string;
   containerWorkspaceDir: string;
+  containerGlobalDir: string;
 }
 
 const DEFAULT_SANDBOX_IMAGE = "hika00/ndx-sandbox:0.1.0";
 const CONTAINER_WORKSPACE_DIR = "/workspace";
+const CONTAINER_GLOBAL_DIR = "/home/.ndx";
+const SANDBOX_ROLE_LABEL = "dev.ndx.role";
+const SANDBOX_WORKSPACE_LABEL = "dev.ndx.workspace";
+const SANDBOX_ROLE = "tool-sandbox";
 
 /** Resolve the Docker sandbox image pinned by this server build. */
 export function defaultDockerSandboxImage(): string {
@@ -28,15 +37,15 @@ export function dockerSandboxState(
   options: DockerSandboxOptions,
 ): DockerSandboxState {
   const workspaceDir = resolve(options.workspaceDir);
-  const key = createHash("sha256")
-    .update(workspaceDir)
-    .digest("hex")
-    .slice(0, 16);
+  const globalDir = resolve(options.globalDir ?? resolve(homedir(), ".ndx"));
   return {
     workspaceDir,
+    globalDir,
     image: options.image ?? defaultDockerSandboxImage(),
-    containerName: options.containerName ?? `ndx-sandbox-${key}`,
+    containerName:
+      options.containerName ?? `ndx-tool-${dockerNamePart(workspaceDir)}`,
     containerWorkspaceDir: CONTAINER_WORKSPACE_DIR,
+    containerGlobalDir: CONTAINER_GLOBAL_DIR,
   };
 }
 
@@ -45,36 +54,137 @@ export async function ensureDockerSandbox(
   options: DockerSandboxOptions,
 ): Promise<DockerSandboxState> {
   const state = dockerSandboxState(options);
+  mkdirSync(state.globalDir, { recursive: true });
   const image = await run("docker", ["image", "inspect", state.image]);
   if (image.exitCode !== 0) {
     await runDocker(["pull", state.image]);
   }
-  const inspect = await run("docker", [
-    "inspect",
-    "-f",
-    "{{.State.Running}}",
-    state.containerName,
-  ]);
-  if (inspect.exitCode === 0 && inspect.stdout.trim() === "true") {
-    return state;
+  const labeled = await findLabeledSandbox(state);
+  if (labeled !== undefined) {
+    if (labeled.running) {
+      return { ...state, containerName: labeled.name };
+    }
+    await runDocker(["rm", "-f", labeled.name]);
   }
-  if (inspect.exitCode === 0) {
-    await runDocker(["rm", "-f", state.containerName]);
+  const container = await availableContainerName(state);
+  if (container.running) {
+    return { ...state, containerName: container.name };
   }
   await runDocker([
     "run",
     "-d",
     "--name",
-    state.containerName,
+    container.name,
+    "--label",
+    `${SANDBOX_ROLE_LABEL}=${SANDBOX_ROLE}`,
+    "--label",
+    `${SANDBOX_WORKSPACE_LABEL}=${state.workspaceDir}`,
+    "-v",
+    `${state.globalDir}:${state.containerGlobalDir}`,
     "-v",
     `${state.workspaceDir}:${state.containerWorkspaceDir}`,
+    "-v",
+    "/var/run/docker.sock:/var/run/docker.sock",
+    "-e",
+    `NDX_GLOBAL_DIR=${state.containerGlobalDir}`,
     "-w",
     state.containerWorkspaceDir,
     state.image,
     "sleep",
     "infinity",
   ]);
-  return state;
+  return { ...state, containerName: container.name };
+}
+
+function dockerNamePart(path: string): string {
+  const raw = basename(path) || "workspace";
+  const safe = raw.replace(/[^a-zA-Z0-9_.-]/g, "-");
+  return /^[a-zA-Z0-9]/.test(safe) ? safe : `workspace-${safe}`;
+}
+
+function dockerNameHash(path: string): string {
+  return createHash("sha256").update(path).digest("hex").slice(0, 12);
+}
+
+async function availableContainerName(
+  state: DockerSandboxState,
+): Promise<{ name: string; running: boolean }> {
+  const preferred = state.containerName;
+  const preferredInspect = await inspectSandboxContainer(preferred);
+  if (preferredInspect === undefined) {
+    return { name: preferred, running: false };
+  }
+  if (preferredInspect.workspaceDir === state.workspaceDir) {
+    if (preferredInspect.running) {
+      return { name: preferredInspect.name, running: true };
+    }
+    await runDocker(["rm", "-f", preferredInspect.name]);
+    return { name: preferred, running: false };
+  }
+  const fallback = `${preferred}-${dockerNameHash(state.workspaceDir)}`;
+  const fallbackInspect = await inspectSandboxContainer(fallback);
+  if (fallbackInspect === undefined) {
+    return { name: fallback, running: false };
+  }
+  if (fallbackInspect.workspaceDir === state.workspaceDir) {
+    if (fallbackInspect.running) {
+      return { name: fallbackInspect.name, running: true };
+    }
+    await runDocker(["rm", "-f", fallbackInspect.name]);
+    return { name: fallback, running: false };
+  }
+  throw new Error(
+    `docker sandbox container name collision for ${state.workspaceDir}: ${fallback}`,
+  );
+}
+
+async function findLabeledSandbox(
+  state: DockerSandboxState,
+): Promise<
+  | { name: string; running: boolean; workspaceDir: string | undefined }
+  | undefined
+> {
+  const found = await run("docker", [
+    "ps",
+    "-aq",
+    "--filter",
+    `label=${SANDBOX_ROLE_LABEL}=${SANDBOX_ROLE}`,
+    "--filter",
+    `label=${SANDBOX_WORKSPACE_LABEL}=${state.workspaceDir}`,
+  ]);
+  if (found.exitCode !== 0) {
+    return undefined;
+  }
+  const [id] = found.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return id === undefined ? undefined : inspectSandboxContainer(id);
+}
+
+async function inspectSandboxContainer(
+  name: string,
+): Promise<
+  | { name: string; running: boolean; workspaceDir: string | undefined }
+  | undefined
+> {
+  const inspect = await run("docker", [
+    "inspect",
+    "-f",
+    `{{.Name}}|{{.State.Running}}|{{if .Config.Labels}}{{index .Config.Labels "${SANDBOX_WORKSPACE_LABEL}"}}{{end}}`,
+    name,
+  ]);
+  if (inspect.exitCode !== 0) {
+    return undefined;
+  }
+  const [rawName = name, running = "false", workspaceDir] = inspect.stdout
+    .trim()
+    .split("|");
+  return {
+    name: rawName.startsWith("/") ? rawName.slice(1) : rawName,
+    running: running === "true",
+    workspaceDir: workspaceDir === "" ? undefined : workspaceDir,
+  };
 }
 
 export function hostPathToSandboxPath(

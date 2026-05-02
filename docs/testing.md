@@ -24,9 +24,9 @@ npm run deploy
   effort, and thinking mode selection.
 - Session server keeps sessions on the base config while provider routing happens per request.
 - Missing global and project settings fail in the loader without falling back to a default model.
-- TTY setup wizard creates project `.ndx/settings.json` from permission, provider, model, and context answers.
+- TTY setup wizard creates global `/home/.ndx/settings.json` from permission, provider, model, and context answers.
 - Provider type validation for `openai` and `anthropic`.
-- Global `.ndx` bootstrap for missing core directories, built-in core tool package files, and skills directory.
+- Global `.ndx` bootstrap for missing `system/tools`, built-in core tool package files, and skills directory.
 - OpenAI Responses normalization.
 - OpenAI Responses requests omit `previous_response_id`.
 - OpenAI Responses function tool schema conversion.
@@ -48,13 +48,13 @@ npm run deploy
 - Runtime interrupt event contract.
 - CLI session-client controller initialization, session status, initialization-event display, recent-event display, and interactive command help.
 - CLI `/login` default-user switching and shared login-store update.
-- Managed Docker bootstrap compose-state generation under `.ndx/system/managed`
-  without placing CLI login state in project `.ndx`.
-- Managed startup probes the requested ndx socket before invoking Docker and
-  verifies `initialize.server` is `ndx-ts-session-server`.
-- Interactive managed startup asks for a workspace folder only when Docker
-  fallback is needed, then project selection uses a subfolder of that workspace.
-- Session server project listing and project folder creation.
+- Managed startup reports local current-folder sandbox metadata without
+  generating server compose state.
+- Managed startup probes the requested ndx socket before starting the local
+  fallback server and verifies `initialize.server` is `ndx-ts-session-server`.
+- Interactive managed startup uses the current folder directly and does not ask
+  for a workspace folder or project selection.
+- Session server API omits project listing and project creation.
 - WebSocket session server request/notification flow.
 - Session server startup bootstrap report in `initialize` and `session/configured`.
 - Server-side SQLite persistence under `<dataDir>/ndx.sqlite`.
@@ -79,7 +79,10 @@ npm run deploy
 - `session_detached` record after clients disconnect without an explicit session close command.
 - Multiple WebSocket clients subscribed to the same live session.
 - Provider error classification for non-retryable and retryable failures.
-- Docker sandbox image build and `/workspace` bind mount behavior.
+- Docker sandbox image build, `ndx-tool-<folder-name>` naming, `/workspace`,
+  `/home/.ndx`, and Docker socket bind mount behavior.
+- Docker sandbox reuse by physical project folder and label-based discovery
+  after server restart.
 - Deploy verification uses non-interactive `docker compose exec -T` for sandbox
   shell execution.
 - Server startup verification should run the local server, confirm it logs in

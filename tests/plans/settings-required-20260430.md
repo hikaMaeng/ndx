@@ -25,7 +25,7 @@ settings are absent.
 ## Steps
 
 1. Run `npm test`.
-2. Confirm config loading still merges global settings before nearest project
+2. Confirm config loading still merges global settings before current project
    settings.
 3. Confirm config loading throws when neither `/home/.ndx/settings.json` nor a
    project `.ndx/settings.json` exists.

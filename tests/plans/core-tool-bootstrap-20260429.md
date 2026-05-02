@@ -8,7 +8,7 @@
 
 Verify that startup bootstrap installs built-in capability tools as external
 `tool.json` core packages instead of leaving only `shell` under
-`/home/.ndx/core/tools`.
+`/home/.ndx/system/tools`.
 
 ## Environment
 
@@ -34,7 +34,7 @@ Verify that startup bootstrap installs built-in capability tools as external
 4. Confirm `list_dir` and `tool_search` execute through the external manifest
    runner.
 5. Push the branch and run `npm run deploy`.
-6. Inspect Docker startup/session logs for `/home/.ndx/core/tools` bootstrap
+6. Inspect Docker startup/session logs for `/home/.ndx/system/tools` bootstrap
    entries beyond `shell`.
 7. After PR merge, switch to `main`, update it, and run `npm run deploy` again.
 
@@ -44,7 +44,7 @@ Verify that startup bootstrap installs built-in capability tools as external
 - Docker deploy builds the pushed branch, runs in-container tests, and completes
   the mock agent verification.
 - Startup bootstrap reports built-in core packages under
-  `/home/.ndx/core/tools`.
+  `/home/.ndx/system/tools`.
 - The same deploy path passes on `main` after merge.
 
 ## Logs To Capture

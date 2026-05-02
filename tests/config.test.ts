@@ -32,15 +32,13 @@ test("resolveGlobalNdxDir returns user home .ndx by default", () => {
   );
 });
 
-test("loadConfig cascades global settings, nearest project settings, and global search rules", () => {
+test("loadConfig cascades global settings, current project settings, and global search rules", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
     const project = join(root, "repo");
-    const child = join(project, "child");
     mkdirSync(globalDir, { recursive: true });
     mkdirSync(join(project, ".ndx"), { recursive: true });
-    mkdirSync(child, { recursive: true });
 
     writeJson(join(globalDir, "settings.json"), {
       model: "global-model",
@@ -98,7 +96,7 @@ test("loadConfig cascades global settings, nearest project settings, and global 
       },
     });
 
-    const loaded = loadConfig(child, { globalDir });
+    const loaded = loadConfig(project, { globalDir });
     assert.equal(loaded.config.model, "project-model");
     assert.deepEqual(loaded.config.modelPools, {
       session: ["project-model"],
@@ -234,7 +232,7 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
   }
 });
 
-test("configFiles returns only global and nearest project settings", () => {
+test("configFiles returns only global and current project settings", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
@@ -246,6 +244,9 @@ test("configFiles returns only global and nearest project settings", () => {
     writeJson(join(project, ".ndx", "settings.json"), {});
 
     assert.deepEqual(configFiles(nested, { globalDir }), [
+      join(globalDir, "settings.json"),
+    ]);
+    assert.deepEqual(configFiles(project, { globalDir }), [
       join(globalDir, "settings.json"),
       join(project, ".ndx", "settings.json"),
     ]);
@@ -271,24 +272,25 @@ test("loadConfig fails when no global or project settings exist", () => {
   }
 });
 
-test("ensureGlobalNdxHome installs core directories and tool packages", () => {
+test("ensureGlobalNdxHome installs system directories and tool packages", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
     const report = ensureGlobalNdxHome(globalDir);
 
     assert.equal(existsSync(join(globalDir, "settings.json")), false);
-    assert.equal(existsSync(join(globalDir, "system", "core")), true);
+    assert.equal(existsSync(join(globalDir, "system", "tools")), true);
+    assert.equal(existsSync(join(globalDir, "system", "core")), false);
     assert.equal(existsSync(join(globalDir, "system", "skills")), true);
     assert.equal(
       existsSync(
-        join(globalDir, "system", "core", "tools", "shell", "tool.json"),
+        join(globalDir, "system", "tools", "shell", "tool.json"),
       ),
       true,
     );
     assert.equal(
       existsSync(
-        join(globalDir, "system", "core", "tools", "shell", "tool.mjs"),
+        join(globalDir, "system", "tools", "shell", "tool.mjs"),
       ),
       true,
     );
@@ -304,13 +306,13 @@ test("ensureGlobalNdxHome installs core directories and tool packages", () => {
     ]) {
       assert.equal(
         existsSync(
-          join(globalDir, "system", "core", "tools", tool, "tool.json"),
+          join(globalDir, "system", "tools", tool, "tool.json"),
         ),
         true,
       );
       assert.equal(
         existsSync(
-          join(globalDir, "system", "core", "tools", tool, "tool.mjs"),
+          join(globalDir, "system", "tools", tool, "tool.mjs"),
         ),
         true,
       );
@@ -320,6 +322,14 @@ test("ensureGlobalNdxHome installs core directories and tool packages", () => {
       report.elements.some(
         (element) =>
           element.name === "core list_dir manifest" &&
+          element.status === "installed",
+      ),
+      false,
+    );
+    assert.equal(
+      report.elements.some(
+        (element) =>
+          element.name === "list_dir manifest" &&
           element.status === "installed",
       ),
       true,

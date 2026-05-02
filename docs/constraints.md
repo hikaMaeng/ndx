@@ -7,7 +7,7 @@
   `dataPath`. Legacy `sessionPath` is accepted as a data-directory override.
 - Account, project, session, event, and ownership records are stored in
   `<dataDir>/ndx.sqlite`; omitted user means `defaultUser`.
-- Project settings path is `.ndx/settings.json` under the nearest ancestor project directory.
+- Project settings path is `.ndx/settings.json` under the current project directory.
 - No runtime environment variable is used to select model, provider URL, provider key, or ndx home.
 - Settings are JSON only; `config.toml`, `.codex`, `NDX_HOME`, `NDX_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` are not part of the ndx TypeScript loader contract.
 - `keys` values must be strings because they are injected into external tool process environments.
@@ -23,9 +23,9 @@
   effort entry. A model with `think` starts with thinking mode on. Explicit
   model changes reset both controls to those defaults.
 - Unknown JSON object fields are preserved only where the runtime type allows extension, such as `websearch`, `mcp`, and `search`.
-- The global `.ndx/system` directory is self-healing at startup for required directories and built-in `/system/core/tools` packages.
+- The global `.ndx/system` directory is self-healing at startup for required directories and built-in `/system/tools` packages.
 - `/home/.ndx/system` bootstrap information remains code-managed and is not stored in SQLite.
-- The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing project `.ndx/settings.json`; non-TTY loading still fails before model selection.
+- The config loader itself does not generate settings files. TTY CLI startup handles missing global and project settings by asking setup questions and writing `/home/.ndx/settings.json`; non-TTY loading still fails before model selection.
 
 ## Host CLI State
 
@@ -33,7 +33,7 @@
 - `NDX_CLI_STATE_DIR` overrides the app-state directory.
 - `auth.json` contains one shared last-login value for all host CLI instances.
 - The host CLI does not manage Docker compose files for the server. Docker is a
-  server-managed per-workspace tool sandbox only.
+  server-managed per-folder tool sandbox only.
 - `clientId` is never persisted as the last-login identity; each CLI or plugin
   runtime instance owns its own client id.
 
@@ -85,6 +85,19 @@
 - Shell-like core tools run through `docker exec` when the server provides
   `NDX_SANDBOX_CONTAINER`. The default pinned image is
   `hika00/ndx-sandbox:0.1.0`.
+- Server-managed sandbox containers are named `ndx-tool-<folder-name>` and are
+  created with the project folder mounted at `/workspace`, the user `.ndx`
+  mounted at `/home/.ndx`, and `/var/run/docker.sock` mounted for Docker
+  externalization.
+- The server must manage exactly one running tool sandbox per resolved physical
+  project folder. It records the physical folder in Docker labels so a later
+  server process can find the same container again. If two physical folders have
+  the same basename, the preferred `ndx-tool-<folder-name>` is kept for the
+  first folder and later colliding folders receive a deterministic hash suffix.
+- The tool sandbox image must already contain the baseline tool-execution
+  capabilities needed by core tools, including Bash, Git, Patch, Python, Node
+  Corepack, and `/usr/local/bin/apply_patch`; server startup mounts state and
+  projects but does not install those capabilities into the container.
 - Sandbox Dockerfile changes require a new Docker Hub tag under `hika00`, a
   pushed image, and server verification against that exact tag before merge.
 

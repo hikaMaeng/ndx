@@ -1,8 +1,14 @@
 {
   "name": "@neurondev/ndx",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "type": "module",
   "description": "TypeScript-first local coding agent.",
+  "files": [
+    "dist/src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "bin": {
     "ndx": "dist/src/cli/main.js",
     "ndxserver": "dist/src/cli/main.js"

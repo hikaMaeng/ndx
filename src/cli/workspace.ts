@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -6,8 +5,7 @@ import { SessionClient } from "../session/client.js";
 import { defaultDockerSandboxImage } from "../session/docker-sandbox.js";
 
 export interface ManagedServerState {
-  workspaceDir: string;
-  composeFile: string;
+  projectDir: string;
   socketUrl: string;
   dashboardUrl: string;
   socketPort: number;
@@ -21,10 +19,8 @@ export interface ManagedServerState {
 
 export interface ManagedServerOptions {
   cwd: string;
-  workspaceDir?: string;
   serverUrl?: string;
   print?: (message: string) => void;
-  manageDocker?: boolean;
 }
 
 const DEFAULT_SOCKET_PORT = 45123;
@@ -34,10 +30,10 @@ const DEFAULT_DASHBOARD_PORT = 45124;
 export async function ensureManagedServer(
   options: ManagedServerOptions,
 ): Promise<ManagedServerState> {
-  const workspaceDir = resolve(options.workspaceDir ?? options.cwd);
+  const projectDir = resolve(options.cwd);
   const socketUrl = normalizeSocketUrl(options.serverUrl);
   const print = options.print ?? console.error;
-  const state = createManagedServerState(workspaceDir, socketUrl);
+  const state = createManagedServerState(projectDir, socketUrl);
 
   if (await canConnect(socketUrl)) {
     return { ...state, reachable: true };
@@ -64,7 +60,7 @@ export function normalizeSocketUrl(value: string | undefined): string {
 }
 
 function createManagedServerState(
-  workspaceDir: string,
+  projectDir: string,
   socketUrl: string,
 ): ManagedServerState {
   const socketPort = portFromSocketUrl(socketUrl);
@@ -74,15 +70,12 @@ function createManagedServerState(
     : DEFAULT_DASHBOARD_PORT;
   const homeDir = join(homedir(), ".ndx");
   const systemDir = join(homeDir, "system");
-  const key = createHash("sha256").update(workspaceDir).digest("hex");
-  const composeFile = join(systemDir, "managed", key, "docker-compose.yml");
   const mock = !(
     existsSync(join(homeDir, "settings.json")) ||
-    existsSync(join(workspaceDir, ".ndx", "settings.json"))
+    existsSync(join(projectDir, ".ndx", "settings.json"))
   );
   return {
-    workspaceDir,
-    composeFile,
+    projectDir,
     socketUrl,
     dashboardUrl: `http://127.0.0.1:${resolvedDashboardPort}`,
     socketPort,

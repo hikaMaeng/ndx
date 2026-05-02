@@ -17,7 +17,7 @@ npm test
 
 ## Settings
 
-Global settings live at `/home/.ndx/settings.json`. Project settings live at `.ndx/settings.json` in the project directory. The repository includes a non-secret project settings file for the local LM Studio-compatible endpoint.
+Global settings live at `/home/.ndx/settings.json`. Project settings may still live at `.ndx/settings.json` in the project directory as an override, but first-run setup writes the global file. The repository includes a non-secret project settings file for the local LM Studio-compatible endpoint.
 
 Do not put real provider, Tavily, GitHub, Docker Hub, npm, or GitLab tokens in repository files. Put secrets in `/home/.ndx/settings.json` on the local machine.
 
@@ -46,7 +46,7 @@ Plugin and capability tools are filesystem packages, not settings entries. Put e
 ## Host CLI
 
 ```bash
-npm install -g @neurondev/ndx
+npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
 cd /path/to/project
 ndx [SERVER_ADDRESS]
 ```
@@ -57,7 +57,7 @@ the miss, starts a local default server at the default address, and then
 connects over WebSocket.
 
 The current folder is the project folder. Docker is used only after the server
-is running, as a per-workspace sandbox for shell-like tools with the project
+is running, as a per-folder sandbox for shell-like tools with the project
 mounted at `/workspace`.
 
 Use `NDX_SANDBOX_IMAGE` to override the sandbox image for explicit verification.
@@ -79,11 +79,11 @@ owns the live session and writes accounts plus sessions to
 is treated as the same data-directory override.
 
 On startup, config loading and the session server both enforce required global
-`.ndx` elements. Missing `system/core/`, `system/core/tools/`, built-in core tool
+`.ndx` elements. Missing `system/tools/`, built-in core tool
 package files, and `system/skills/` are installed before session work begins. If
 neither global nor project settings exist and the CLI is attached to a TTY, ndx
 asks for permission mode, provider type, provider key, provider URL, model name,
-and max context, then writes project `.ndx/settings.json`. Non-TTY startup still
+and max context, then writes `/home/.ndx/settings.json`. Non-TTY startup still
 requires an existing settings file. The socket initialization output includes a
 bootstrap report showing what was installed and what already existed.
 
@@ -285,5 +285,5 @@ ndx "원하는 작업"
 
 The default compose service stays alive with `sleep infinity`. It does not copy
 repository settings into `/home/.ndx`; real model settings remain owned by the
-normal global/project settings cascade and the interactive wizard. Files created
+normal global/current-project settings cascade and the interactive wizard. Files created
 by sandbox commands persist in `./docker/volume/workspace`.

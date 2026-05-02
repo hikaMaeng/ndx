@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdirSync, readdirSync } from "node:fs";
 import type { Socket } from "node:net";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   configForModel,
   defaultModelEffort,
@@ -348,8 +347,6 @@ export class SessionServer {
             "account/socialLogin",
             "account/delete",
             "account/changePassword",
-            "project/list",
-            "project/create",
           ],
         };
       case "account/create":
@@ -362,10 +359,6 @@ export class SessionServer {
         return this.deleteAccount(request.params);
       case "account/changePassword":
         return this.changeAccountPassword(request.params);
-      case "project/list":
-        return this.listProjects();
-      case "project/create":
-        return this.createProject(request.params);
       case "command/list":
         return { commands: BUILT_IN_SLASH_COMMANDS };
       case "command/execute":
@@ -527,34 +520,6 @@ export class SessionServer {
     };
   }
 
-  private listProjects(): unknown {
-    const root = resolve(this.options.cwd);
-    const projects = readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-      .map((entry) => ({
-        name: entry.name,
-        cwd: join(root, entry.name),
-      }))
-      .sort((left, right) => left.name.localeCompare(right.name));
-    return { root, projects };
-  }
-
-  private createProject(params: unknown): unknown {
-    const root = resolve(this.options.cwd);
-    const name = requiredStringParam(params, "name");
-    if (
-      name.includes("/") ||
-      name.includes("\\") ||
-      name === "." ||
-      name === ".."
-    ) {
-      throw new Error(`invalid project name: ${name}`);
-    }
-    const cwd = join(root, name);
-    mkdirSync(cwd, { recursive: true });
-    return { project: { name, cwd } };
-  }
-
   private async ensureWorkspaceSandbox(
     cwd: string,
   ): Promise<DockerSandboxState | undefined> {
@@ -568,6 +533,7 @@ export class SessionServer {
     }
     const sandbox = await ensureDockerSandbox({
       workspaceDir,
+      globalDir: this.options.config.paths.globalDir,
       image:
         this.options.dockerSandboxImage ??
         this.options.config.tools.dockerSandboxImage,

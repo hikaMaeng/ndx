@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, parse, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type {
   EnvMap,
   JsonObject,
@@ -72,7 +72,7 @@ export function configFiles(
   options: ConfigLoadOptions = {},
 ): string[] {
   const files = [join(resolveGlobalNdxDir(options), SETTINGS_FILE)];
-  const project = findProjectSettingsFile(cwd);
+  const project = projectSettingsFile(cwd);
   if (project !== undefined && project !== files[0]) {
     files.push(project);
   }
@@ -157,8 +157,7 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
   });
   for (const directory of [
     SYSTEM_DIR,
-    join(SYSTEM_DIR, "core"),
-    join(SYSTEM_DIR, "core", "tools"),
+    join(SYSTEM_DIR, "tools"),
     join(SYSTEM_DIR, "skills"),
   ]) {
     const path = join(globalDir, directory);
@@ -205,13 +204,13 @@ function ensureCoreToolPackage(
   tool: CoreToolPackage,
 ): NdxBootstrapElement[] {
   const elements: NdxBootstrapElement[] = [];
-  const toolDir = join(systemDir(globalDir), "core", "tools", tool.name);
+  const toolDir = join(systemDir(globalDir), "tools", tool.name);
   const manifestFile = join(toolDir, "tool.json");
   const runtimeFile = join(toolDir, "tool.mjs");
   const toolDirStatus = existsSync(toolDir) ? "existing" : "installed";
   mkdirSync(toolDir, { recursive: true });
   elements.push({
-    name: `core ${tool.name} tool`,
+    name: `${tool.name} tool`,
     path: toolDir,
     status: toolDirStatus,
   });
@@ -229,7 +228,7 @@ function ensureCoreToolPackage(
     });
   }
   elements.push({
-    name: `core ${tool.name} manifest`,
+    name: `${tool.name} manifest`,
     path: manifestFile,
     status: manifestStatus,
   });
@@ -241,7 +240,7 @@ function ensureCoreToolPackage(
     writeFileSync(runtimeFile, `${tool.runtime}\n`);
   }
   elements.push({
-    name: `core ${tool.name} runtime`,
+    name: `${tool.name} runtime`,
     path: runtimeFile,
     status: runtimeStatus,
   });
@@ -252,19 +251,9 @@ function writeJsonFile(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function findProjectSettingsFile(cwd: string): string | undefined {
-  let current = resolve(cwd);
-  while (true) {
-    const candidate = join(current, CONFIG_DIR, SETTINGS_FILE);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-    const parent = dirname(current);
-    if (parent === current || current === parse(current).root) {
-      return undefined;
-    }
-    current = parent;
-  }
+function projectSettingsFile(cwd: string): string | undefined {
+  const candidate = join(resolve(cwd), CONFIG_DIR, SETTINGS_FILE);
+  return existsSync(candidate) ? candidate : undefined;
 }
 
 function parseSettings(contents: string, file: string): PartialSettings {

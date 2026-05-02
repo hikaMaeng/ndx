@@ -1,14 +1,16 @@
 ndx is a TypeScript-first local coding agent derived from openai/codex.
 
-| Goal               | File                 |
-| ------------------ | -------------------- |
-| Understand purpose | docs/overview.md     |
-| Architecture       | docs/architecture.md |
-| API reference      | docs/api.md          |
-| Usage              | docs/usage.md        |
-| Constraints        | docs/constraints.md  |
-| Internals          | docs/internals.md    |
-| Testing            | docs/testing.md      |
+| Goal               | File                           |
+| ------------------ | ------------------------------ |
+| Understand purpose | docs/overview.md               |
+| Architecture       | docs/architecture.md           |
+| System map         | docs/system-architecture.md    |
+| System map (KO)    | docs/system-architecture-ko.md |
+| API reference      | docs/api.md                    |
+| Usage              | docs/usage.md                  |
+| Constraints        | docs/constraints.md            |
+| Internals          | docs/internals.md              |
+| Testing            | docs/testing.md                |
 
 ## Status
 
@@ -20,18 +22,22 @@ and third-party trees are intentionally not part of this workspace.
 ## Quick Start
 
 ```bash
-npm install -g @neurondev/ndx
+npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
 ndx [SERVER_ADDRESS]
 ```
+
+Verdaccio is the default channel for install testing. Public npm releases are
+published only when explicitly requested.
 
 `SERVER_ADDRESS` is the only `ndx` startup argument. It defaults to
 `127.0.0.1:45123`. The CLI connects to that server first; if it is not
 reachable, it reports the miss, starts a local default server at the default
-address, logs in, and continues with project/session selection. Docker is used
-only as the per-workspace tool sandbox, not as the server process.
+address, logs in, and continues with session selection for the current folder.
+Docker is used only as the per-folder tool sandbox, not as the server process.
 
-Use a real model by configuring provider settings in `.ndx/settings.json` or
-local global `/home/.ndx/settings.json`.
+Use a real model by configuring provider settings in local global
+`/home/.ndx/settings.json`. Project `.ndx/settings.json` remains supported as
+an override, but first-run setup writes global settings.
 
 ## Docker Verification
 

@@ -108,7 +108,7 @@ test("registry discovers tool.json layers and keeps higher priority names", asyn
   try {
     const globalDir = join(root, "home", ".ndx");
     const projectNdxDir = join(root, "repo", ".ndx");
-    writeEchoTool(join(globalDir, "system", "core", "tools", "echo"), "core");
+    writeEchoTool(join(globalDir, "system", "tools", "echo"), "core");
     writeEchoTool(join(projectNdxDir, "tools", "echo"), "project");
     writeEchoTool(
       join(projectNdxDir, "plugins", "calendar", "tools", "calendar_event"),
@@ -180,7 +180,7 @@ test("registry exposes bootstrapped core capability tools as external tools", as
     );
     assert.equal(
       parseExternalStdout(listDir.output).entries.some(
-        (entry: { path: string }) => entry.path.endsWith("core"),
+        (entry: { path: string }) => entry.path.endsWith("tools"),
       ),
       true,
     );
@@ -243,7 +243,7 @@ test("parallel shell tool calls run in separate worker node processes", async ()
   const root = mkdtempSync(join(tmpdir(), "ndx-parallel-tools-"));
   try {
     const globalDir = join(root, "home", ".ndx");
-    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
     const result = await runAgent({
       cwd: root,
       config: {
