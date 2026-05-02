@@ -142,7 +142,7 @@ sequenceDiagram
     end
     CLI->>Server: start local default server
     Server->>DB: open <dataDir>/ndx.sqlite
-    Server->>Docker: ensure workspace sandbox
+    Server->>Docker: ensure current-folder sandbox
     Docker-->>Server: container ready or fatal warning
     CLI->>Server: connect
   end
@@ -150,36 +150,27 @@ sequenceDiagram
   Server-->>CLI: authenticated connection
   CLI->>Server: initialize
   Server-->>CLI: methods and bootstrap report
-  CLI->>Server: project/list
-  CLI-->>User: project and session selection
+  CLI-->>User: session selection
 ```
 
-## 첫 실행과 프로젝트 선택
+## 첫 실행과 세션 선택
 
 ```mermaid
 flowchart TD
-  start["CLI needs a project session"]
+  start["CLI needs a session"]
   settings{"settings.json exists?\n/home/.ndx or nearest project .ndx"}
   tty{"TTY available?"}
-  wizard["Run settings wizard\nwrite project .ndx/settings.json"]
+  wizard["Run settings wizard\nwrite /home/.ndx/settings.json"]
   fail["Fail config load\nnon-interactive startup cannot invent model settings"]
-  root["Ask for workspace folder\nonly when local fallback is needed"]
-  list["Server project/list\nunder workspace root"]
-  create["Optional project/create"]
-  choose["User selects project"]
-  cwd["Selected project folder becomes session cwd"]
+  cwd["Current folder is session cwd"]
   sessions["Show session choices\nnew, restore, delete candidates"]
 
   start --> settings
-  settings -->|"yes"| root
+  settings -->|"yes"| cwd
   settings -->|"no"| tty
-  tty -->|"yes"| wizard --> root
+  tty -->|"yes"| wizard --> cwd
   tty -->|"no"| fail
-  root --> list
-  list --> create
-  list --> choose
-  create --> choose
-  choose --> cwd --> sessions
+  cwd --> sessions
 ```
 
 첫 실행 규칙:
@@ -190,7 +181,7 @@ flowchart TD
 | 서버 주소 연결 실패         | 실패를 보고하고 로컬 기본 서버를 기본 주소로 띄운다.       |
 | settings 파일 없음, TTY     | wizard가 project `.ndx/settings.json`을 만든다.            |
 | settings 파일 없음, non-TTY | model/provider를 추측하지 않고 실패한다.                   |
-| 프로젝트 선택               | workspace root 아래 project folder가 session `cwd`가 된다. |
+| 세션 시작                   | 현재 폴더가 session `cwd`가 된다.                         |
 
 ## 소켓 인증 경계
 
@@ -236,7 +227,6 @@ flowchart TB
   public["Public account methods"]
   auth["Authenticated methods"]
   init["initialize"]
-  project["project/list\nproject/create"]
   command["command/list\ncommand/execute"]
   session["session/start\nsession/list\nsession/restore\nsession/delete\nsession/subscribe\nsession/read"]
   turn["turn/start\nturn/interrupt"]
@@ -246,7 +236,6 @@ flowchart TB
   rpc --> public
   rpc --> auth
   auth --> init
-  auth --> project
   auth --> command
   auth --> session
   auth --> turn
@@ -260,8 +249,6 @@ flowchart TB
 | Method              | 요약                                                  |
 | ------------------- | ----------------------------------------------------- |
 | `initialize`        | server name, protocol, methods, bootstrap report 반환 |
-| `project/list`      | workspace root 아래 project 목록 반환                 |
-| `project/create`    | project folder 생성                                   |
 | `command/list`      | slash command 정의 반환                               |
 | `command/execute`   | slash command 실행                                    |
 | `session/start`     | 새 live session 생성                                  |
@@ -500,7 +487,7 @@ flowchart TB
   startup["Session server startup"]
   registry["createToolRegistry"]
   task["Task tools\ninput, planning, collaboration"]
-  core["Core filesystem tool packages\n/home/.ndx/system/core/tools"]
+  core["Core filesystem tool packages\n/home/.ndx/system/tools"]
   project["Project tool packages"]
   global["Global tool packages"]
   plugin["Plugin filesystem layers"]
@@ -529,7 +516,7 @@ flowchart TB
 | Layer         | 계약                                                          |
 | ------------- | ------------------------------------------------------------- |
 | Task tools    | TypeScript session tool tree에 내장된다.                      |
-| Core tools    | `.ndx/system/core/tools` 아래 external `tool.json` package다. |
+| Core tools    | `.ndx/system/tools` 아래 external `tool.json` package다. |
 | Project tools | folder name이 function name과 같은 filesystem package다.      |
 | Global tools  | user-level filesystem package다.                              |
 | Plugin tools  | plugin filesystem layer directory에서 발견된다.               |

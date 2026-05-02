@@ -31,20 +31,19 @@ except for the two `.gitkeep` directory anchors.
    `127.0.0.1:45123`. `SERVER_ADDRESS` is the only normal `ndx` startup
    argument.
 2. If no socket is reachable, the CLI reports the failed connection, resolves
-   settings for the workspace, starts a local default `SessionServer` at the
+   settings for the current folder, starts a local default `SessionServer` at the
    default address, and connects to that local process. `--mock` and
    `NDX_EMBEDDED_SERVER=1` remain source-tree development paths.
 3. After WebSocket connect, the CLI logs in immediately. The server ignores
    unauthenticated non-login JSON-RPC methods.
 4. After login and initialization, the server ensures a Docker tool sandbox for
-   the selected workspace. If Docker cannot provide the pinned sandbox image or
+   the current folder. If Docker cannot provide the pinned sandbox image or
    container, server startup fails and the CLI exits with that warning.
-5. If no settings file exists, the interactive settings wizard writes project
-   `.ndx/settings.json`.
-6. The CLI asks the server for projects
-   under the workspace root. The selected project subfolder becomes the session
-   `cwd`; the user can also create a new project folder.
-7. Session server startup re-checks required global `.ndx/system` elements and installs any missing core directories, core tool package files, and skills directory before accepting session work.
+5. If no settings file exists, the interactive settings wizard writes global
+   `/home/.ndx/settings.json`.
+6. The current folder is the session `cwd`; the CLI does not ask for a
+   workspace folder or project selection.
+7. Session server startup re-checks required global `.ndx/system` elements and installs any missing system tool package files and skills directory before accepting session work.
 8. The CLI is a session-server client. `CliSessionController` logs in, sends `initialize`, starts or restores one session, tracks socket/server/session status, receives notifications, and prints selected initialization, tool, warning, and final events.
 9. The session server keeps sessions on the base config, chooses `MockModelClient` for `--mock`, otherwise creates a routed provider client, and creates one `AgentRuntime` per live session.
 10. `AgentRuntime` emits `session_configured`, `turn_started`, tool, token, completion, warning, and error events into the server.
@@ -56,7 +55,7 @@ except for the two `.gitkeep` directory anchors.
 14. `ToolRegistry` is built once at startup by scanning task, core, project, global, plugin, and MCP layers.
 15. Function schemas from that registry are sent to the model.
 16. Every returned tool call is dispatched through the shared process runner to its own worker Node process.
-17. Shell-like core tools execute inside the workspace Docker sandbox by using
+17. Shell-like core tools execute inside the current-folder Docker sandbox by using
     `docker exec` against the server-managed container. MCP tools are executed
     through the configured MCP stdio command. Task tools run inside the worker.
 18. Tool outputs are sent back as `function_call_output` items until the model returns text without tool calls. Provider adapters translate those items to Responses, Chat Completions, or Anthropic Messages wire shapes.
@@ -112,9 +111,10 @@ Client programs must not maintain authoritative live session or persistence stat
   `/deleteSession`, and `/interrupt`
 - runtime notification formatting for human output
 
-The CLI does not persist live session state. Host CLI app state persists only
-last-login metadata; `/home/.ndx` and project `.ndx` remain agent runtime
-configuration.
+The CLI does not persist live session state. After socket discovery and login it
+follows the server protocol for initialization, session selection, and turn
+execution. Host CLI app state persists only last-login metadata; `/home/.ndx`
+and optional project `.ndx` remain agent runtime configuration.
 
 ## SQLite Persistence
 
@@ -177,3 +177,10 @@ ports, or contain authoritative session state. Production server builds depend
 on the pinned Docker Hub image `hika00/ndx-sandbox:0.1.0`; any sandbox
 Dockerfile change must be pushed under a new Docker Hub tag and tested by the
 server against that pushed tag.
+
+The live server creates or reuses one Docker tool container per resolved
+physical project folder. It finds existing containers through Docker labels,
+uses `ndx-tool-<folder-name>` as the preferred name, and adds a deterministic
+hash suffix only when two different physical folders share the same basename.
+The image itself contains the baseline shell/tool runtime; startup only binds
+the user `.ndx`, project folder, and Docker socket volumes.

@@ -61,11 +61,6 @@ export interface SessionListEntry {
   title: string;
 }
 
-export interface ProjectListEntry {
-  name: string;
-  cwd: string;
-}
-
 type CommandResult =
   | { handled: true; shouldExit: true }
   | { handled: true; shouldExit: false }
@@ -155,27 +150,6 @@ export class CliSessionController {
       sessions: SessionListEntry[];
     }>("session/list", this.requestParams({ cwd: this.cwd }));
     return response.sessions;
-  }
-
-  async listProjects(): Promise<{
-    root: string;
-    projects: ProjectListEntry[];
-  }> {
-    return this.client.request<{ root: string; projects: ProjectListEntry[] }>(
-      "project/list",
-      this.requestParams({}),
-    );
-  }
-
-  async createProject(name: string): Promise<ProjectListEntry> {
-    const response = await this.client.request<{
-      project: ProjectListEntry;
-    }>("project/create", this.requestParams({ name }));
-    return response.project;
-  }
-
-  selectProject(cwd: string): void {
-    this.cwd = cwd;
   }
 
   formatSessionChoices(sessions: SessionListEntry[]): string {

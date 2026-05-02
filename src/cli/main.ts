@@ -5,14 +5,14 @@ import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { createLoginStore } from "./auth.js";
-import { createProjectSettingsWithWizard } from "./settings-wizard.js";
+import { createGlobalSettingsWithWizard } from "./settings-wizard.js";
 import {
   CliSessionController,
   interactiveHelp,
   printWelcomeLogo,
 } from "./session-client.js";
 import { ensureManagedServer, normalizeSocketUrl } from "./workspace.js";
-import { loadConfig } from "../config/index.js";
+import { loadConfig, resolveGlobalNdxDir } from "../config/index.js";
 import { createRoutedModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
 import { SessionClient } from "../session/client.js";
@@ -31,6 +31,11 @@ interface CliArgs {
   interactive: boolean;
   help: boolean;
   version: boolean;
+}
+
+interface CliPrompt {
+  question(prompt: string): Promise<string>;
+  close(): void;
 }
 
 async function main(): Promise<void> {
@@ -98,12 +103,15 @@ async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
     if (!isMissingSettingsError(error) || !process.stdin.isTTY) {
       throw error;
     }
-    const rl = createInterface({ input, output });
+    const rl = createCliPrompt();
     try {
-      const settingsFile = await createProjectSettingsWithWizard(args.cwd, {
+      const settingsFile = await createGlobalSettingsWithWizard(
+        resolveGlobalNdxDir(),
+        {
         question: (prompt) => rl.question(prompt),
         print: (message) => console.error(message),
-      });
+        },
+      );
       console.error(`[config] installed ${settingsFile}`);
     } finally {
       rl.close();
@@ -178,7 +186,7 @@ async function runInteractive(options: {
   sources: string[];
 }): Promise<void> {
   await withEmbeddedServer(options, async (client) => {
-    const rl = createInterface({ input, output });
+    const rl = createCliPrompt();
     const session = new CliSessionController({
       client,
       cwd: options.args.cwd,
@@ -262,23 +270,20 @@ async function runConnected(options: {
 async function runManagedWorkspace(args: CliArgs): Promise<void> {
   const rl =
     args.interactive && process.stdin.isTTY
-      ? createInterface({ input, output })
+      ? createCliPrompt()
       : undefined;
   let localServer: SessionServer | undefined;
   try {
-    const workspaceDir =
-      rl === undefined ? args.cwd : await selectWorkspaceDir(args.cwd, rl);
     const state = await ensureManagedServer({
       cwd: args.cwd,
-      workspaceDir,
       serverUrl: args.serverUrl,
       print: (message) => console.error(message),
     });
     let socketUrl = state.socketUrl;
     if (!state.reachable) {
-      const loaded = await loadConfigForCli({ ...args, cwd: workspaceDir });
+      const loaded = await loadConfigForCli(args);
       localServer = new SessionServer({
-        cwd: workspaceDir,
+        cwd: args.cwd,
         config: loaded.config,
         sources: loaded.sources,
         createClient: (config) => createClient(args.mock, config),
@@ -302,7 +307,6 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
       });
       await session.initialize();
       if (args.interactive) {
-        await selectProject(session, requireReadline(rl));
         await selectInitialSession(session, requireReadline(rl));
         while (true) {
           const prompt = (await requireReadline(rl).question("ndx> ")).trim();
@@ -334,66 +338,9 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
   }
 }
 
-async function selectWorkspaceDir(
-  defaultDir: string,
-  rl: ReturnType<typeof createInterface>,
-): Promise<string> {
-  const answer = (
-    await rl.question(`workspace folder [${defaultDir}]: `)
-  ).trim();
-  return answer.length === 0 ? defaultDir : resolve(answer);
-}
-
-async function selectProject(
-  session: CliSessionController,
-  rl: ReturnType<typeof createInterface>,
-): Promise<void> {
-  while (true) {
-    const { root, projects } = await session.listProjects();
-    console.log(formatProjectChoices(root, projects));
-    const answer = (await rl.question("project> ")).trim();
-    if (answer.length === 0 && projects.length > 0) {
-      session.selectProject(projects[0].cwd);
-      return;
-    }
-    if (answer === "new" || answer === "+") {
-      const name = (await rl.question("project name> ")).trim();
-      if (name.length === 0) {
-        continue;
-      }
-      session.selectProject((await session.createProject(name)).cwd);
-      return;
-    }
-    const index = Number.parseInt(answer, 10);
-    if (Number.isInteger(index) && index >= 1 && index <= projects.length) {
-      session.selectProject(projects[index - 1].cwd);
-      return;
-    }
-    console.log(
-      "choose a project number, + for new project, or Enter for the first project",
-    );
-  }
-}
-
-function formatProjectChoices(
-  root: string,
-  projects: Array<{ name: string; cwd: string }>,
-): string {
-  const lines = [`projects under ${root}`];
-  if (projects.length === 0) {
-    lines.push("no projects yet");
-  } else {
-    projects.forEach((project, index) => {
-      lines.push(`${index + 1}. ${project.name}`);
-    });
-  }
-  lines.push("+. new project");
-  return lines.join("\n");
-}
-
 async function selectInitialSession(
   session: CliSessionController,
-  rl: ReturnType<typeof createInterface>,
+  rl: CliPrompt,
 ): Promise<void> {
   const sessions = await session.listSessions();
   console.log(session.formatSessionChoices(sessions));
@@ -443,7 +390,6 @@ function createSessionServer(options: {
     createClient: (config) =>
       providerClient ?? createClient(options.args.mock, config),
     requireDockerSandbox:
-      options.args.mode === "serve" &&
       !options.args.mock &&
       process.env.NDX_REQUIRE_DOCKER_SANDBOX !== "0",
   });
@@ -456,12 +402,23 @@ function shouldUseManagedWorkspace(args: CliArgs): boolean {
 }
 
 function requireReadline(
-  rl: ReturnType<typeof createInterface> | undefined,
-): ReturnType<typeof createInterface> {
+  rl: CliPrompt | undefined,
+): CliPrompt {
   if (rl === undefined) {
-    throw new Error("interactive workspace setup requires a TTY");
+    throw new Error("interactive CLI setup requires a TTY");
   }
   return rl;
+}
+
+function createCliPrompt(): CliPrompt {
+  const rl = createInterface({ input, terminal: false });
+  return {
+    question: async (prompt: string) => {
+      output.write(prompt);
+      return rl.question("");
+    },
+    close: () => rl.close(),
+  };
 }
 
 async function listen(
@@ -584,7 +541,7 @@ function printInteractiveHeader(config: NdxConfig): void {
 
 function printHelp(): void {
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx reports the miss, asks for a workspace folder, starts a local default server at the default address, logs in, asks for a project under that workspace, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, logs in with account credentials, initializes the socket, selects a project, starts or restores a session, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, project listing, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, logs in with account credentials, initializes the socket, starts or restores a session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then nearest project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
 }
 

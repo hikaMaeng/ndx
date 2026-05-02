@@ -149,7 +149,7 @@ function discoverPluginTools(
 }
 
 function coreToolsDir(config: NdxConfig): string {
-  return join(config.paths.globalDir, "system", "core", "tools");
+  return join(config.paths.globalDir, "system", "tools");
 }
 
 function projectToolsDir(config: NdxConfig): string {

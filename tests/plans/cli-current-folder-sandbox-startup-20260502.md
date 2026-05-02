@@ -1,4 +1,4 @@
-# Test Plan: cli-managed-workspace-project-selection
+# Test Plan: cli-current-folder-sandbox-startup
 
 ## Created
 
@@ -6,9 +6,9 @@
 
 ## Goal
 
-Verify the managed `ndx` startup contract: one server-address argument, Docker
-fallback workspace mounting, post-login project selection, and `.ndx/system`
-runtime storage.
+Verify the managed `ndx` startup contract: one server-address argument, current
+folder session selection, global settings wizard output, and server-managed
+Docker sandbox mounts.
 
 ## Environment
 
@@ -32,10 +32,11 @@ runtime storage.
 ## Expected Results
 
 - `ndx` server address defaults to `ws://127.0.0.1:45123`.
-- Docker fallback compose mounts the selected workspace folder at `/workspace`,
+- Startup does not ask for a workspace folder or project selection.
+- Docker fallback mounts the current project folder at `/workspace`,
   mounts user `.ndx` at `/home/.ndx`, and mounts `/var/run/docker.sock`.
-- The session server exposes `project/list` and `project/create`.
-- Core tools are installed and discovered from `.ndx/system/core/tools`.
+- The session server method list omits `project/list` and `project/create`.
+- Core tools are installed and discovered from `.ndx/system/tools`.
 - SQLite defaults to `.ndx/system/ndx.sqlite`.
 
 ## Logs To Capture

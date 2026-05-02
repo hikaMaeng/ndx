@@ -271,24 +271,25 @@ test("loadConfig fails when no global or project settings exist", () => {
   }
 });
 
-test("ensureGlobalNdxHome installs core directories and tool packages", () => {
+test("ensureGlobalNdxHome installs system directories and tool packages", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
     const report = ensureGlobalNdxHome(globalDir);
 
     assert.equal(existsSync(join(globalDir, "settings.json")), false);
-    assert.equal(existsSync(join(globalDir, "system", "core")), true);
+    assert.equal(existsSync(join(globalDir, "system", "tools")), true);
+    assert.equal(existsSync(join(globalDir, "system", "core")), false);
     assert.equal(existsSync(join(globalDir, "system", "skills")), true);
     assert.equal(
       existsSync(
-        join(globalDir, "system", "core", "tools", "shell", "tool.json"),
+        join(globalDir, "system", "tools", "shell", "tool.json"),
       ),
       true,
     );
     assert.equal(
       existsSync(
-        join(globalDir, "system", "core", "tools", "shell", "tool.mjs"),
+        join(globalDir, "system", "tools", "shell", "tool.mjs"),
       ),
       true,
     );
@@ -304,13 +305,13 @@ test("ensureGlobalNdxHome installs core directories and tool packages", () => {
     ]) {
       assert.equal(
         existsSync(
-          join(globalDir, "system", "core", "tools", tool, "tool.json"),
+          join(globalDir, "system", "tools", tool, "tool.json"),
         ),
         true,
       );
       assert.equal(
         existsSync(
-          join(globalDir, "system", "core", "tools", tool, "tool.mjs"),
+          join(globalDir, "system", "tools", tool, "tool.mjs"),
         ),
         true,
       );
@@ -320,6 +321,14 @@ test("ensureGlobalNdxHome installs core directories and tool packages", () => {
       report.elements.some(
         (element) =>
           element.name === "core list_dir manifest" &&
+          element.status === "installed",
+      ),
+      false,
+    );
+    assert.equal(
+      report.elements.some(
+        (element) =>
+          element.name === "list_dir manifest" &&
           element.status === "installed",
       ),
       true,

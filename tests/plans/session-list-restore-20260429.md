@@ -15,7 +15,7 @@ command controller.
 
 ## Preconditions
 
-- Mock shell tool exists under the test global `.ndx/core/tools/shell`.
+- Mock shell tool exists under the test global `.ndx/system/tools/shell`.
 - Tests use a temporary global `.ndx` and temporary session persistence
   directory.
 

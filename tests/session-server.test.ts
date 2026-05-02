@@ -82,7 +82,7 @@ test("session server owns session events, subscribers, and SQLite persistence", 
   let subscriber: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
     server = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -106,22 +106,6 @@ test("session server owns session events, subscribers, and SQLite persistence", 
       };
     }>("initialize");
     await initializeAndLoginClient(subscriber);
-    const createdProject = await client.request<{
-      project: { name: string; cwd: string };
-    }>("project/create", { name: "project-a" });
-    const listedProjects = await client.request<{
-      root: string;
-      projects: Array<{ name: string; cwd: string }>;
-    }>("project/list");
-    assert.equal(createdProject.project.cwd, join(root, "project-a"));
-    assert.equal(
-      listedProjects.projects.some(
-        (project) =>
-          project.name === "project-a" &&
-          project.cwd === join(root, "project-a"),
-      ),
-      true,
-    );
     assert.equal(initialize.bootstrap.globalDir, globalDir);
     assert.equal(existsSync(join(globalDir, "settings.json")), false);
     assert.equal(existsSync(join(globalDir, "system", "skills")), true);
@@ -511,7 +495,7 @@ test("session server exposes account methods, client identity, and dashboard pla
     assert.equal(html.includes('role="status"'), true);
 
     client = await SessionClient.connect(address.url);
-    assert.equal(await client.request("project/list"), null);
+    assert.equal(await client.request("session/list"), null);
     const created = await client.request<{
       username: string;
     }>("account/create", {
@@ -628,7 +612,7 @@ test("session server restores a saved workspace session by id or number", async 
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -732,7 +716,7 @@ test("session server deletes non-current workspace sessions and ends stale owner
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -815,7 +799,7 @@ test("session ownership uses last prompt attempt across socket servers", async (
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -892,7 +876,7 @@ test("session ownership discards in-flight output from a previous socket server"
   let secondClient: SessionClient | undefined;
 
   try {
-    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },
@@ -1037,7 +1021,7 @@ test("session ownership is tracked in SQLite across socket servers", async () =>
   let lockReleaser: ChildProcess | undefined;
 
   try {
-    writeShellTool(join(globalDir, "system", "core", "tools", "shell"));
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
     firstServer = new SessionServer({
       cwd: root,
       config: { ...baseConfig, paths: { globalDir } },

@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createProjectSettingsWithWizard } from "../src/cli/settings-wizard.js";
+import { createGlobalSettingsWithWizard } from "../src/cli/settings-wizard.js";
 import { loadConfig } from "../src/config/index.js";
 
-test("settings wizard creates project settings that loadConfig can read", async () => {
+test("settings wizard creates global settings that loadConfig can read", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-settings-wizard-"));
+  const globalDir = join(root, "home", ".ndx");
   const answers = [
     "2",
     "1",
@@ -18,7 +19,7 @@ test("settings wizard creates project settings that loadConfig can read", async 
   ];
   const printed: string[] = [];
   try {
-    const settingsFile = await createProjectSettingsWithWizard(root, {
+    const settingsFile = await createGlobalSettingsWithWizard(globalDir, {
       question: async () => answers.shift() ?? "",
       print: (message) => printed.push(message),
     });
@@ -38,10 +39,14 @@ test("settings wizard creates project settings that loadConfig can read", async 
     assert.equal(settings.models?.[0]?.maxContext, 262000);
     assert.equal(
       printed.some((line) => line.includes("creating project settings")),
+      false,
+    );
+    assert.equal(
+      printed.some((line) => line.includes("creating global settings")),
       true,
     );
 
-    const loaded = loadConfig(root, { globalDir: join(root, "home", ".ndx") });
+    const loaded = loadConfig(root, { globalDir });
     assert.equal(loaded.config.model, "local-model");
     assert.equal(loaded.config.activeProvider.url, "http://127.0.0.1:12345/v1");
   } finally {

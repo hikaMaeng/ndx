@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MockModelClient } from "../src/model/mock-client.js";
@@ -67,7 +67,7 @@ test("server address argument defaults to localhost port 45123", () => {
   assert.equal(normalizeSocketUrl("ws://127.0.0.1"), "ws://127.0.0.1:45123");
 });
 
-test("managed server fallback reports local sandbox metadata without compose", async () => {
+test("managed server fallback reports current project sandbox metadata", async () => {
   const projectDir = mkdtempSync(join(tmpdir(), "ndx-project-"));
   const previousImage = process.env.NDX_SANDBOX_IMAGE;
   process.env.NDX_SANDBOX_IMAGE = "hika00/ndx-sandbox:test";
@@ -75,15 +75,13 @@ test("managed server fallback reports local sandbox metadata without compose", a
     const state = await ensureManagedServer({
       cwd: projectDir,
       serverUrl: "127.0.0.1:9",
-      manageDocker: false,
       print: () => undefined,
     });
 
-    assert.equal(state.workspaceDir, projectDir);
+    assert.equal(state.projectDir, projectDir);
     assert.equal(state.socketUrl, "ws://127.0.0.1:9");
     assert.equal(state.image, "hika00/ndx-sandbox:test");
     assert.equal(state.reachable, false);
-    assert.equal(existsSync(state.composeFile), false);
   } finally {
     if (previousImage === undefined) {
       delete process.env.NDX_SANDBOX_IMAGE;
@@ -115,7 +113,6 @@ test("managed server attaches to the requested socket before Docker fallback", a
 
     assert.equal(state.socketUrl, address.url);
     assert.equal(state.reachable, true);
-    assert.equal(existsSync(state.composeFile), false);
   } finally {
     await server?.close();
     rmSync(projectDir, { recursive: true, force: true });
@@ -125,11 +122,14 @@ test("managed server attaches to the requested socket before Docker fallback", a
 test("docker sandbox state is stable per workspace and maps host paths", () => {
   const state = dockerSandboxState({
     workspaceDir: "/tmp/project-a",
+    globalDir: "/tmp/home/.ndx",
     image: "hika00/ndx-sandbox:test",
   });
 
   assert.equal(state.image, "hika00/ndx-sandbox:test");
-  assert.equal(state.containerName.startsWith("ndx-sandbox-"), true);
+  assert.equal(state.containerName, "ndx-tool-project-a");
+  assert.equal(state.globalDir, "/tmp/home/.ndx");
+  assert.equal(state.containerGlobalDir, "/home/.ndx");
   assert.equal(hostPathToSandboxPath(state, "/tmp/project-a"), "/workspace");
   assert.equal(
     hostPathToSandboxPath(state, "/tmp/project-a/src/index.ts"),

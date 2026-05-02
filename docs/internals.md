@@ -10,7 +10,7 @@ search rules.
 
 `src/cli/settings-wizard.ts` owns interactive first-run settings creation. When
 the CLI is attached to a TTY and `loadConfig` reports missing settings, the
-wizard writes `<cwd>/.ndx/settings.json` from permission, provider, model, and
+wizard writes `/home/.ndx/settings.json` from permission, provider, model, and
 context answers, then the CLI reruns `loadConfig`.
 
 ## Settings Merge
@@ -23,7 +23,7 @@ Scalar fields such as `model`, `dataPath`, `sessionPath`, `instructions`, `maxTu
 
 The active root config resolves to the first `session` model for display and provider validation. Sessions keep that base config. `RoundRobinModelRouter` now binds each selected pool to one model for the live session. `@key` prompts select `model.custom.<key>` and tool follow-up requests keep using that pool. Explicit `/model` changes update `config.model`, `activeModel`, effort, and thinking state; the next provider request uses a new provider-client cache key when those values change.
 
-`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global system directories and built-in `/system/core/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
+`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global system directories and built-in `/system/tools` packages only. It never creates `settings.json`, so model and provider selection must come from a real settings file.
 
 ## Model Adapters
 
@@ -58,7 +58,7 @@ execute their manifest command through the same process library. Task,
 input, planning, and collaboration tools belong under the session-owned
 `src/session/tools/` tree because they mutate session task state. Built-in
 capability tools such as shell, patch, filesystem, web, image, discovery, and
-permission stubs are external `/core/tools` packages. Task tools execute
+permission stubs are external `/system/tools` packages. Task tools execute
 inside the worker, never inside the agent process.
 
 Abort propagation crosses the same boundary. `AgentRuntime` owns the turn
@@ -115,7 +115,8 @@ sockets. Tests and short-lived CLI clients must not wait indefinitely for peer
 close handshakes when a session server is being torn down.
 
 The CLI is a client of this server. In normal one-shot and interactive modes it
-starts an embedded loopback server and talks to that server over WebSocket. In
+uses the current folder as the session `cwd`, starts a loopback server when the
+requested socket is unavailable, and talks to that server over WebSocket. In
 `ndx serve` or `ndxserver` mode it only hosts the server. In `--connect` mode it
 attaches to an already-running server.
 
@@ -156,4 +157,7 @@ authenticated WebSocket JSON-RPC.
 Docker build creates only the tool sandbox image. It installs the shell/runtime
 utilities needed by core external tools and keeps `/workspace` as the mounted
 project directory. Compose mounts `./docker/volume/workspace` to `/workspace`.
+The live server manages tool containers by resolved physical project folder,
+stores that path in Docker labels, and reuses the labeled running container
+instead of creating another one for the same folder.
 The ndx server is a local process and owns session state outside Docker.

@@ -28,7 +28,11 @@ export async function runExternalTool(
       NDX_CORE_TOOLS_DIR: resolve(
         context.config.paths.globalDir,
         "system",
-        "core",
+        "tools",
+      ),
+      NDX_SYSTEM_TOOLS_DIR: resolve(
+        context.config.paths.globalDir,
+        "system",
         "tools",
       ),
       NDX_GLOBAL_TOOLS_DIR: resolve(context.config.paths.globalDir, "tools"),

@@ -121,16 +121,16 @@ sequenceDiagram
     CLI->>Socket: connect
   else socket missing
     CLI-->>User: report failed connection
-    CLI->>Config: resolve workspace settings
+    CLI->>Config: resolve current-folder settings
     alt no settings and TTY
       Config-->>User: settings wizard
-      Config->>Config: write project .ndx/settings.json
+      Config->>Config: write /home/.ndx/settings.json
     else no settings and non-TTY
       Config-->>CLI: fail
     end
     CLI->>Server: start local default server
     Server->>DB: open <dataDir>/ndx.sqlite
-    Server->>Docker: ensure workspace sandbox
+    Server->>Docker: ensure current-folder sandbox
     Docker-->>Server: container ready or fatal warning
     CLI->>Server: connect
   end
@@ -138,36 +138,27 @@ sequenceDiagram
   Server-->>CLI: authenticated connection
   CLI->>Server: initialize
   Server-->>CLI: methods and bootstrap report
-  CLI->>Server: project/list
-  CLI-->>User: project and session selection
+  CLI-->>User: session selection
 ```
 
-## First-Run And Project Selection
+## First-Run And Session Selection
 
 ```mermaid
 flowchart TD
-  start["CLI needs a project session"]
+  start["CLI needs a session"]
   settings{"settings.json exists?\n/home/.ndx or nearest project .ndx"}
   tty{"TTY available?"}
-  wizard["Run settings wizard\nwrite project .ndx/settings.json"]
+  wizard["Run settings wizard\nwrite /home/.ndx/settings.json"]
   fail["Fail config load\nnon-interactive startup cannot invent model settings"]
-  root["Ask for workspace folder\nonly when local fallback is needed"]
-  list["Server project/list\nunder workspace root"]
-  create["Optional project/create"]
-  choose["User selects project"]
-  cwd["Selected project folder becomes session cwd"]
+  cwd["Current folder is session cwd"]
   sessions["Show session choices\nnew, restore, delete candidates"]
 
   start --> settings
-  settings -->|"yes"| root
+  settings -->|"yes"| cwd
   settings -->|"no"| tty
-  tty -->|"yes"| wizard --> root
+  tty -->|"yes"| wizard --> cwd
   tty -->|"no"| fail
-  root --> list
-  list --> create
-  list --> choose
-  create --> choose
-  choose --> cwd --> sessions
+  cwd --> sessions
 ```
 
 ## Socket Auth Boundary
@@ -214,7 +205,6 @@ flowchart TB
   public["Public account methods"]
   auth["Authenticated methods"]
   init["initialize"]
-  project["project/list\nproject/create"]
   command["command/list\ncommand/execute"]
   session["session/start\nsession/list\nsession/restore\nsession/delete\nsession/subscribe\nsession/read"]
   turn["turn/start\nturn/interrupt"]
@@ -224,7 +214,6 @@ flowchart TB
   rpc --> public
   rpc --> auth
   auth --> init
-  auth --> project
   auth --> command
   auth --> session
   auth --> turn
@@ -460,7 +449,7 @@ flowchart TB
   startup["Session server startup"]
   registry["createToolRegistry"]
   task["Task tools\ninput, planning, collaboration"]
-  core["Core filesystem tool packages\n/home/.ndx/system/core/tools"]
+  core["Core filesystem tool packages\n/home/.ndx/system/tools"]
   project["Project tool packages"]
   global["Global tool packages"]
   plugin["Plugin filesystem layers"]
@@ -489,7 +478,7 @@ Tool layer rules:
 | Layer         | Contract                                                                |
 | ------------- | ----------------------------------------------------------------------- |
 | Task tools    | Built into TypeScript session tool tree.                                |
-| Core tools    | External `tool.json` packages installed under `.ndx/system/core/tools`. |
+| Core tools    | External `tool.json` packages installed under `.ndx/system/tools`. |
 | Project tools | Filesystem packages with folder name equal to function name.            |
 | Global tools  | User-level filesystem packages.                                         |
 | Plugin tools  | Discovered from plugin filesystem layer directories.                    |

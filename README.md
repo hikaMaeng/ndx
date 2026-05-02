@@ -29,11 +29,12 @@ ndx [SERVER_ADDRESS]
 `SERVER_ADDRESS` is the only `ndx` startup argument. It defaults to
 `127.0.0.1:45123`. The CLI connects to that server first; if it is not
 reachable, it reports the miss, starts a local default server at the default
-address, logs in, and continues with project/session selection. Docker is used
-only as the per-workspace tool sandbox, not as the server process.
+address, logs in, and continues with session selection for the current folder.
+Docker is used only as the per-folder tool sandbox, not as the server process.
 
-Use a real model by configuring provider settings in `.ndx/settings.json` or
-local global `/home/.ndx/settings.json`.
+Use a real model by configuring provider settings in local global
+`/home/.ndx/settings.json`. Project `.ndx/settings.json` remains supported as
+an override, but first-run setup writes global settings.
 
 ## Docker Verification
 

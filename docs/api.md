@@ -12,10 +12,9 @@ ndx --mock [--cwd PATH] [prompt]
 
 `ndx` is the host CLI. Its only startup argument is `SERVER_ADDRESS`, which
 defaults to `127.0.0.1:45123`. The CLI connects to that server first. If no
-server is reachable, it reports the miss, asks for a workspace folder, starts a
-local default server at `127.0.0.1:45123`, logs in over the socket, asks for a
-project under the workspace, and then shows session choices. Docker is only the
-tool sandbox. `--mock` keeps the source-tree development path and starts an
+server is reachable, it reports the miss, starts a local default server at
+`127.0.0.1:45123` for the current folder, logs in over the socket, and then
+shows session choices. Docker is only the tool sandbox. `--mock` keeps the source-tree development path and starts an
 embedded loopback server. `ndx serve` and `ndxserver` keep the session server
 open for other clients.
 
@@ -67,8 +66,6 @@ Requests:
 | `account/socialLogin`      | `{ provider, subject?, accessToken, refreshToken?, clientId? }` | `{ username, clientId, sessionRoot, provider, created }` |
 | `account/delete`           | `{ username }`                                                  | `{ username, deleted }`                                  |
 | `account/changePassword`   | `{ username, oldPassword?, newPassword }`                       | `{ username, updatedAt }`                                |
-| `project/list`             | none                                                            | `{ root, projects }`                                     |
-| `project/create`           | `{ name }`                                                      | `{ project }`                                            |
 | `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`                 | command result                                           |
 | `session/start`            | `{ cwd?, user?, clientId? }`                                    | `{ session }`                                            |
 | `session/list`             | `{ cwd?, user?, clientId? }`                                    | `{ sessions }`                                           |
@@ -146,9 +143,10 @@ The last-login value is independent from `clientId`. Each CLI process still
 creates its own runtime `clientId`; the stored login only chooses the `userId`.
 
 The host CLI no longer generates Docker compose files for the server. If the
-requested server is unavailable, it starts a local server process. The server
-itself creates or reuses a per-workspace Docker sandbox container for
-shell-like tools.
+requested server is unavailable, it starts a local server process. After that,
+the CLI follows the server's socket protocol; the server itself creates or
+reuses a per-physical-project-folder Docker sandbox container for shell-like
+tools.
 
 HTTP `GET /` and `GET /dashboard` on the dashboard port return a minimal
 dashboard placeholder. The dashboard has no authentication or authorization.
@@ -164,8 +162,8 @@ same shape on `event.bootstrap`:
   "checkedAt": 1777440000000,
   "elements": [
     {
-      "name": "system/core",
-      "path": "/home/.ndx/system/core",
+      "name": "system/tools",
+      "path": "/home/.ndx/system/tools",
       "status": "installed"
     }
   ]
@@ -299,7 +297,7 @@ At turn startup the registry scans every layer in fixed priority order. First ma
 | Priority | Layer          | Source path                                                   |
 | -------- | -------------- | ------------------------------------------------------------- |
 | 0        | task           | Agent-owned task orchestration tools only.                    |
-| 1        | core           | `/home/.ndx/system/core/tools`                                |
+| 1        | core           | `/home/.ndx/system/tools`                                     |
 | 2        | project        | `<project>/.ndx/tools`                                        |
 | 3        | global         | `/home/.ndx/tools`                                            |
 | 4        | project plugin | `<project>/.ndx/plugins/<plugin>/tools`                       |
@@ -309,7 +307,7 @@ At turn startup the registry scans every layer in fixed priority order. First ma
 
 Only task orchestration tools are agent-owned: `update_plan`, `request_user_input`, multi-agent task tools, and agent-job task tools. Shell, filesystem, patch, web, media, plugin, and other capability tools must be external `tool.json` packages.
 
-Startup bootstraps the built-in core capability packages under `/home/.ndx/system/core/tools`: `shell`, `apply_patch`, `list_dir`, `view_image`, `web_search`, `image_generation`, `tool_suggest`, `tool_search`, and `request_permissions`.
+Startup bootstraps the built-in core capability packages under `/home/.ndx/system/tools`: `shell`, `apply_patch`, `list_dir`, `view_image`, `web_search`, `image_generation`, `tool_suggest`, `tool_search`, and `request_permissions`.
 
 ## `tool.json`
 

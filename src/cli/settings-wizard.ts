@@ -23,15 +23,15 @@ export interface SettingsWizardIo {
   print(message: string): void;
 }
 
-export async function createProjectSettingsWithWizard(
-  cwd: string,
+export async function createGlobalSettingsWithWizard(
+  globalDir: string,
   io: SettingsWizardIo,
 ): Promise<string> {
-  const projectNdxDir = join(resolve(cwd), ".ndx");
-  const settingsFile = join(projectNdxDir, "settings.json");
+  const ndxDir = resolve(globalDir);
+  const settingsFile = join(ndxDir, "settings.json");
 
   io.print("ndx settings were not found.");
-  io.print(`creating project settings at ${settingsFile}`);
+  io.print(`creating global settings at ${settingsFile}`);
 
   const permission = await chooseOption(
     io,
@@ -50,7 +50,7 @@ export async function createProjectSettingsWithWizard(
   const modelName = await askRequired(io, "model name> ");
   const maxContext = await askPositiveInteger(io, "max context tokens> ");
 
-  mkdirSync(projectNdxDir, { recursive: true });
+  mkdirSync(ndxDir, { recursive: true });
   writeFileSync(
     settingsFile,
     `${JSON.stringify(
