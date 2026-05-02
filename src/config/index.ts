@@ -726,6 +726,7 @@ function assertModelSettings(
   assertOptionalBoolean(model.think, `${field}.think`, file);
   for (const key of [
     "limitResponseLength",
+    "temperature",
     "topK",
     "repeatPenalty",
     "presencePenalty",

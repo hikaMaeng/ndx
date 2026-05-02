@@ -138,6 +138,9 @@ function optionalProviderParameters(
   if (options.limitResponseLength !== undefined) {
     payload.max_tokens = options.limitResponseLength;
   }
+  if (options.temperature !== undefined) {
+    payload.temperature = options.temperature;
+  }
   if (options.topK !== undefined) {
     payload.top_k = options.topK;
   }

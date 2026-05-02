@@ -182,5 +182,8 @@ The live server creates or reuses one Docker tool container per resolved
 physical project folder. It finds existing containers through Docker labels,
 uses `ndx-tool-<folder-name>` as the preferred name, and adds a deterministic
 hash suffix only when two different physical folders share the same basename.
+When a sandboxed server starts, it first removes prior ndx server-owned tool
+sandbox containers by label so stale workspace containers do not survive a new
+server instance.
 The image itself contains the baseline shell/tool runtime; startup only binds
 the user `.ndx`, project folder, and Docker socket volumes.

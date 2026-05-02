@@ -233,7 +233,9 @@ Canonical shape:
       "maxContext": 262000,
       "effort": ["high"],
       "think": true,
-      "limitResponseLength": 4096
+      "limitResponseLength": 4096,
+      "temperature": 0.2,
+      "topP": 0.9
     }
   },
   "permissions": {
@@ -256,10 +258,12 @@ to one model per selected pool, preserving prefix-cache locality until an
 explicit model, effort, thinking, or pool change.
 
 Optional model fields are `maxContext`, `effort`, `think`,
-`limitResponseLength`, `topK`, `repeatPenalty`, `presencePenalty`, `topP`, and
-`MinP`. `effort` is the complete supported list for that model ID. `think`
-declares that the model supports live thinking-mode toggles. Unsupported fields
-cannot be changed with `/model`.
+`limitResponseLength`, `temperature`, `topK`, `repeatPenalty`,
+`presencePenalty`, `topP`, and `MinP`. `effort` is the complete supported list
+for that model ID. `think` declares that the model supports live thinking-mode
+toggles. Unsupported fields cannot be changed with `/model`. OpenAI-compatible
+adapters forward all configured sampling fields; Anthropic forwards
+`max_tokens`, `temperature`, `top_p`, and `top_k`.
 
 `providers.<name>.type` must be `openai` or `anthropic`. `openai` targets OpenAI-compatible servers and prefers the Responses API. `anthropic` targets the Messages API.
 

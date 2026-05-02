@@ -40,6 +40,7 @@ import type {
 import {
   ensureDockerSandbox,
   hostPathToSandboxPath,
+  reclaimDockerSandboxes,
   type DockerSandboxState,
 } from "./docker-sandbox.js";
 
@@ -147,6 +148,7 @@ export class SessionServer {
   private address: SessionServerAddress | undefined;
   private readonly serverId = randomUUID();
   private readonly sandboxes = new Map<string, DockerSandboxState>();
+  private reclaimedDockerSandboxes = false;
   private closing = false;
 
   constructor(options: SessionServerOptions) {
@@ -526,6 +528,7 @@ export class SessionServer {
     dashboardHost = host,
   ): Promise<SessionServerAddress> {
     if (this.options.requireDockerSandbox === true) {
+      await this.reclaimPriorDockerSandboxes();
       await this.ensureWorkspaceSandbox(this.options.cwd);
     }
     const socket = await listenHttp(this.server, port, host, "session server");
@@ -867,6 +870,15 @@ export class SessionServer {
     });
     this.sandboxes.set(workspaceDir, sandbox);
     return sandbox;
+  }
+
+  private async reclaimPriorDockerSandboxes(): Promise<void> {
+    if (this.reclaimedDockerSandboxes) {
+      return;
+    }
+    this.reclaimedDockerSandboxes = true;
+    await reclaimDockerSandboxes();
+    this.sandboxes.clear();
   }
 
   private configWithSandbox(

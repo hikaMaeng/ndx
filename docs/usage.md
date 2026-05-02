@@ -217,6 +217,7 @@ parameters:
       "effort": ["low", "medium", "high"],
       "think": true,
       "limitResponseLength": 4096,
+      "temperature": 0.2,
       "topK": 40,
       "repeatPenalty": 1.05,
       "presencePenalty": 0.1,
@@ -251,6 +252,11 @@ with `./docker/volume/workspace` mounted at `/workspace`, writes
 ```bash
 npm run deploy
 ```
+
+Every completed code change must bump the package version, publish the new
+version to Verdaccio, install that exact version from
+`https://verdaccio.neurondev.net/`, and verify the installed `ndx`/`ndxserver`
+entrypoints. Public npm publishing still requires an explicit user request.
 
 Build the sandbox image explicitly with:
 

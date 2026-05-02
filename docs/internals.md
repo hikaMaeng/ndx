@@ -162,4 +162,6 @@ project directory. Compose mounts `./docker/volume/workspace` to `/workspace`.
 The live server manages tool containers by resolved physical project folder,
 stores that path in Docker labels, and reuses the labeled running container
 instead of creating another one for the same folder.
+On startup, a sandboxed server removes existing containers labeled as ndx
+server-owned tool sandboxes before creating the current workspace sandbox.
 The ndx server is a local process and owns session state outside Docker.

@@ -5,6 +5,8 @@
 ```bash
 npm test
 npm run deploy
+npm publish --registry https://verdaccio.neurondev.net/
+npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.net/
 ```
 
 ## Coverage
@@ -86,8 +88,13 @@ npm run deploy
   `/home/.ndx`, and Docker socket bind mount behavior.
 - Docker sandbox reuse by physical project folder and label-based discovery
   after server restart.
+- Docker sandbox labels identify ndx server-owned containers, and sandboxed
+  server startup reclaims prior ndx-owned containers before creating the current
+  workspace sandbox.
 - Deploy verification uses non-interactive `docker compose exec -T` for sandbox
   shell execution.
+- Each code change bumps the package version and verifies the exact published
+  Verdaccio version through installed `ndx`/`ndxserver` binaries.
 - Server startup verification should run the local server, confirm it logs in
   before initialization, fetch the dashboard through the local dashboard port,
   and verify that shell-like tools execute through the pinned Docker sandbox.

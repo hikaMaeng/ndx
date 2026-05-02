@@ -96,6 +96,12 @@
   created with the project folder mounted at `/workspace`, the user `.ndx`
   mounted at `/home/.ndx`, and `/var/run/docker.sock` mounted for Docker
   externalization.
+- Server-managed sandbox containers carry `dev.ndx.owner=ndx-server`,
+  `dev.ndx.role=tool-sandbox`, `dev.ndx.workspace=<host-path>`, and
+  `dev.ndx.image=<image>` Docker labels.
+- A server process with Docker sandboxing enabled removes all prior ndx
+  server-owned sandbox containers at startup before creating its current
+  workspace sandbox.
 - The server must manage exactly one running tool sandbox per resolved physical
   project folder. It records the physical folder in Docker labels so a later
   server process can find the same container again. If two physical folders have

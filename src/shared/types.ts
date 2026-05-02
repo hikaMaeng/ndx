@@ -19,6 +19,7 @@ export interface ModelSettings {
   think?: boolean;
   activeThink?: boolean;
   limitResponseLength?: number;
+  temperature?: number;
   topK?: number;
   repeatPenalty?: number;
   presencePenalty?: number;

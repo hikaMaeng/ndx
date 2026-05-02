@@ -27,7 +27,8 @@ ndx [SERVER_ADDRESS]
 ```
 
 Verdaccio is the default channel for install testing. Public npm releases are
-published only when explicitly requested.
+published only when explicitly requested. Every code change bumps the package
+version and verifies the installed Verdaccio package.
 
 `SERVER_ADDRESS` is the only `ndx` startup argument. It defaults to
 `127.0.0.1:45123`. The CLI connects to that server first; if it is not

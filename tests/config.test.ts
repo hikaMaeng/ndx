@@ -200,6 +200,7 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
           effort: ["low", "medium", "high"],
           think: true,
           limitResponseLength: 2048,
+          temperature: 0.2,
           topK: 40,
           repeatPenalty: 1.05,
           presencePenalty: 0.1,
@@ -223,6 +224,7 @@ test("loadConfig accepts object model catalog entries with aliases and runtime o
     assert.equal(loaded.config.activeModel.activeEffort, "medium");
     assert.equal(loaded.config.activeModel.activeThink, true);
     assert.equal(loaded.config.activeModel.limitResponseLength, 2048);
+    assert.equal(loaded.config.activeModel.temperature, 0.2);
     assert.deepEqual(loaded.config.modelPools.session, [
       "fast-local",
       "deep-local",
@@ -283,15 +285,11 @@ test("ensureGlobalNdxHome installs system directories and tool packages", () => 
     assert.equal(existsSync(join(globalDir, "system", "core")), false);
     assert.equal(existsSync(join(globalDir, "system", "skills")), true);
     assert.equal(
-      existsSync(
-        join(globalDir, "system", "tools", "shell", "tool.json"),
-      ),
+      existsSync(join(globalDir, "system", "tools", "shell", "tool.json")),
       true,
     );
     assert.equal(
-      existsSync(
-        join(globalDir, "system", "tools", "shell", "tool.mjs"),
-      ),
+      existsSync(join(globalDir, "system", "tools", "shell", "tool.mjs")),
       true,
     );
     for (const tool of [
@@ -305,15 +303,11 @@ test("ensureGlobalNdxHome installs system directories and tool packages", () => 
       "request_permissions",
     ]) {
       assert.equal(
-        existsSync(
-          join(globalDir, "system", "tools", tool, "tool.json"),
-        ),
+        existsSync(join(globalDir, "system", "tools", tool, "tool.json")),
         true,
       );
       assert.equal(
-        existsSync(
-          join(globalDir, "system", "tools", tool, "tool.mjs"),
-        ),
+        existsSync(join(globalDir, "system", "tools", tool, "tool.mjs")),
         true,
       );
     }
