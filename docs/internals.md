@@ -39,6 +39,11 @@ SQLite stores accounts, social links, sessions, request records, runtime events,
 context replay rows, notifications, and ownership rows. Empty sessions remain
 unnumbered and unpersisted until the first prompt.
 
+Lite context mode keeps persisted tool call and tool result rows for audit, but
+omits prior tool rows from model context when a new user turn starts. The active
+turn keeps its local tool stack until the model finishes or exhausts the turn
+limit.
+
 ## Managed CLI Server
 
 `runManagedWorkspace` probes the requested WebSocket URL. On a miss it repairs
