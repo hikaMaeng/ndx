@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { NDX_DEFAULTS } from "../../../config/defaults.js";
 import type { NdxConfig } from "../../../shared/types.js";
 import type {
   McpResourceSettings,
@@ -155,7 +156,8 @@ async function callJsonRpc(
             "-i",
             "-w",
             server.cwd === undefined
-              ? (config.env.NDX_SANDBOX_CWD ?? "/workspace")
+              ? (config.env.NDX_SANDBOX_CWD ??
+                NDX_DEFAULTS.containerWorkspaceDir)
               : mapHostPathToSandbox(config, server.cwd),
             ...Object.entries(sandboxMcpEnv(config, server)).flatMap(
               ([key, value]) => ["-e", `${key}=${value}`],
@@ -207,9 +209,12 @@ async function callJsonRpc(
       });
     });
     writeRequest(child.stdin, 1, "initialize", {
-      protocolVersion: "2024-11-05",
+      protocolVersion: NDX_DEFAULTS.mcpProtocolVersion,
       capabilities: {},
-      clientInfo: { name: "ndx", version: "0.1.0" },
+      clientInfo: {
+        name: NDX_DEFAULTS.mcpClientName,
+        version: NDX_DEFAULTS.mcpClientVersion,
+      },
     });
     writeNotification(child.stdin, "notifications/initialized", {});
     writeRequest(child.stdin, 2, method, params);
@@ -225,7 +230,7 @@ function sandboxMcpEnv(
     ...config.env,
     ...(server.env ?? {}),
     NDX_TOOL_EXECUTION_ENV: "container",
-    NDX_GLOBAL_DIR: "/home/.ndx",
+    NDX_GLOBAL_DIR: NDX_DEFAULTS.containerGlobalDir,
     NDX_SANDBOX_CONTAINER: "",
   };
 }
@@ -236,7 +241,8 @@ function sandboxCommand(command: string): string {
 
 function mapHostPathToSandbox(config: NdxConfig, value: string): string {
   const hostWorkspace = config.env.NDX_SANDBOX_HOST_WORKSPACE;
-  const sandboxWorkspace = config.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
+  const sandboxWorkspace =
+    config.env.NDX_SANDBOX_WORKSPACE ?? NDX_DEFAULTS.containerWorkspaceDir;
   const sandboxCwd = config.env.NDX_SANDBOX_CWD ?? sandboxWorkspace;
   const hostGlobal = config.paths.globalDir;
   const resolved = value.startsWith("/") ? resolve(value) : value;
@@ -251,10 +257,10 @@ function mapHostPathToSandbox(config: NdxConfig, value: string): string {
   }
   const global = resolve(hostGlobal);
   if (resolved === global) {
-    return "/home/.ndx";
+    return NDX_DEFAULTS.containerGlobalDir;
   }
   if (resolved.startsWith(`${global}/`)) {
-    return `/home/.ndx${resolved.slice(global.length)}`;
+    return `${NDX_DEFAULTS.containerGlobalDir}${resolved.slice(global.length)}`;
   }
   return value.startsWith("/") ? sandboxCwd : value;
 }

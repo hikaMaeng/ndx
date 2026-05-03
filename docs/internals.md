@@ -1,228 +1,50 @@
 # Internals
 
-## Config Loader
+## Settings Loader
 
-`src/config/index.ts` owns config loading. `configFiles(cwd)` returns
-`/home/.ndx/settings.json` followed by the current project `.ndx/settings.json`
-when present. `loadConfig(cwd)` reads existing JSON files in order, merges them,
-fails if neither settings file exists, then loads `/home/.ndx/search.json` as
-search rules.
+`loadConfig` reads global settings first and project settings second. Scalar
+fields use last-writer-wins. Providers, permissions, websearch, MCP, keys, env,
+and tools merge by key. Model catalogs may be arrays or object maps and merge by
+local model id.
 
-Each settings file carries a `"version"` equal to the installed package version.
-`loadConfig` updates only that field when the file is otherwise readable and
-valid for the current cascade.
+`ensureGlobalNdxHome` creates the global directory, `system/tools`,
+`system/skills`, and built-in core tool packages. Built-in package manifests and
+runtimes are generated from `src/config/core-tools.ts`.
 
-`src/cli/settings-wizard.ts` owns interactive first-run settings creation and
-repair. When the CLI is attached to a TTY and `loadConfig` reports missing or
-incomplete settings, the wizard writes or repairs `/home/.ndx/settings.json`
-first from permission, provider, model, and context answers, then repairs the
-current project `.ndx/settings.json` when it exists. The CLI then reruns
-`loadConfig`.
+## Defaults
 
-## Settings Merge
+`src/config/defaults.ts` owns runtime constants shared across CLI, server,
+sandbox, MCP, and external tool execution. Package version discovery lives in
+`src/config/package-version.ts`.
 
-Scalar fields such as `model`, `dataPath`, `sessionPath`, `instructions`, `maxTurns`, and `shellTimeoutMs` use last writer wins. `model` may be a string or a role pool object with `session`, `worker`, `reviewer`, and `custom` pools. `providers`, `permissions`, `websearch`, `mcp`, `keys`, and compatibility `env` are merged by key. `models` may be an array or an object keyed by local model ID and are merged by that ID.
+## Agent Loop
 
-## Active Provider
+`runAgent` owns the model/tool loop. It sends the local conversation stack to
+the model client, executes returned tool calls, appends
+`function_call_output` items, and stops when the model returns text without tool
+calls. The loop is bounded by `config.maxTurns`.
 
-`finalizeConfig` normalizes `model` into role pools. A string becomes a single-entry `session` pool. `session` is required; `worker`, `reviewer`, and `custom` are optional. Every referenced pool entry must exist in the normalized model catalog, and each model's `provider` must exist in `providers`.
-
-The active root config resolves to the first `session` model for display and provider validation. Sessions keep that base config. `RoundRobinModelRouter` now binds each selected pool to one model for the live session. `@key` prompts select `model.custom.<key>` and tool follow-up requests keep using that pool. Explicit `/model` changes update `config.model`, `activeModel`, effort, and thinking state; the next provider request uses a new provider-client cache key when those values change.
-
-`loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global system directories and built-in `/system/tools` packages only. It never creates model/provider settings, so model and provider selection must come from a real settings file or the TTY wizard.
-
-Built-in capability tools are defined by `CORE_TOOL_PACKAGES` in
-`src/config/core-tools.ts` and materialized as external `tool.json` packages
-under `/home/.ndx/system/tools`. Generated core manifests may include
-`requirements`; those entries describe the pinned base sandbox image contract
-instead of per-startup installs.
-
-## Model Adapters
-
-`src/model/factory.ts` owns provider selection. The common model contract is the existing `ModelClient` shape: input, tool schemas, then normalized text/tool calls/usage/raw output.
-
-`createRoutedModelClient` wraps provider clients with sticky model routing. The router caches provider clients by model ID plus active effort, thinking, and sampling parameters so `/responses` fallback state is scoped to that provider-client binding.
-
-OpenAI provider instances own two adapters. `OpenAiResponsesAdapter` sends `/responses` requests without `previous_response_id`. If `/responses` returns `404` or `405`, `OpenAiResponsesClient` switches that client instance to `OpenAiChatCompletionsAdapter`, which maps `function_call_output` items to tool messages.
-
-`AnthropicMessagesAdapter` maintains volatile Messages history, converts function schemas into Anthropic `tools[]`, converts `tool_use` content blocks into normalized `ModelToolCall`s, and converts `function_call_output` items back into `tool_result` user content blocks.
-
-## Process Library
-
-`src/process/index.ts` is a standalone library. `runProcess` wraps child process spawning, stdout/stderr capture, timeout, and abort handling without importing ndx modules. `TaskQueue` accepts nested serial and parallel plans, creates independent abort controllers per task, and lets task implementations register cancellation hooks. Multiple `TaskQueue` instances can coexist without shared state.
-
-## Tool Loop
-
-`src/agent/loop.ts` owns the model/tool loop. `runAgent` builds a
-`ToolRegistry` once per run and passes the registry's Chat
-Completions-compatible schemas to every model call. Registry construction scans
-task, core, project, global, plugin, and MCP layers in priority order. The loop
-keeps a local request stack for the active user turn and sends the full stack on
-every sampling request. Tool outputs use Responses-style
-`function_call_output` items internally and are converted to chat completions
-`role = "tool"` messages by the OpenAI-compatible adapter.
-
-The registry owns only task orchestration tool definitions. Capability tools come from filesystem `tool.json` packages. MCP tools come from project or global settings and are exposed with namespaced names so Chat Completions models can call them without Responses API namespace support.
-
-Every model tool call is sent through `src/process/runProcess` to
-`src/session/tools/worker.ts` as a separate Node process. Filesystem tools then
-execute their manifest command through the same process library. Task,
-input, planning, and collaboration tools belong under the session-owned
-`src/session/tools/` tree because they mutate session task state. Built-in
-capability tools such as shell, patch, filesystem, web, image, discovery, and
-permission stubs are external `/system/tools` packages. Task tools execute
-inside the worker, never inside the agent process.
-
-Abort propagation crosses the same boundary. `AgentRuntime` owns the turn
-`AbortController`, `executeToolInWorker` attaches it to the worker process, and
-the worker relays `SIGINT` or `SIGTERM` into a local `AbortSignal` passed through
-`ToolRegistry.execute`. External tool commands receive that signal through
-`runProcess`, so an interrupted turn cancels the worker and the manifest command
-instead of leaving the capability process detached.
-
-## Runtime Session
-
-`src/runtime/runtime.ts` owns turn coordination. `AgentRuntime` wraps `runAgent`
-with a session-oriented protocol. It emits `session_configured` once per runtime
-instance, then emits `turn_started`, model text, tool call/result, optional
-token usage, and `turn_complete` for every user prompt. Interrupt submissions
-emit `turn_aborted`.
-
-Runtime errors are classified into `unauthorized`, `bad_request`, `rate_limited`, `server_error`, `connection_failed`, or `unknown` so future retry and approval flows can be implemented without changing event consumers.
-
-Interrupt support records and emits the abort contract and cancels in-flight
-worker plus external manifest command processes. Full process-tree cleanup below
-the manifest command remains owned by the capability tool implementation.
+`AgentRuntime` wraps the loop with session ids, turn ids, abort handling,
+runtime events, history, and provider error classification.
 
 ## Session Server
 
-`src/session/server.ts` owns live sessions. `SessionServer` accepts WebSocket
-JSON-RPC, creates one `AgentRuntime` per live session, stores per-session event
-history, maps runtime events to client notifications, and stores server-owned
-records in `<dataDir>/ndx.sqlite`. WebSocket framing, notification mapping,
-dashboard rendering, request param parsing, runtime-event predicates, and
-bootstrap formatting live under `src/session/server/`. The default data
-directory is `/home/.ndx/system`; `dataPath` overrides it and legacy
-`sessionPath` is accepted as the same override. Missing user defaults to
-`defaultUser`.
+`SessionServer` owns live sessions, WebSocket clients, auth, SQLite persistence,
+Docker sandbox preparation, and dashboard HTTP. Helper modules under
+`src/session/server/` own dashboard rendering, bootstrap formatting, server
+info, JSON-RPC helpers, params, notifications, social auth verification,
+runtime-event predicates, and WebSocket connection state.
 
-`session/list` reads indexed `sessions` projection rows and merges matching
-persisted live sessions for a requested user and resolved `cwd`. Workspace
-numbers are monotonically increasing sequence values assigned from
-`projects.next_sequence` on the first user prompt, not temporary list indexes.
-`session/restore` reloads saved runtime events for client replay, rebuilds
-model conversation history from `session_context_items`, creates an
-`AgentRuntime` with the original session id, and claims the session owner row.
-`session/delete` marks a
-non-current session deleted and clears its owner row. A server that still holds
-the deleted session checks SQLite when it receives a prompt and when a response
-reaches a terminal event; if deleted, it emits
-`session/deleted`, closes socket clients, and terminates.
+SQLite stores accounts, social links, sessions, request records, runtime events,
+context replay rows, notifications, and ownership rows. Empty sessions remain
+unnumbered and unpersisted until the first prompt.
 
-Session ownership uses `session_owners` rows. A server replaces the owner row
-when it restores or starts a prompt. A stale owner discards in-flight output if
-another server claimed the row before completion.
+## Tools
 
-`turn/start` creates the durable session row and turn-start event before the
-runtime is scheduled. The response still returns before model completion.
+`ToolRegistry` scans task, core, project, global, plugin, and MCP layers. Each
+tool call runs in a worker Node process. Task tools execute in the worker.
+External tools and configured MCP commands execute in the Docker sandbox when
+the server provides `NDX_SANDBOX_CONTAINER`.
 
-Server shutdown sends WebSocket close frames and then destroys the upgraded
-sockets. Tests and short-lived CLI clients must not wait indefinitely for peer
-close handshakes when a session server is being torn down.
-
-The CLI is a client of this server. In normal one-shot and interactive modes it
-uses the current folder as the session `cwd`, starts a loopback server when the
-requested socket is unavailable, and talks to that server over WebSocket. In
-`ndx serve` or `ndxserver` mode it only hosts the server. In `--connect` mode it
-attaches to an already-running server.
-
-Client programs may render or cache notifications, but durable session writes
-belong to the session server so CLI, TUI, VS Code, and other clients observe the
-same source of truth.
-
-`SqliteSessionStore` owns schema initialization, default account creation,
-account password checks, session rows, event append, context-item append,
-context mode state, compact records, soft delete, and ownership claiming. It
-enables WAL, foreign keys, a busy timeout, and indexes for user/workspace list,
-session event replay, turn lookup, owner lookup, and context replay. Existing
-databases are migrated in place with projection columns, context rows, and
-partition rows backfilled from `session_events`.
-
-Context replay is DB-originated on each saved turn. The server calls
-`readModelContext` before submitting a prompt so `/lite` and `/compact` changes
-do not depend on stale in-memory history. `session_context_state.compact_event_id`
-is applied first, then lite filtering removes completed prior tool call/result
-rows. `session_context_segments` assigns sessions to
-`session_context_items_00` through `session_context_items_0f` by user/workspace
-segment key; this keeps append and replay indexes smaller while preserving the
-legacy `session_context_items` projection for migration and tests.
-
-Socket close is also a persistence boundary. When a connection disappears and a
-persisted session has no subscribers left, the server records
-`session_detached`. Empty sessions are ignored because they have no durable
-identity yet.
-
-The account methods are in-process JSON-RPC controls for the current service
-instance: `account/create`, `account/login`, `account/delete`, and
-`account/changePassword`. `server/info`, `account/create`, `account/login`, and
-`account/socialLogin` are public. Other socket methods, including `initialize`,
-require a successful login on the WebSocket connection. Login stores user and
-client id on the connection. The CLI generates a fresh client id per controller
-instance, prints public server identity before startup login choice, and
-includes user/client id in session and turn requests.
-
-HTTP `GET /` and `GET /dashboard` on the separate dashboard listener render the
-server dashboard. `POST /api/reload` re-runs global `.ndx` bootstrap and
-reloads settings plus discovered `AGENTS.md` sources for later sessions.
-`POST /api/exit` requests shutdown of the local server instance. The dashboard
-has no authentication or authorization; agent interaction remains on
-authenticated WebSocket JSON-RPC.
-
-Dashboard Session Logs uses dashboard HTTP JSON endpoints backed directly by
-`SqliteSessionStore`. Facets are distinct account ids, project `cwd` strings,
-and live session ids from non-deleted `sessions` rows. Session listing builds
-SQL `IN` clauses per selected category: values inside `accounts`, `projects`,
-or `sessions` are ORed; the category clauses are ANDed together. Session detail
-pages raw `session_events` rows ordered by SQLite autoincrement id and returns
-the parsed `payload_json`. Dashboard delete soft-deletes by session id, clears
-ownership through the store, removes any live in-memory session, publishes
-`session/deleted`, and closes subscribers when the deleted session is live.
-
-## Mock Client
-
-`MockModelClient` emits one `shell` call on the first turn and final text on the second turn. It is intentionally deterministic so Docker verification does not depend on external APIs.
-
-## Docker Context
-
-Docker build creates only the tool sandbox image. It installs the shell/runtime
-utilities needed by core external tools and keeps `/workspace` as the mounted
-project directory. Compose mounts `./docker/volume/workspace` to `/workspace`.
-The live server manages tool containers by resolved physical project folder,
-stores that path in Docker labels, and reuses the labeled running container
-instead of creating another one for the same folder.
-On startup, a sandboxed server removes existing containers labeled as ndx
-server-owned tool sandboxes before creating the current workspace sandbox.
-The ndx server is a local process and owns session state outside Docker.
-External manifest tools and MCP stdio servers execute inside the sandbox when
-`NDX_SANDBOX_CONTAINER` is present. The host worker remains only the process
-supervisor that starts `docker exec`, passes stdin, and handles cancellation.
-Before calling `docker exec`, the server maps Windows and POSIX host paths to
-the Linux sandbox namespace so `-w` is always `/workspace`, `/home/.ndx`, or a
-child path under those roots.
-Core path tools also treat `/root` as a workspace alias. If a model supplies
-`cwd: "/root"` or a `/root/...` path from container habit, the runtime maps it
-to the active session cwd under `/workspace` instead of writing to the
-container home directory.
-Each sandboxed external tool call appends JSONL start and finish records to
-`/home/.ndx/system/logs/tool-executions.jsonl` and mirrors those records to the
-tool sandbox stdout so `docker logs <container>` shows the command, mapped
-cwd, process id, stdout, stderr, exit code, timeout, and cancellation result.
-Restored sessions rebuild their `AgentRuntime` with sandbox environment before
-the next turn so model-selected file writes target `/workspace`.
-
-Before the server reuses or returns a workspace sandbox, it merges
-requirements from project, global, and plugin filesystem tool manifests. The
-prepare step installs missing `apt`, `npmGlobal`, `pip`, and Playwright browser
-requirements inside the running container, verifies declared binaries, and
-writes a fingerprint stamp. Later starts skip installation when the fingerprint
-matches.
+Host paths are mapped into sandbox paths before `docker exec`; project paths map
+under `/workspace` and global paths map under `/home/.ndx`.

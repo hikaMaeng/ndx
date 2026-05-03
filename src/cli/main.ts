@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { dirname, join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
+import { NDX_DEFAULTS } from "../config/defaults.js";
+import { readPackageVersion } from "../config/package-version.js";
 import { createLoginStore } from "./auth.js";
 import {
   createGlobalSettingsWithWizard,
@@ -149,8 +149,8 @@ function isMissingSettingsError(error: unknown): boolean {
 }
 
 function mockConfig(cwd: string): NdxConfig {
-  const globalDir = resolve(homedir(), ".ndx");
-  const dataDir = resolve(globalDir, "system");
+  const globalDir = resolve(NDX_DEFAULTS.globalDir);
+  const dataDir = resolve(globalDir, NDX_DEFAULTS.systemDir);
   return {
     model: "mock",
     modelPools: { session: ["mock"], worker: [], reviewer: [], custom: {} },
@@ -158,13 +158,13 @@ function mockConfig(cwd: string): NdxConfig {
       "You are ndx, a local coding agent. Prefer concise plans, inspect before editing, and use shell when facts must be verified.",
     env: {},
     keys: {},
-    maxTurns: 8,
-    shellTimeoutMs: 120_000,
+    maxTurns: NDX_DEFAULTS.maxTurns,
+    shellTimeoutMs: NDX_DEFAULTS.shellTimeoutMs,
     providers: {
       mock: {
         type: "openai",
         key: "",
-        url: "http://localhost/v1",
+        url: NDX_DEFAULTS.mockProviderUrl,
       },
     },
     models: [
@@ -180,10 +180,10 @@ function mockConfig(cwd: string): NdxConfig {
     activeProvider: {
       type: "openai",
       key: "",
-      url: "http://localhost/v1",
+      url: NDX_DEFAULTS.mockProviderUrl,
     },
     permissions: {
-      defaultMode: "danger-full-access",
+      defaultMode: NDX_DEFAULTS.permissionMode,
     },
     websearch: {},
     search: {},
@@ -191,13 +191,13 @@ function mockConfig(cwd: string): NdxConfig {
     globalMcp: {},
     projectMcp: {},
     plugins: [],
-    tools: { imageGeneration: false },
+    tools: { imageGeneration: NDX_DEFAULTS.imageGenerationEnabled },
     paths: {
       globalDir,
       dataDir,
       sessionDir: dataDir,
       projectDir: cwd,
-      projectNdxDir: resolve(cwd, ".ndx"),
+      projectNdxDir: resolve(cwd, NDX_DEFAULTS.configDir),
     },
   };
 }
@@ -314,7 +314,11 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
         requireDockerSandbox: true,
         packageVersion: readPackageVersion(),
       });
-      const address = await localServer.listen(45123, "127.0.0.1", 45124);
+      const address = await localServer.listen(
+        NDX_DEFAULTS.socketPort,
+        NDX_DEFAULTS.host,
+        NDX_DEFAULTS.dashboardPort,
+      );
       socketUrl = address.url;
       console.error(`[session-server] ${address.url}`);
       if (address.dashboardUrl !== undefined) {
@@ -390,7 +394,7 @@ async function withEmbeddedServer(
 ): Promise<void> {
   const server = createSessionServer(options);
   printWelcomeLogo();
-  const address = await server.listen(0, "127.0.0.1");
+  const address = await server.listen(0, NDX_DEFAULTS.host);
   const client = await SessionClient.connect(address.url);
   try {
     await fn(client);
@@ -479,8 +483,8 @@ function parseArgs(argv: string[], invokedAsServer = false): CliArgs {
   let help = false;
   let version = false;
   let mode: CliArgs["mode"] = invokedAsServer ? "serve" : "run";
-  let listenAddress = "127.0.0.1:0";
-  let dashboardListenAddress = "127.0.0.1:0";
+  let listenAddress = `${NDX_DEFAULTS.host}:0`;
+  let dashboardListenAddress = `${NDX_DEFAULTS.host}:0`;
   let connectUrl: string | undefined;
   const positional: string[] = [];
 
@@ -563,34 +567,18 @@ function printInteractiveHeader(config: NdxConfig): void {
 }
 
 function printHelp(): void {
+  const globalSettings = `${NDX_DEFAULTS.containerGlobalDir}/${NDX_DEFAULTS.settingsFile}`;
+  const searchRules = `${NDX_DEFAULTS.containerGlobalDir}/${NDX_DEFAULTS.searchFile}`;
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to 127.0.0.1:45123. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, prints public server version/runtime/sandbox info, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, prints public server identity, logs in with account credentials, initializes the socket, starts or restores one session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  /home/.ndx/settings.json, then current project .ndx/settings.json.\n  /home/.ndx/search.json contains web-search parsing rules.\n\nCommon fields:\n  { \"version\": \"${readPackageVersion()}\", \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to ${NDX_DEFAULTS.host}:${NDX_DEFAULTS.socketPort}. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, prints public server version/runtime/sandbox info, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, prints public server identity, logs in with account credentials, initializes the socket, starts or restores one session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  ${globalSettings}, then current project ${NDX_DEFAULTS.configDir}/${NDX_DEFAULTS.settingsFile}.\n  ${searchRules} contains web-search parsing rules.\n\nCommon fields:\n  { \"version\": \"${readPackageVersion()}\", \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
-}
-
-function readPackageVersion(): string {
-  let current = dirname(fileURLToPath(import.meta.url));
-  while (true) {
-    const candidate = join(current, "package.json");
-    if (existsSync(candidate)) {
-      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
-        version?: unknown;
-      };
-      return typeof parsed.version === "string" ? parsed.version : "unknown";
-    }
-    const parent = dirname(current);
-    if (parent === current) {
-      return "unknown";
-    }
-    current = parent;
-  }
 }
 
 function parseListenAddress(
   listenAddress: string,
   optionName: string,
 ): { host: string; port: number } {
-  const [host = "127.0.0.1", portText = "0"] = listenAddress.split(":");
+  const [host = NDX_DEFAULTS.host, portText = "0"] = listenAddress.split(":");
   const port = Number.parseInt(portText, 10);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error(`invalid ${optionName} port: ${listenAddress}`);

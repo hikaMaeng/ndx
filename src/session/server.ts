@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import {
   createServer,
   type IncomingMessage,
@@ -7,8 +6,9 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { Socket } from "node:net";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { NDX_DEFAULTS } from "../config/defaults.js";
+import { readPackageVersion } from "../config/package-version.js";
 import {
   configForModel,
   defaultModelEffort,
@@ -42,7 +42,6 @@ import type {
   SessionContextSummary,
 } from "../shared/types.js";
 import {
-  defaultDockerSandboxImage,
   ensureDockerSandbox,
   hostPathToSandboxPath,
   reclaimDockerSandboxes,
@@ -55,6 +54,7 @@ import {
 } from "./server/notifications.js";
 import { renderDashboardHtml } from "./server/dashboard.js";
 import { formatBootstrap, formatContext } from "./server/bootstrap-format.js";
+import { buildServerInfo } from "./server/info.js";
 import {
   requiredStringParam,
   sessionIdParam,
@@ -62,22 +62,16 @@ import {
   stringParam,
 } from "./server/params.js";
 import { eventTurnId, isTerminalEvent } from "./server/runtime-events.js";
+import {
+  errorMessage,
+  isPublicMethod,
+  rpcError,
+  type JsonRpcError,
+  type JsonRpcRequest,
+} from "./server/rpc.js";
+import { verifiedSocialProfile } from "./server/social-auth.js";
 import { WebSocketConnection } from "./server/websocket.js";
 import { filesystemToolRequirements } from "./tools/registry.js";
-
-type JsonRpcId = number | string | null;
-
-interface JsonRpcRequest {
-  id?: JsonRpcId;
-  method?: string;
-  params?: unknown;
-}
-
-interface JsonRpcError {
-  code: number;
-  message: string;
-  data?: unknown;
-}
 
 /** Construction options for the live ndx WebSocket session server. */
 export interface SessionServerOptions {
@@ -179,7 +173,7 @@ export class SessionServer {
       options.dataDir ??
         options.persistenceDir ??
         this.config.paths.dataDir ??
-        "/home/.ndx/system",
+        NDX_DEFAULTS.dataDirFallback,
     );
     this.server.on("upgrade", (request, socket) => {
       this.handleUpgrade(request, socket as Socket);
@@ -351,10 +345,10 @@ export class SessionServer {
   }
 
   async listen(
-    port = 0,
-    host = "127.0.0.1",
-    dashboardPort = 0,
-    dashboardHost = host,
+    port: number = 0,
+    host: string = NDX_DEFAULTS.host,
+    dashboardPort: number = 0,
+    dashboardHost: string = host,
   ): Promise<SessionServerAddress> {
     if (this.options.requireDockerSandbox === true) {
       await this.reclaimPriorDockerSandboxes();
@@ -627,36 +621,13 @@ export class SessionServer {
   }
 
   private serverInfo(): JsonObject {
-    const sandboxImage =
-      this.options.dockerSandboxImage ??
-      this.config.tools.dockerSandboxImage ??
-      defaultDockerSandboxImage();
-    return {
-      server: "ndx-ts-session-server",
-      version: this.options.packageVersion ?? readPackageVersion(),
-      protocolVersion: 1,
-      dashboardUrl: this.address?.dashboardUrl,
-      runtime: {
-        kind: "host-process",
-        node: process.version,
-        platform: process.platform,
-        arch: process.arch,
-      },
-      toolSandbox:
-        this.options.requireDockerSandbox === true
-          ? {
-              kind: "docker",
-              image: sandboxImage,
-              workspaceMount: "/workspace",
-              globalMount: "/home/.ndx",
-            }
-          : {
-              kind: "disabled",
-              image: sandboxImage,
-              workspaceMount: "/workspace",
-              globalMount: "/home/.ndx",
-            },
-    };
+    return buildServerInfo({
+      address: this.address,
+      config: this.config,
+      dockerSandboxImage: this.options.dockerSandboxImage,
+      packageVersion: this.options.packageVersion ?? readPackageVersion(),
+      requireDockerSandbox: this.options.requireDockerSandbox,
+    });
   }
 
   private async loginSocialAccount(
@@ -2061,7 +2032,7 @@ export class SessionServer {
       this.options.persistenceDir ??
       this.config.paths.dataDir ??
       this.config.paths.sessionDir ??
-      "/home/.ndx/system"
+      NDX_DEFAULTS.dataDirFallback
     );
   }
 
@@ -2108,81 +2079,6 @@ function isFileSystemError(error: unknown, code: string): boolean {
     "code" in error &&
     (error as NodeJS.ErrnoException).code === code
   );
-}
-
-function isPublicMethod(method: string | undefined): boolean {
-  return (
-    method === "server/info" ||
-    method === "account/create" ||
-    method === "account/login" ||
-    method === "account/socialLogin"
-  );
-}
-
-async function verifiedSocialProfile(
-  provider: string,
-  accessToken: string,
-): Promise<{ subject: string; email?: string; displayName?: string }> {
-  if (provider === "github") {
-    const profile = await fetchJsonWithBearer(
-      "https://api.github.com/user",
-      accessToken,
-    );
-    return {
-      subject: String(requiredProfileField(profile, "id")),
-      email: optionalProfileString(profile, "email"),
-      displayName:
-        optionalProfileString(profile, "login") ??
-        optionalProfileString(profile, "name"),
-    };
-  }
-  if (provider === "google") {
-    const profile = await fetchJsonWithBearer(
-      "https://openidconnect.googleapis.com/v1/userinfo",
-      accessToken,
-    );
-    return {
-      subject: String(requiredProfileField(profile, "sub")),
-      email: optionalProfileString(profile, "email"),
-      displayName: optionalProfileString(profile, "name"),
-    };
-  }
-  throw new Error(`unsupported social login provider: ${provider}`);
-}
-
-async function fetchJsonWithBearer(
-  url: string,
-  token: string,
-): Promise<unknown> {
-  const response = await fetch(url, {
-    headers: {
-      "accept": "application/json",
-      "authorization": `Bearer ${token}`,
-      "user-agent": "ndx-session-server",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`social login profile request failed: ${response.status}`);
-  }
-  return response.json();
-}
-
-function requiredProfileField(profile: unknown, field: string): unknown {
-  if (profile === null || typeof profile !== "object" || !(field in profile)) {
-    throw new Error(`social login profile missing ${field}`);
-  }
-  return (profile as Record<string, unknown>)[field];
-}
-
-function optionalProfileString(
-  profile: unknown,
-  field: string,
-): string | undefined {
-  if (profile === null || typeof profile !== "object" || !(field in profile)) {
-    return undefined;
-  }
-  const value = (profile as Record<string, unknown>)[field];
-  return typeof value === "string" ? value : undefined;
 }
 
 function listenHttp(
@@ -2305,25 +2201,6 @@ function dashboardIntegerParam(
   }
   return Math.min(max, Math.max(min, value));
 }
-
-function readPackageVersion(): string {
-  let current = dirname(fileURLToPath(import.meta.url));
-  while (true) {
-    const candidate = join(current, "package.json");
-    if (existsSync(candidate)) {
-      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
-        version?: unknown;
-      };
-      return typeof parsed.version === "string" ? parsed.version : "unknown";
-    }
-    const parent = dirname(current);
-    if (parent === current) {
-      return "unknown";
-    }
-    current = parent;
-  }
-}
-
 function sleepSync(ms: number): void {
   const signal = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(signal, 0, 0, ms);
@@ -2335,12 +2212,4 @@ function titleFromPrompt(prompt: string): string {
     return "empty";
   }
   return normalized.length > 64 ? `${normalized.slice(0, 61)}...` : normalized;
-}
-
-function rpcError(code: number, message: string, data?: unknown): JsonRpcError {
-  return { code, message, data: data instanceof Error ? data.message : data };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

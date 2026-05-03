@@ -10,6 +10,7 @@ import type {
   RuntimeEventMsg,
   SessionConfiguredEvent,
 } from "../shared/protocol.js";
+import { NDX_DEFAULTS } from "../config/defaults.js";
 import type { NdxBootstrapReport } from "../shared/types.js";
 
 export interface CliSessionRuntime {
@@ -638,8 +639,9 @@ function formatServerInfo(result: ServerInfoResult): string {
   const sandbox = result.toolSandbox;
   const sandboxKind = sandbox?.kind ?? "unknown";
   const sandboxImage = sandbox?.image ?? "unknown-image";
-  const workspaceMount = sandbox?.workspaceMount ?? "/workspace";
-  const globalMount = sandbox?.globalMount ?? "/home/.ndx";
+  const workspaceMount =
+    sandbox?.workspaceMount ?? NDX_DEFAULTS.containerWorkspaceDir;
+  const globalMount = sandbox?.globalMount ?? NDX_DEFAULTS.containerGlobalDir;
   return [
     "[socket] connected",
     `[session-server] ${server} ${version}`,

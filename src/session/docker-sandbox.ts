@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
+import { NDX_DEFAULTS } from "../config/defaults.js";
 import { mapHostPathToSandboxPath } from "./sandbox-paths.js";
 import {
   isEmptyRequirementSet,
@@ -27,9 +28,6 @@ export interface DockerSandboxState {
   containerGlobalDir: string;
 }
 
-const DEFAULT_SANDBOX_IMAGE = "hika00/ndx-sandbox:0.1.1";
-const CONTAINER_WORKSPACE_DIR = "/workspace";
-const CONTAINER_GLOBAL_DIR = "/home/.ndx";
 const SANDBOX_ROLE_LABEL = "dev.ndx.role";
 const SANDBOX_WORKSPACE_LABEL = "dev.ndx.workspace";
 const SANDBOX_OWNER_LABEL = "dev.ndx.owner";
@@ -59,7 +57,7 @@ const DOCKER_SANDBOX_RUN_TEMPLATE = [
 
 /** Resolve the Docker sandbox image pinned by this server build. */
 export function defaultDockerSandboxImage(): string {
-  return process.env.NDX_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
+  return process.env.NDX_SANDBOX_IMAGE ?? NDX_DEFAULTS.sandboxImage;
 }
 
 /** Return the stable per-workspace sandbox container identity. */
@@ -74,8 +72,8 @@ export function dockerSandboxState(
     image: options.image ?? defaultDockerSandboxImage(),
     containerName:
       options.containerName ?? `ndx-tool-${dockerNamePart(workspaceDir)}`,
-    containerWorkspaceDir: CONTAINER_WORKSPACE_DIR,
-    containerGlobalDir: CONTAINER_GLOBAL_DIR,
+    containerWorkspaceDir: NDX_DEFAULTS.containerWorkspaceDir,
+    containerGlobalDir: NDX_DEFAULTS.containerGlobalDir,
   };
 }
 

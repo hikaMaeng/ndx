@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { NDX_DEFAULTS } from "../../../config/defaults.js";
 import { runProcess } from "../../../process/index.js";
 import { mapHostPathToSandboxPath } from "../../sandbox-paths.js";
 import type {
@@ -6,8 +7,6 @@ import type {
   ToolContext,
   ToolExecutionResult,
 } from "../types.js";
-
-const TOOL_AUDIT_LOG = "/home/.ndx/system/logs/tool-executions.jsonl";
 
 export async function runExternalTool(
   runtime: ExternalToolRuntime,
@@ -154,12 +153,12 @@ function sandboxToolEnv(
     ...hostEnv,
     NDX_TOOL_EXECUTION_ENV: "container",
     NDX_TOOL_CWD: requestCwd,
-    NDX_GLOBAL_DIR: "/home/.ndx",
-    NDX_TOOL_AUDIT_LOG: TOOL_AUDIT_LOG,
-    NDX_CORE_TOOLS_DIR: "/home/.ndx/system/tools",
-    NDX_SYSTEM_TOOLS_DIR: "/home/.ndx/system/tools",
-    NDX_GLOBAL_TOOLS_DIR: "/home/.ndx/tools",
-    NDX_GLOBAL_PLUGINS_DIR: "/home/.ndx/plugins",
+    NDX_GLOBAL_DIR: NDX_DEFAULTS.containerGlobalDir,
+    NDX_TOOL_AUDIT_LOG: NDX_DEFAULTS.toolAuditLog,
+    NDX_CORE_TOOLS_DIR: `${NDX_DEFAULTS.containerGlobalDir}/${NDX_DEFAULTS.systemDir}/tools`,
+    NDX_SYSTEM_TOOLS_DIR: `${NDX_DEFAULTS.containerGlobalDir}/${NDX_DEFAULTS.systemDir}/tools`,
+    NDX_GLOBAL_TOOLS_DIR: `${NDX_DEFAULTS.containerGlobalDir}/tools`,
+    NDX_GLOBAL_PLUGINS_DIR: `${NDX_DEFAULTS.containerGlobalDir}/plugins`,
     NDX_SANDBOX_HOST_GLOBAL: context.config.paths.globalDir,
     NDX_PROJECT_TOOLS_DIR:
       context.config.paths.projectNdxDir === undefined
@@ -204,7 +203,7 @@ async function writeSandboxToolAudit(
         container,
         "/bin/bash",
         "-lc",
-        `mkdir -p /home/.ndx/system/logs && tee -a ${TOOL_AUDIT_LOG} > /proc/1/fd/1`,
+        `mkdir -p ${NDX_DEFAULTS.containerGlobalDir}/${NDX_DEFAULTS.systemDir}/logs && tee -a ${NDX_DEFAULTS.toolAuditLog} > /proc/1/fd/1`,
       ],
       input: line,
       timeoutMs: 5_000,
@@ -220,6 +219,6 @@ function mapHostPathToSandbox(context: ToolContext, value: string): string {
     sandboxWorkspace: context.env.NDX_SANDBOX_WORKSPACE,
     sandboxCwd: context.env.NDX_SANDBOX_CWD,
     hostGlobal: context.config.paths.globalDir,
-    sandboxGlobal: "/home/.ndx",
+    sandboxGlobal: NDX_DEFAULTS.containerGlobalDir,
   });
 }

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { NDX_DEFAULTS } from "../config/defaults.js";
 
 export interface SandboxPathMapping {
   hostWorkspace?: string;
@@ -14,10 +15,10 @@ export function mapHostPathToSandboxPath(
   mapping: SandboxPathMapping,
 ): string {
   const sandboxWorkspace = normalizeContainerPath(
-    mapping.sandboxWorkspace ?? "/workspace",
+    mapping.sandboxWorkspace ?? NDX_DEFAULTS.containerWorkspaceDir,
   );
   const sandboxGlobal = normalizeContainerPath(
-    mapping.sandboxGlobal ?? "/home/.ndx",
+    mapping.sandboxGlobal ?? NDX_DEFAULTS.containerGlobalDir,
   );
   const sandboxCwd = normalizeContainerPath(
     mapping.sandboxCwd ?? sandboxWorkspace,
