@@ -347,6 +347,9 @@ erDiagram
     number workspace_sequence
     string title
     string status
+    number event_count
+    number last_event_id
+    string last_turn_id
     number created_at
     number updated_at
     number deleted_at
@@ -356,6 +359,17 @@ erDiagram
     string id
     string session_id
     string type
+    string msg_type
+    string turn_id
+    string payload_json
+    number created_at
+  }
+
+  session_context_items {
+    string id
+    string session_id
+    number event_id
+    number item_seq
     string payload_json
     number created_at
   }
@@ -667,7 +681,7 @@ Current published package contract:
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.12`                                     |
+| Version                                  | `0.1.13`                                     |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |

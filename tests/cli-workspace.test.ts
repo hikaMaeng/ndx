@@ -7,6 +7,7 @@ import { MockModelClient } from "../src/model/mock-client.js";
 import { SessionServer } from "../src/session/server.js";
 import {
   dockerSandboxLabels,
+  dockerSandboxRunArgs,
   dockerSandboxState,
   hostPathToSandboxPath,
 } from "../src/session/docker-sandbox.js";
@@ -137,6 +138,33 @@ test("docker sandbox state is stable per workspace and maps host paths", () => {
     "dev.ndx.owner=ndx-server",
     "dev.ndx.workspace=/tmp/project-a",
     "dev.ndx.image=hika00/ndx-sandbox:test",
+  ]);
+  assert.deepEqual(dockerSandboxRunArgs(state), [
+    "run",
+    "-d",
+    "--name",
+    "ndx-tool-project-a",
+    "--label",
+    "dev.ndx.role=tool-sandbox",
+    "--label",
+    "dev.ndx.owner=ndx-server",
+    "--label",
+    "dev.ndx.workspace=/tmp/project-a",
+    "--label",
+    "dev.ndx.image=hika00/ndx-sandbox:test",
+    "-v",
+    "/tmp/home/.ndx:/home/.ndx",
+    "-v",
+    "/tmp/project-a:/workspace",
+    "-v",
+    "/var/run/docker.sock:/var/run/docker.sock",
+    "-e",
+    "NDX_GLOBAL_DIR=/home/.ndx",
+    "-w",
+    "/workspace",
+    "hika00/ndx-sandbox:test",
+    "sleep",
+    "infinity",
   ]);
   assert.equal(hostPathToSandboxPath(state, "/tmp/project-a"), "/workspace");
   assert.equal(

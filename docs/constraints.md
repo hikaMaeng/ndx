@@ -113,10 +113,18 @@
   cancellation status.
 - Restored persisted sessions must rebind their runtime config to the current
   workspace sandbox before handling the next turn.
+- SQLite session persistence is append-first. Runtime events are inserted into
+  `session_events`, list state is maintained on `sessions`, and restore context
+  is maintained in `session_context_items` in the same write transaction.
+- `session/list`, `/session`, ownership checks, and deletion checks must not
+  rebuild full runtime event arrays just to answer existence or list queries.
 - Server-managed sandbox containers are named `ndx-tool-<folder-name>` and are
   created with the project folder mounted at `/workspace`, the user `.ndx`
   mounted at `/home/.ndx`, and `/var/run/docker.sock` mounted for Docker
   externalization.
+- The server-owned Docker run configuration is defined by the template in
+  `src/session/docker-sandbox.ts`; changing labels, mounts, environment, workdir,
+  image, or command requires updating the rendered-argv tests.
 - Server-managed sandbox containers carry `dev.ndx.owner=ndx-server`,
   `dev.ndx.role=tool-sandbox`, `dev.ndx.workspace=<host-path>`, and
   `dev.ndx.image=<image>` Docker labels.

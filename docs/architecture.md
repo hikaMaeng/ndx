@@ -137,10 +137,17 @@ The default data directory is `/home/.ndx/system`; settings may define
 `dataPath`, and legacy `sessionPath` is treated as a data-directory override.
 `/home/.ndx/system` bootstrap state remains code-managed and is not stored in SQLite.
 
-SQLite tables own users, OAuth account links, projects, sessions, session
-events, and session owners. `defaultUser` with an empty password is created on
-first open so local CLI clients can authenticate without provisioning a
-separate account.
+SQLite tables own users, OAuth account links, projects, sessions, append-only
+session events, restore context items, and session owners. `defaultUser` with
+an empty password is created on first open so local CLI clients can
+authenticate without provisioning a separate account.
+
+`sessions` is the read projection for list and ownership checks. It stores the
+current status, event count, last event id, last turn id, and workspace
+sequence. `session_events` remains the durable event log. `session_context_items`
+stores only the runtime events needed to rebuild provider-facing conversation
+history, so restore does not depend on parsing notification and server-control
+records.
 
 When a WebSocket connection closes without an explicit session shutdown, the
 server removes that connection from session subscriber sets. If a persisted
@@ -151,9 +158,9 @@ the live session remains in server memory.
 If a request does not identify a user, the server uses `defaultUser`.
 
 `session/list` and `/session` build a user-and-workspace-scoped view from live
-memory plus SQLite records. The server filters by exact resolved
-`cwd` and uses the persisted workspace sequence assigned on first prompt. Empty sessions
-have title `empty`, no sequence number, and no durable row. `session/restore`
+memory plus indexed SQLite session projections. The server filters by exact
+resolved `cwd` and uses the persisted workspace sequence assigned on first
+prompt. Empty sessions have title `empty`, no sequence number, and no durable row. `session/restore`
 and `/restoreSession` accept either a listed number or the full session id,
 create a new `AgentRuntime` with the original id when needed, load persisted
 runtime events back into server memory, rebuild the provider-facing model
@@ -203,4 +210,6 @@ server instance.
 Restored sessions rebind their runtime to the current workspace sandbox before
 handling the next turn, so continued work uses `/workspace` rather than host
 paths. The image itself contains the baseline shell/tool runtime; startup only binds
+container state from the server-owned Docker run argument template in
+`src/session/docker-sandbox.ts`.
 the user `.ndx`, project folder, and Docker socket volumes.

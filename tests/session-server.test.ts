@@ -267,6 +267,20 @@ test("session server owns session events, subscribers, and SQLite persistence", 
       records.some((record) => record.type === "notification"),
       true,
     );
+    const projection = readSqliteSessionProjection(persistenceDir, sessionId);
+    assert.equal(projection?.eventCount, readResponse.events.length);
+    assert.equal(projection?.lastEventId !== undefined, true);
+    const contextEvents = readSqliteContextEvents(persistenceDir, sessionId);
+    assert.deepEqual(
+      contextEvents.map((event) => event.type),
+      [
+        "turn_started",
+        "tool_call",
+        "tool_result",
+        "agent_message",
+        "turn_complete",
+      ],
+    );
 
     client.close();
     subscriber.close();
@@ -1280,6 +1294,76 @@ function readSqliteRecords(
       )
       .all(sessionId)
       .map((row) => JSON.parse((row as { payload: string }).payload));
+  } finally {
+    db.close();
+  }
+}
+
+function readSqliteSessionProjection(
+  dataDir: string,
+  sessionId: string,
+): { eventCount: number; lastEventId?: number } | undefined {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { get(...values: unknown[]): unknown };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    const row = db
+      .prepare(
+        "select event_count as eventCount, last_event_id as lastEventId from sessions where id = ?",
+      )
+      .get(sessionId) as
+      | { eventCount?: unknown; lastEventId?: unknown }
+      | undefined;
+    if (typeof row?.eventCount !== "number") {
+      return undefined;
+    }
+    return {
+      eventCount: row.eventCount,
+      lastEventId:
+        typeof row.lastEventId === "number" ? row.lastEventId : undefined,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function readSqliteContextEvents(
+  dataDir: string,
+  sessionId: string,
+): Array<{ type: string }> {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { all(...values: unknown[]): unknown[] };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return db
+      .prepare(
+        "select payload_json as payload from session_context_items where session_id = ? order by item_seq asc",
+      )
+      .all(sessionId)
+      .map((row) => JSON.parse((row as { payload: string }).payload))
+      .map((event) => ({
+        type: String((event as { msg?: { type?: unknown } }).msg?.type),
+      }));
   } finally {
     db.close();
   }

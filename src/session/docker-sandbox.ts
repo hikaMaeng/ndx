@@ -30,6 +30,26 @@ const SANDBOX_OWNER_LABEL = "dev.ndx.owner";
 const SANDBOX_IMAGE_LABEL = "dev.ndx.image";
 const SANDBOX_ROLE = "tool-sandbox";
 const SANDBOX_OWNER = "ndx-server";
+const DOCKER_SANDBOX_RUN_TEMPLATE = [
+  "run",
+  "-d",
+  "--name",
+  "${containerName}",
+  "${labels}",
+  "-v",
+  "${globalMount}",
+  "-v",
+  "${workspaceMount}",
+  "-v",
+  "/var/run/docker.sock:/var/run/docker.sock",
+  "-e",
+  "${globalEnv}",
+  "-w",
+  "${workdir}",
+  "${image}",
+  "sleep",
+  "infinity",
+].join("\n");
 
 /** Resolve the Docker sandbox image pinned by this server build. */
 export function defaultDockerSandboxImage(): string {
@@ -115,27 +135,23 @@ export async function ensureDockerSandbox(
   if (container.running) {
     return { ...state, containerName: container.name };
   }
-  await runDocker([
-    "run",
-    "-d",
-    "--name",
-    container.name,
-    ...dockerSandboxLabels(state).flatMap((label) => ["--label", label]),
-    "-v",
-    `${state.globalDir}:${state.containerGlobalDir}`,
-    "-v",
-    `${state.workspaceDir}:${state.containerWorkspaceDir}`,
-    "-v",
-    "/var/run/docker.sock:/var/run/docker.sock",
-    "-e",
-    `NDX_GLOBAL_DIR=${state.containerGlobalDir}`,
-    "-w",
-    state.containerWorkspaceDir,
-    state.image,
-    "sleep",
-    "infinity",
-  ]);
+  await runDocker(dockerSandboxRunArgs(state, container.name));
   return { ...state, containerName: container.name };
+}
+
+export function dockerSandboxRunArgs(
+  state: DockerSandboxState,
+  containerName = state.containerName,
+): string[] {
+  return renderDockerArgs(DOCKER_SANDBOX_RUN_TEMPLATE, {
+    containerName,
+    labels: dockerSandboxLabels(state).flatMap((label) => ["--label", label]),
+    globalMount: `${state.globalDir}:${state.containerGlobalDir}`,
+    workspaceMount: `${state.workspaceDir}:${state.containerWorkspaceDir}`,
+    globalEnv: `NDX_GLOBAL_DIR=${state.containerGlobalDir}`,
+    workdir: state.containerWorkspaceDir,
+    image: state.image,
+  });
 }
 
 function dockerNamePart(path: string): string {
@@ -146,6 +162,36 @@ function dockerNamePart(path: string): string {
 
 function dockerNameHash(path: string): string {
   return createHash("sha256").update(path).digest("hex").slice(0, 12);
+}
+
+function renderDockerArgs(
+  template: string,
+  values: Record<string, string | string[]>,
+): string[] {
+  const args: string[] = [];
+  for (const rawLine of template.split("\n")) {
+    const line = rawLine.trim();
+    if (line.length === 0) {
+      continue;
+    }
+    const placeholder = /^\$\{([A-Za-z][A-Za-z0-9_]*)\}$/.exec(line);
+    if (placeholder === null) {
+      args.push(line);
+      continue;
+    }
+    const value = values[placeholder[1]];
+    if (value === undefined) {
+      throw new Error(
+        `missing docker sandbox template value: ${placeholder[1]}`,
+      );
+    }
+    if (Array.isArray(value)) {
+      args.push(...value);
+    } else {
+      args.push(value);
+    }
+  }
+  return args;
 }
 
 async function availableContainerName(

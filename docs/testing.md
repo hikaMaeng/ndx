@@ -73,7 +73,10 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Workspace-scoped session listing, restore by session id or list number, and
   non-current session deletion.
 - Restore rebuilds provider-facing model conversation history from saved
-  runtime events.
+  context items rather than notification or server-control records.
+- SQLite list and ownership checks use indexed session projection rows; tests
+  should assert `event_count`, `last_event_id`, and context replay rows when
+  persistence behavior changes.
 - Agent tool follow-up requests include the full local client-side context stack.
 - Empty sessions stay unnumbered and unpersisted until the first prompt.
 - Session ownership is reclaimed by the last socket server that attempts a prompt.
@@ -89,6 +92,9 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Provider error classification for non-retryable and retryable failures.
 - Docker sandbox image build, `ndx-tool-<folder-name>` naming, `/workspace`,
   `/home/.ndx`, and Docker socket bind mount behavior.
+- Docker sandbox run arguments are rendered from the server-owned template in
+  `src/session/docker-sandbox.ts`; tests should cover the generated argv
+  contract, not only labels.
 - Docker sandbox reuse by physical project folder and label-based discovery
   after server restart.
 - Docker sandbox labels identify ndx server-owned containers, and sandboxed
