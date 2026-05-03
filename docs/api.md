@@ -369,7 +369,17 @@ Every filesystem tool is a directory whose folder name equals `function.name` an
   "command": "node",
   "args": ["tool.mjs"],
   "cwd": ".",
-  "env": {}
+  "env": {},
+  "requirements": {
+    "apt": ["ripgrep", "jq"],
+    "npmGlobal": ["playwright"],
+    "pip": [],
+    "binaries": ["rg", "jq"],
+    "playwright": {
+      "browsers": ["chromium"],
+      "withDeps": true
+    }
+  }
 }
 ```
 
@@ -380,6 +390,13 @@ Execution fields use the same command shape as stdio MCP configuration: `command
 ```
 
 The same arguments are also available through `NDX_TOOL_ARGS`; the agent cwd is available through `NDX_TOOL_CWD`.
+
+`requirements` is optional. Filesystem tools use it to declare sandbox
+dependencies without hardcoding tool names in the runtime. Supported keys are
+`apt`, `npmGlobal`, `pip`, `binaries`, and `playwright`. Built-in core tool
+requirements are part of the pinned sandbox image contract. Project, global,
+and plugin tool requirements are merged at sandbox startup and installed once
+per requirements fingerprint in the reused workspace container.
 
 ## MCP Tools
 

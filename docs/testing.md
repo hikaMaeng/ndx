@@ -43,6 +43,8 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Agent-owned task tool exposure.
 - Bootstrapped core capability tools are exposed from the external core layer.
 - Filesystem `tool.json` layer discovery and priority override.
+- Filesystem tool `requirements` parsing, unknown-key rejection, and merged
+  non-core sandbox prepare contracts.
 - Project MCP priority over global MCP.
 - Every tool call starts a separate Node worker process.
 - Agent abort propagation from turn signal to worker and external manifest command process.
@@ -92,6 +94,8 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Provider error classification for non-retryable and retryable failures.
 - Docker sandbox image build, `ndx-tool-<folder-name>` naming, `/workspace`,
   `/home/.ndx`, and Docker socket bind mount behavior.
+- Docker sandbox dependency preparation fingerprint skip behavior and declared
+  binary verification for project, global, and plugin tool requirements.
 - Docker sandbox run arguments are rendered from the server-owned template in
   `src/session/docker-sandbox.ts`; tests should cover the generated argv
   contract, not only labels.

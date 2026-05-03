@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { EnvMap, JsonObject } from "../../../shared/types.js";
 import type {
   ExternalToolRuntime,
+  ToolRequirements,
   ToolDefinition,
   ToolSchema,
 } from "../types.js";
@@ -16,6 +17,12 @@ interface ToolJson {
   cwd?: string;
   env?: EnvMap;
   timeoutMs?: number;
+  requirements?: Partial<ToolRequirements>;
+}
+
+interface ToolJsonPlaywrightRequirements {
+  browsers?: string[];
+  withDeps?: boolean;
 }
 
 export function discoverToolDirectory(
@@ -46,6 +53,7 @@ export function loadToolManifest(
     manifestPath,
   );
   const schema = normalizeSchema(manifest, manifestPath);
+  const requirements = normalizeRequirements(manifest.requirements);
   if (schema.function.name !== folderName) {
     throw new Error(
       `${manifestPath} function.name must match folder name ${folderName}`,
@@ -70,7 +78,10 @@ export function loadToolManifest(
       env: manifest.env ?? {},
       timeoutMs: manifest.timeoutMs,
       toolDir,
+      manifestPath,
+      requirements,
     },
+    requirements,
   };
 }
 
@@ -94,6 +105,7 @@ function parseToolJson(contents: string, file: string): ToolJson {
   ) {
     throw new Error(`${file} timeoutMs must be a non-negative integer`);
   }
+  assertOptionalRequirements(manifest.requirements, file);
   return manifest;
 }
 
@@ -139,4 +151,79 @@ function envMap(value: unknown): value is EnvMap {
     isObject(value) &&
     Object.values(value).every((item) => typeof item === "string")
   );
+}
+
+function normalizeRequirements(
+  requirements: Partial<ToolRequirements> | undefined,
+): ToolRequirements {
+  const playwright =
+    requirements?.playwright === undefined
+      ? undefined
+      : {
+          browsers: uniqueSorted(requirements.playwright.browsers ?? []),
+          withDeps: requirements.playwright.withDeps ?? false,
+        };
+  return {
+    apt: uniqueSorted(requirements?.apt),
+    npmGlobal: uniqueSorted(requirements?.npmGlobal),
+    pip: uniqueSorted(requirements?.pip),
+    binaries: uniqueSorted(requirements?.binaries),
+    ...(playwright === undefined ? {} : { playwright }),
+  };
+}
+
+function uniqueSorted(value: string[] | undefined): string[] {
+  return [...new Set(value ?? [])].sort();
+}
+
+function assertOptionalRequirements(value: unknown, file: string): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!isObject(value)) {
+    throw new Error(`${file} requirements must be an object`);
+  }
+  for (const key of Object.keys(value)) {
+    if (!["apt", "npmGlobal", "pip", "binaries", "playwright"].includes(key)) {
+      throw new Error(`${file} requirements.${key} is not supported`);
+    }
+  }
+  for (const key of ["apt", "npmGlobal", "pip", "binaries"] as const) {
+    if (value[key] !== undefined && !stringArray(value[key])) {
+      throw new Error(
+        `${file} requirements.${key} must be an array of strings`,
+      );
+    }
+  }
+  if (value.playwright !== undefined) {
+    assertOptionalPlaywrightRequirements(value.playwright, file);
+  }
+}
+
+function assertOptionalPlaywrightRequirements(
+  value: unknown,
+  file: string,
+): void {
+  if (!isObject(value)) {
+    throw new Error(`${file} requirements.playwright must be an object`);
+  }
+  const playwright = value as ToolJsonPlaywrightRequirements;
+  for (const key of Object.keys(value)) {
+    if (!["browsers", "withDeps"].includes(key)) {
+      throw new Error(
+        `${file} requirements.playwright.${key} is not supported`,
+      );
+    }
+  }
+  if (playwright.browsers !== undefined && !stringArray(playwright.browsers)) {
+    throw new Error(
+      `${file} requirements.playwright.browsers must be an array of strings`,
+    );
+  }
+  if (
+    playwright.withDeps !== undefined &&
+    typeof playwright.withDeps !== "boolean"
+  ) {
+    throw new Error(`${file} requirements.playwright.withDeps must be boolean`);
+  }
 }

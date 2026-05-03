@@ -31,6 +31,12 @@ The active root config resolves to the first `session` model for display and pro
 
 `loadConfig` calls `ensureGlobalNdxHome` before reading settings. That installer creates missing global system directories and built-in `/system/tools` packages only. It never creates model/provider settings, so model and provider selection must come from a real settings file or the TTY wizard.
 
+Built-in capability tools are defined by `CORE_TOOL_PACKAGES` in
+`src/config/core-tools.ts` and materialized as external `tool.json` packages
+under `/home/.ndx/system/tools`. Generated core manifests may include
+`requirements`; those entries describe the pinned base sandbox image contract
+instead of per-startup installs.
+
 ## Model Adapters
 
 `src/model/factory.ts` owns provider selection. The common model contract is the existing `ModelClient` shape: input, tool schemas, then normalized text/tool calls/usage/raw output.
@@ -193,3 +199,10 @@ tool sandbox stdout so `docker logs <container>` shows the command, mapped
 cwd, process id, stdout, stderr, exit code, timeout, and cancellation result.
 Restored sessions rebuild their `AgentRuntime` with sandbox environment before
 the next turn so model-selected file writes target `/workspace`.
+
+Before the server reuses or returns a workspace sandbox, it merges
+requirements from project, global, and plugin filesystem tool manifests. The
+prepare step installs missing `apt`, `npmGlobal`, `pip`, and Playwright browser
+requirements inside the running container, verifies declared binaries, and
+writes a fingerprint stamp. Later starts skip installation when the fingerprint
+matches.

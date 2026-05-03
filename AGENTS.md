@@ -39,7 +39,7 @@ flow.
 - The ndx server runs as a local host process. Docker is not the server body;
   Docker is only the per-workspace tool sandbox used for shell-like execution.
 - The sandbox image is pinned by the server. The default image is
-  `hika00/ndx-sandbox:0.1.0`, overrideable only by `NDX_SANDBOX_IMAGE` or
+  `hika00/ndx-sandbox:0.1.1`, overrideable only by `NDX_SANDBOX_IMAGE` or
   `tools.dockerSandboxImage` for explicit verification.
 - Any change to the sandbox Dockerfile or sandbox runtime contract must build,
   tag, push the image to Docker Hub under `hika00`, and test the server against

@@ -89,7 +89,10 @@
 - Filesystem tools must live under one of the documented layer directories and must include `tool.json`.
 - Tool folder name must equal the OpenAI function `name`.
 - Tool manifests must include an OpenAI function schema plus command execution fields.
-- The command execution field set is `command`, optional `args`, optional `cwd`, optional `env`, and optional `timeoutMs`.
+- The command execution field set is `command`, optional `args`, optional
+  `cwd`, optional `env`, optional `timeoutMs`, and optional `requirements`.
+- Tool manifest `requirements` may declare `apt`, `npmGlobal`, `pip`,
+  `binaries`, and `playwright`. Unknown requirement keys are rejected.
 - Every model tool call runs in a separate worker Node process. No capability
   tool executes inside the agent process.
 - Multiple tool calls in one model response are launched in parallel. Sequential behavior is achieved by model turns queuing later asynchronous calls.
@@ -102,7 +105,7 @@
   sandbox. Host paths from Windows or POSIX clients must be mapped to Linux
   container paths before they are used as `docker exec -w`; the active
   workspace maps to `/workspace` and global state maps to `/home/.ndx`. The
-  default pinned image is `hika00/ndx-sandbox:0.1.0`.
+  default pinned image is `hika00/ndx-sandbox:0.1.1`.
 - Core filesystem path tools map `/root` and `/root/...` to the active
   workspace cwd. This keeps model-selected container-home paths on the project
   bind mount rather than the sandbox home directory.
@@ -138,8 +141,12 @@
   first folder and later colliding folders receive a deterministic hash suffix.
 - The tool sandbox image must already contain the baseline tool-execution
   capabilities needed by core tools, including Bash, Git, Patch, Python, Node
-  Corepack, and `/usr/local/bin/apply_patch`; server startup mounts state and
-  projects but does not install those capabilities into the container.
+  Corepack, common shell utilities, Playwright Chromium runtime, and
+  `/usr/local/bin/apply_patch`.
+- Project, global, and plugin tool requirements are installed into the reused
+  workspace sandbox container at startup. The server records a requirements
+  fingerprint under `/home/.ndx/system/sandbox-requirements/current.json` and
+  skips installation when the fingerprint matches.
 - Sandbox Dockerfile changes require a new Docker Hub tag under `hika00`, a
   pushed image, and server verification against that exact tag before merge.
 

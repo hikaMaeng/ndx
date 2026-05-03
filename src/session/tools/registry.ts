@@ -8,7 +8,9 @@ import { mcpToolDefinitions } from "./mcp/tools.js";
 import { updatePlanTool } from "./planning/update-plan.js";
 import { discoverToolDirectory } from "./external/manifest.js";
 import { runExternalTool } from "./external/runner.js";
+import { collectToolRequirements } from "./requirements.js";
 import type {
+  ToolRequirementSet,
   ToolContext,
   ToolDefinition,
   ToolExecutionResult,
@@ -27,31 +29,7 @@ export class ToolRegistry {
   static async create(config: NdxConfig): Promise<ToolRegistry> {
     const ordered: ToolDefinition[] = [];
     addLayer(ordered, taskTools(), "task");
-    addLayer(
-      ordered,
-      discoverToolDirectory(coreToolsDir(config), "core"),
-      "core",
-    );
-    addLayer(
-      ordered,
-      discoverToolDirectory(projectToolsDir(config), "project"),
-      "project",
-    );
-    addLayer(
-      ordered,
-      discoverToolDirectory(globalToolsDir(config), "global"),
-      "global",
-    );
-    addLayer(
-      ordered,
-      discoverPluginTools(projectPluginsDir(config), "project-plugin"),
-      "project-plugin",
-    );
-    addLayer(
-      ordered,
-      discoverPluginTools(globalPluginsDir(config), "global-plugin"),
-      "global-plugin",
-    );
+    addLayer(ordered, filesystemToolDefinitions(config), "filesystem");
     addLayer(
       ordered,
       await mcpToolDefinitions(config, config.projectMcp, "project-mcp"),
@@ -81,6 +59,10 @@ export class ToolRegistry {
     }));
   }
 
+  requirements(options: { includeCore?: boolean } = {}): ToolRequirementSet {
+    return collectToolRequirements(this.tools, options);
+  }
+
   async execute(
     name: string,
     args: Record<string, unknown>,
@@ -105,6 +87,43 @@ export async function createToolRegistry(
   config: NdxConfig,
 ): Promise<ToolRegistry> {
   return await ToolRegistry.create(config);
+}
+
+export function filesystemToolDefinitions(config: NdxConfig): ToolDefinition[] {
+  const ordered: ToolDefinition[] = [];
+  addLayer(
+    ordered,
+    discoverToolDirectory(coreToolsDir(config), "core"),
+    "core",
+  );
+  addLayer(
+    ordered,
+    discoverToolDirectory(projectToolsDir(config), "project"),
+    "project",
+  );
+  addLayer(
+    ordered,
+    discoverToolDirectory(globalToolsDir(config), "global"),
+    "global",
+  );
+  addLayer(
+    ordered,
+    discoverPluginTools(projectPluginsDir(config), "project-plugin"),
+    "project-plugin",
+  );
+  addLayer(
+    ordered,
+    discoverPluginTools(globalPluginsDir(config), "global-plugin"),
+    "global-plugin",
+  );
+  return ordered;
+}
+
+export function filesystemToolRequirements(
+  config: NdxConfig,
+  options: { includeCore?: boolean } = {},
+): ToolRequirementSet {
+  return collectToolRequirements(filesystemToolDefinitions(config), options);
 }
 
 function taskTools(): ToolDefinition[] {

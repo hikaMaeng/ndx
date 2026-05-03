@@ -27,6 +27,29 @@ export interface ToolExecutionResult {
   output: string;
 }
 
+export interface ToolPlaywrightRequirements {
+  browsers: string[];
+  withDeps: boolean;
+}
+
+export interface ToolRequirements {
+  apt: string[];
+  npmGlobal: string[];
+  pip: string[];
+  binaries: string[];
+  playwright?: ToolPlaywrightRequirements;
+}
+
+export interface ToolRequirementSource {
+  tool: string;
+  layer: string;
+  manifestPath: string;
+}
+
+export interface ToolRequirementSet extends ToolRequirements {
+  sources: ToolRequirementSource[];
+}
+
 export type ToolKind = "task" | "external";
 
 export interface ExternalToolRuntime {
@@ -37,6 +60,8 @@ export interface ExternalToolRuntime {
   env: EnvMap;
   timeoutMs?: number;
   toolDir: string;
+  manifestPath: string;
+  requirements: ToolRequirements;
 }
 
 export interface ToolDefinition {
@@ -45,6 +70,7 @@ export interface ToolDefinition {
   kind?: ToolKind;
   layer?: string;
   runtime?: ExternalToolRuntime;
+  requirements?: ToolRequirements;
   supportsParallelToolCalls?: boolean;
   execute?: (
     args: ToolArguments,

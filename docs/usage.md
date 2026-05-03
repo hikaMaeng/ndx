@@ -294,7 +294,7 @@ ndx
 Override the sandbox image for verification with:
 
 ```bash
-NDX_SANDBOX_IMAGE=hika00/ndx-sandbox:0.1.0 ndx
+NDX_SANDBOX_IMAGE=hika00/ndx-sandbox:0.1.1 ndx
 ```
 
 Docker Desktop Exec tab also works after the container is running. Open the
