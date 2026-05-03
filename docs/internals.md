@@ -55,7 +55,8 @@ owned by the CLI object graph and is not closed by CLI cleanup.
 Managed startup chooses the background launcher by OS instead of relying on a
 single `spawn` contract. Windows launches a hidden PowerShell host that runs the
 current Node entrypoint directly and appends diagnostics to
-`~/.ndx/system/logs/managed-server.log`. macOS launches the current Node
+`~/.ndx/system/logs/managed-server.log` when that path is writable. Diagnostic
+write failures do not block server startup. macOS launches the current Node
 entrypoint through `nohup` as a user background process. Linux launches through
 `setsid` when available, falling back to `nohup`. Unknown platforms use direct
 detached Node spawn.

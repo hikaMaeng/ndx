@@ -39,9 +39,9 @@ Managed `ndx` startup uses the same server mode as `ndxserver`. The CLI process
 only performs settings repair, detached server spawn, readiness polling, login,
 and session interaction. CLI exit closes the client socket but does not close
 the server process. The launcher is OS-specific: Windows uses a hidden
-PowerShell host with managed-server diagnostics, macOS uses `nohup`, Linux uses
-`setsid` with `nohup` fallback, and unknown platforms use direct detached Node
-spawn.
+PowerShell host with best-effort managed-server diagnostics, macOS uses
+`nohup`, Linux uses `setsid` with `nohup` fallback, and unknown platforms use
+direct detached Node spawn.
 
 ## Change Boundaries
 

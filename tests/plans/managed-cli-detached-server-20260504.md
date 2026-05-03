@@ -43,8 +43,8 @@ an already-running server.
 - CLI managed fallback spawns server mode instead of embedding a
   `SessionServer` that closes during CLI cleanup.
 - Windows launcher uses an encoded hidden PowerShell host and writes
-  `managed-server.log`; macOS launcher uses `nohup`; Linux launcher uses
-  `setsid` with `nohup` fallback.
+  `managed-server.log` on a best-effort basis; macOS launcher uses `nohup`;
+  Linux launcher uses `setsid` with `nohup` fallback.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 

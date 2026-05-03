@@ -154,6 +154,8 @@ test("managed server launch uses encoded PowerShell host on Windows", () => {
   const script = Buffer.from(encodedCommand, "base64").toString("utf16le");
 
   assert.equal(script.includes("ConvertFrom-Json"), true);
+  assert.equal(script.includes("function L($message)"), true);
+  assert.equal(script.includes("} catch { }"), true);
   assert.equal(script.includes("& $config.exe @($config.args)"), true);
   assert.equal(script.includes("*>> $config.logPath"), true);
   assert.equal(script.includes("managed ndx server failed"), true);

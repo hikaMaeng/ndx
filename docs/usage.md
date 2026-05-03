@@ -30,8 +30,9 @@ WebSocket endpoint, prints server info, logs in, and offers session selection.
 Exiting the CLI does not stop that managed server; stop it with a process
 signal or the dashboard `Exit` action. Windows, macOS, and Linux use separate
 background launcher paths so CLI exit is not the server lifetime owner. On
-Windows, startup diagnostics are appended to
-`%USERPROFILE%\.ndx\system\logs\managed-server.log`.
+Windows, startup diagnostics are appended on a best-effort basis to
+`%USERPROFILE%\.ndx\system\logs\managed-server.log`; inability to write that
+log does not block server startup.
 
 Run the server explicitly when you want to own its terminal:
 
@@ -50,7 +51,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.17",
+  "version": "0.1.18",
   "model": "local-model",
   "providers": {
     "local": {
