@@ -3,6 +3,7 @@ import type {
   SessionContextSummary,
   TokenUsage,
 } from "./types.js";
+import type { ModelConversationItem } from "../model/types.js";
 
 export type RuntimeOp =
   | { type: "user_turn"; prompt: string; cwd?: string }
@@ -25,6 +26,7 @@ export type RuntimeEventMsg =
   | ToolCallEvent
   | ToolResultEvent
   | TokenCountEvent
+  | ContextCompactedEvent
   | TurnCompleteEvent
   | TurnAbortedEvent
   | WarningEvent
@@ -77,6 +79,15 @@ export interface TokenCountEvent {
   sessionId: string;
   turnId: string;
   usage: TokenUsage;
+}
+
+export interface ContextCompactedEvent {
+  type: "context_compacted";
+  sessionId: string;
+  mode: "compact" | "lite";
+  before: SessionContextSummary;
+  after: SessionContextSummary;
+  replacement: ModelConversationItem[];
 }
 
 export interface TurnCompleteEvent {

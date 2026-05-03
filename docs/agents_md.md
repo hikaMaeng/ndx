@@ -1,7 +1,19 @@
 # AGENTS.md
 
-For information about AGENTS.md, see [this documentation](https://developers.openai.com/codex/guides/agents-md).
+ndx reads repository instructions from `AGENTS.md` files discovered from the
+current working directory ancestry.
 
-## Hierarchical agents message
+## Contract
 
-When the `child_agents_md` feature flag is enabled (via `[features]` in `config.toml`), Codex appends additional guidance about AGENTS.md scope and precedence to the user instructions message and emits that message even when no AGENTS.md is present.
+- Instructions are source context for later sessions after dashboard Reload or
+  server startup.
+- The session server owns discovery and includes recognized instruction sources
+  in `session/configured`.
+- Clients display source paths but must not append startup details back into
+  prompt context.
+
+## Scope
+
+Use the repository root `AGENTS.md` for repo-wide constraints. Put detailed,
+repeatable procedures in skills or docs rather than expanding `AGENTS.md` with
+long task formats.

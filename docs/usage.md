@@ -144,6 +144,9 @@ Dashboard UI copy is English-only.
 ```text
 /help       Show session-server commands.
 /status     Show socket, server, and current session status.
+/context    Show current context usage by item kind.
+/compact    Compact older context and show usage before and after.
+/lite       Aggressively compact older context and show usage before and after.
 /init       Show the latest session initialization detail received from server events.
 /events     Show recent runtime event types recorded on the current session.
 /login      Choose Google login, GitHub login, current account, or defaultUser.

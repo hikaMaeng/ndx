@@ -745,6 +745,7 @@ function isContextEvent(event: RuntimeEvent): boolean {
     event.msg.type === "agent_message" ||
     event.msg.type === "tool_call" ||
     event.msg.type === "tool_result" ||
+    event.msg.type === "context_compacted" ||
     event.msg.type === "turn_complete"
   );
 }

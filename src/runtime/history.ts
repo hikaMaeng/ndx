@@ -5,7 +5,7 @@ import type { RuntimeEvent } from "../shared/protocol.js";
 export function conversationHistoryFromRuntimeEvents(
   events: RuntimeEvent[],
 ): ModelConversationItem[] {
-  const history: ModelConversationItem[] = [];
+  let history: ModelConversationItem[] = [];
   const pendingToolCalls = new Map<string, ModelToolCall[]>();
   const turnToolCounts = new Map<string, number>();
 
@@ -56,6 +56,12 @@ export function conversationHistoryFromRuntimeEvents(
         role: "assistant",
         content: msg.text,
       });
+      continue;
+    }
+    if (msg.type === "context_compacted") {
+      history = msg.replacement;
+      pendingToolCalls.clear();
+      turnToolCounts.clear();
       continue;
     }
     if (msg.type === "turn_complete" && msg.finalText.length > 0) {

@@ -681,7 +681,7 @@ Current published package contract:
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.13`                                     |
+| Version                                  | `0.1.14`                                     |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |

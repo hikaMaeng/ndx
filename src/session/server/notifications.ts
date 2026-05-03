@@ -23,6 +23,8 @@ export function runtimeNotification(
       return { method: "item/toolResult", params };
     case "token_count":
       return { method: "session/tokenUsage/updated", params };
+    case "context_compacted":
+      return { method: "session/contextCompacted", params };
     case "turn_complete":
       return { method: "turn/completed", params };
     case "turn_aborted":

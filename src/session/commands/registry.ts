@@ -58,10 +58,6 @@ const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
   builtin("resume", "resume a saved chat"),
   builtin("fork", "fork the current chat"),
   candidate("init", "create an AGENTS.md file with instructions for Codex"),
-  builtin(
-    "compact",
-    "summarize conversation to prevent hitting the context limit",
-  ),
   builtin("plan", "switch to Plan mode"),
   builtin("goal", "set or view the goal for a long-running task"),
   builtin("collab", "change collaboration mode (experimental)"),
@@ -137,6 +133,25 @@ const NDX_SESSION_COMMANDS: SlashCommandDefinition[] = [
   {
     name: "interrupt",
     description: "ask the session server to interrupt the active turn",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "context",
+    description: "show current context usage by item kind",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "compact",
+    description: "compact older context and report before/after usage",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "lite",
+    description:
+      "aggressively compact older context and report before/after usage",
     placement: "session-builtin",
     implemented: true,
   },

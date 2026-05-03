@@ -145,6 +145,20 @@ test("session server owns session events, subscribers, and SQLite persistence", 
     assert.equal(
       commandList.commands.some(
         (command) =>
+          command.name === "context" && command.placement === "session-builtin",
+      ),
+      true,
+    );
+    assert.equal(
+      commandList.commands.some(
+        (command) =>
+          command.name === "lite" && command.placement === "session-builtin",
+      ),
+      true,
+    );
+    assert.equal(
+      commandList.commands.some(
+        (command) =>
           command.name === "diff" && command.placement === "core-candidate",
       ),
       true,
@@ -220,6 +234,13 @@ test("session server owns session events, subscribers, and SQLite persistence", 
         "think: unsupported",
       ].join("\n"),
     );
+    const context = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "context", sessionId },
+    );
+    assert.equal(context.output.includes("current context"), true);
+    assert.equal(context.output.includes("by kind:"), true);
+    assert.equal(context.output.includes("remaining:"), true);
     const events = await client.request<{ handled: true; output: string }>(
       "command/execute",
       { name: "events", sessionId },

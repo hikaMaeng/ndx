@@ -37,6 +37,7 @@ import type {
   JsonObject,
   NdxBootstrapReport,
   NdxConfig,
+  SessionContextSummary,
 } from "../shared/types.js";
 import {
   defaultDockerSandboxImage,
@@ -903,6 +904,22 @@ export class SessionServer {
           action: "print",
           output: this.formatRecentEvents(execution.sessionId),
         };
+      case "context":
+        return {
+          handled: true,
+          action: "print",
+          output: this.formatContextUsage(execution.sessionId),
+        };
+      case "compact":
+      case "lite":
+        return {
+          handled: true,
+          action: "print",
+          output: this.compactSessionContext(
+            execution.sessionId,
+            definition.name,
+          ),
+        };
       case "session":
         return {
           handled: true,
@@ -1647,6 +1664,37 @@ export class SessionServer {
       .join("\n");
   }
 
+  private formatContextUsage(sessionId: string | undefined): string {
+    const session =
+      sessionId === undefined ? undefined : this.sessions.get(sessionId);
+    if (session === undefined) {
+      return "context unavailable: session not started";
+    }
+    return formatContextUsageSummary(
+      "current context",
+      session.runtime.contextSummary(),
+    );
+  }
+
+  private compactSessionContext(
+    sessionId: string | undefined,
+    mode: "compact" | "lite",
+  ): string {
+    const session =
+      sessionId === undefined ? undefined : this.sessions.get(sessionId);
+    if (session === undefined) {
+      return `/${mode} requires an active session`;
+    }
+    const result = session.runtime.compactContext(mode, (event) =>
+      this.handleRuntimeEvent(session, event),
+    );
+    return [
+      `/${mode} context change`,
+      formatContextUsageSummary("before", result.before),
+      formatContextUsageSummary("after", result.after),
+    ].join("\n\n");
+  }
+
   private formatSessions(user: string, cwd: string): string {
     const sessions = this.numberedSessionsForCwd(user, cwd);
     if (sessions.length === 0) {
@@ -1996,6 +2044,38 @@ function storedSessionToPersisted(
     sequence: session.sequence,
     title: session.title,
   };
+}
+
+function formatContextUsageSummary(
+  label: string,
+  summary: SessionContextSummary,
+): string {
+  const max =
+    summary.maxContextTokens === undefined
+      ? "unknown"
+      : String(summary.maxContextTokens);
+  const remaining =
+    summary.remainingTokens === undefined
+      ? "unknown"
+      : String(summary.remainingTokens);
+  const percent =
+    summary.maxContextTokens === undefined || summary.maxContextTokens <= 0
+      ? "unknown"
+      : `${((summary.estimatedTokens / summary.maxContextTokens) * 100).toFixed(1)}%`;
+  const kinds =
+    summary.byKind === undefined || summary.byKind.length === 0
+      ? ["  none"]
+      : summary.byKind.map(
+          (entry) =>
+            `  ${entry.kind}: ${entry.items} items, ${entry.estimatedTokens} tokens`,
+        );
+  return [
+    label,
+    `  total: ${summary.items ?? summary.restoredItems} items, ${summary.estimatedTokens}/${max} tokens (${percent})`,
+    `  remaining: ${remaining} tokens`,
+    "  by kind:",
+    ...kinds,
+  ].join("\n");
 }
 
 function readPackageVersion(): string {

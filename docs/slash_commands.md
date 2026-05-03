@@ -15,6 +15,9 @@ The command registry is owned by the ndx TypeScript session server.
 | `/session`               | list sessions for the current workspace                                | session built-in |
 | `/restoreSession`        | restore a saved session by id or list number                           | session built-in |
 | `/deleteSession`         | delete another saved session for the current workspace                 | session built-in |
+| `/context`               | show current context usage by item kind                                | session built-in |
+| `/compact`               | compact older context and report before/after usage                    | session built-in |
+| `/lite`                  | aggressively compact older context and report before/after usage       | session built-in |
 | `/model`                 | choose the active session model by number or ID                        | session built-in |
 | `/effort`                | choose the active model effort by number or value                      | session built-in |
 | `/think`                 | choose active model thinking mode by number or value                   | session built-in |
@@ -32,7 +35,6 @@ The command registry is owned by the ndx TypeScript session server.
 | `/resume`                | resume a saved chat                                                    | session built-in |
 | `/fork`                  | fork the current chat                                                  | session built-in |
 | `/init`                  | create an AGENTS.md file with instructions for Codex                   | core candidate   |
-| `/compact`               | summarize conversation to prevent hitting the context limit            | session built-in |
 | `/plan`                  | switch to Plan mode                                                    | session built-in |
 | `/goal`                  | set or view the goal for a long-running task                           | session built-in |
 | `/collab`                | change collaboration mode                                              | session built-in |
@@ -92,6 +94,17 @@ default is on. Changing the model resets effort and thinking mode to those
 defaults. Unsupported `/effort` and `/think` calls print that the active model
 does not support the requested control.
 
+`/context` prints current model-context estimates from the session runtime:
+total items, estimated tokens, configured max context, remaining tokens, and
+breakdown by `user_message`, `assistant_message`, `assistant_tool_calls`, and
+`tool_results`.
+
+`/compact` and `/lite` mutate runtime history and print the same summary before
+and after the change. `/compact` keeps a larger recent suffix; `/lite` keeps a
+smaller suffix. Both commands persist a `context_compacted` runtime event so
+restored sessions replay the compacted stack instead of rebuilding the older
+full event-derived context.
+
 ## Discovery Layers
 
 Command names are directory names. Each directory must contain `command.json`.
@@ -140,6 +153,9 @@ Implemented now:
 - `/status`
 - `/init`
 - `/events`
+- `/context`
+- `/compact`
+- `/lite`
 - `/session`
 - `/restoreSession`
 - `/deleteSession`

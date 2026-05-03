@@ -85,9 +85,16 @@ assembly layer, not from the current TypeScript loop.
 
 ## Context Management
 
-The inner loop currently has no separate context compaction or truncation
-intervention point. It submits the full local client-side conversation stack
-needed for each sampling request. Provider-side continuation is intentionally
+`AgentRuntime` owns the model-facing context stack and can summarize current
+usage by item kind. `/context` reports the live item count, estimated tokens,
+configured max context, remaining context, and kind breakdown. `/compact` and
+`/lite` replace older history with a synthetic summary plus a recent suffix and
+emit a `context_compacted` runtime event containing before/after summaries and
+the replacement stack.
+
+Restore replay honors `context_compacted`: once the event appears,
+`conversationHistoryFromRuntimeEvents` uses its replacement as the current stack
+and then applies later turn events. Provider-side continuation is intentionally
 unused.
 
 OpenAI-compatible providers first use Responses without `previous_response_id`.
