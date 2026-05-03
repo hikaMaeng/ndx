@@ -145,6 +145,20 @@ test("session server owns session events, subscribers, and SQLite persistence", 
     assert.equal(
       commandList.commands.some(
         (command) =>
+          command.name === "context" && command.placement === "session-builtin",
+      ),
+      true,
+    );
+    assert.equal(
+      commandList.commands.some(
+        (command) =>
+          command.name === "lite" && command.placement === "session-builtin",
+      ),
+      true,
+    );
+    assert.equal(
+      commandList.commands.some(
+        (command) =>
           command.name === "diff" && command.placement === "core-candidate",
       ),
       true,
@@ -220,6 +234,13 @@ test("session server owns session events, subscribers, and SQLite persistence", 
         "think: unsupported",
       ].join("\n"),
     );
+    const context = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "context", sessionId },
+    );
+    assert.equal(context.output.includes("current context"), true);
+    assert.equal(context.output.includes("by kind:"), true);
+    assert.equal(context.output.includes("remaining:"), true);
     const events = await client.request<{ handled: true; output: string }>(
       "command/execute",
       { name: "events", sessionId },
@@ -985,12 +1006,16 @@ test("session lite mode filters completed tool logs only from model context", as
       "command/execute",
       { name: "lite", args: "on", sessionId },
     );
-    assert.equal(enabled.output, "lite: on");
+    assert.equal(enabled.output.includes("lite: on"), true);
+    assert.equal(enabled.output.includes("before"), true);
+    assert.equal(enabled.output.includes("after"), true);
     const rejected = await client.request<{ handled: true; output: string }>(
       "command/execute",
       { name: "lite", args: "off", sessionId },
     );
     assert.equal(rejected.output.includes("lite: still on"), true);
+    assert.equal(rejected.output.includes("before"), true);
+    assert.equal(rejected.output.includes("after"), true);
 
     const secondCompleted = waitForMethod(client, "turn/completed");
     await client.request("turn/start", { sessionId, prompt: "second turn" });

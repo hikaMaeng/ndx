@@ -26,6 +26,9 @@ context.
 | ----------------- | ---------------------------------------------------- |
 | `/help`           | Print available session-server commands.             |
 | `/status`         | Print initialized server and current session status. |
+| `/context`        | Print current context usage by item kind.            |
+| `/compact`        | Compact older context and print before/after usage.  |
+| `/lite`           | Aggressively compact context and print before/after. |
 | `/init`           | Print the latest session initialization event.       |
 | `/events`         | Print recent runtime event types for the session.    |
 | `/lite on|off`    | Toggle lightweight provider-facing context.          |
@@ -213,9 +216,23 @@ performs this bootstrap check before starting session work.
 {
   "restoredItems": 12,
   "estimatedTokens": 3421,
-  "maxContextTokens": 32768
+  "maxContextTokens": 32768,
+  "remainingTokens": 29347,
+  "items": 12,
+  "byKind": [
+    {
+      "kind": "user_message",
+      "items": 4,
+      "estimatedTokens": 300
+    }
+  ]
 }
 ```
+
+`/context` formats the live `AgentRuntime` summary. `/compact` and `/lite`
+emit `session/contextCompacted` notifications carrying a `context_compacted`
+runtime event with `before`, `after`, and `replacement`. Restore replay treats
+that event as the new model-facing context stack.
 
 ## Settings
 

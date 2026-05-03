@@ -39,6 +39,7 @@ import type {
   JsonObject,
   NdxBootstrapReport,
   NdxConfig,
+  SessionContextSummary,
 } from "../shared/types.js";
 import {
   defaultDockerSandboxImage,
@@ -973,6 +974,12 @@ export class SessionServer {
           action: "print",
           output: this.formatRecentEvents(execution.sessionId),
         };
+      case "context":
+        return {
+          handled: true,
+          action: "print",
+          output: this.formatContextUsage(execution.sessionId),
+        };
       case "session":
         return {
           handled: true,
@@ -1560,17 +1567,28 @@ export class SessionServer {
       return "lite: unchanged (no saved turns yet)";
     }
     const value = (execution.args ?? "").trim();
-    if (value !== "on" && value !== "off") {
+    const state = this.store.readSessionContext(session.id);
+    const nextValue =
+      value.length === 0 ? (state?.liteEnabled === true ? "off" : "on") : value;
+    if (nextValue !== "on" && nextValue !== "off") {
       return "usage: /lite <on|off>";
     }
-    if (value === "on") {
+    const before = session.runtime.contextSummary();
+    if (nextValue === "on") {
       this.store.setLiteMode(session.id, true);
       this.refreshRuntimeHistory(session);
-      return "lite: on";
+      return [
+        "lite: on",
+        formatContextUsageSummary("before", before),
+        formatContextUsageSummary("after", session.runtime.contextSummary()),
+      ].join("\n\n");
     }
-    const state = this.store.readSessionContext(session.id);
     if (state?.liteEnabled !== true) {
-      return "lite: off";
+      return [
+        "lite: off",
+        formatContextUsageSummary("before", before),
+        formatContextUsageSummary("after", before),
+      ].join("\n\n");
     }
     const items = this.store.readModelContext(session.id, {
       liteEnabled: false,
@@ -1581,13 +1599,21 @@ export class SessionServer {
       return [
         "lite: still on",
         `off would restore about ${estimatedTokens}/${maxContext} context tokens`,
+        formatContextUsageSummary("before", before),
+        formatContextUsageSummary("after", before),
       ].join("\n");
     }
     this.store.setLiteMode(session.id, false);
     this.refreshRuntimeHistory(session);
-    return maxContext === undefined
-      ? `lite: off (${estimatedTokens} estimated context tokens)`
-      : `lite: off (${estimatedTokens}/${maxContext} estimated context tokens)`;
+    const headline =
+      maxContext === undefined
+        ? `lite: off (${estimatedTokens} estimated context tokens)`
+        : `lite: off (${estimatedTokens}/${maxContext} estimated context tokens)`;
+    return [
+      headline,
+      formatContextUsageSummary("before", before),
+      formatContextUsageSummary("after", session.runtime.contextSummary()),
+    ].join("\n\n");
   }
 
   private compactContext(execution: SlashCommandExecution): string {
@@ -1595,12 +1621,15 @@ export class SessionServer {
     if (!session.persisted) {
       return "compact: unchanged (no saved turns yet)";
     }
+    const before = session.runtime.contextSummary();
     const result = this.store.compactSession(session.id);
     this.refreshRuntimeHistory(session);
     return [
       "compact: created",
       `event: ${result.eventId}`,
       `summary: ${estimateTextTokens(result.summary)} estimated tokens`,
+      formatContextUsageSummary("before", before),
+      formatContextUsageSummary("after", session.runtime.contextSummary()),
     ].join("\n");
   }
 
@@ -1813,6 +1842,18 @@ export class SessionServer {
           `${String(index + 1).padStart(2, " ")}. ${event.msg.type}`,
       )
       .join("\n");
+  }
+
+  private formatContextUsage(sessionId: string | undefined): string {
+    const session =
+      sessionId === undefined ? undefined : this.sessions.get(sessionId);
+    if (session === undefined) {
+      return "context unavailable: session not started";
+    }
+    return formatContextUsageSummary(
+      "current context",
+      session.runtime.contextSummary(),
+    );
   }
 
   private formatSessions(user: string, cwd: string): string {
@@ -2181,6 +2222,38 @@ function storedSessionToPersisted(
     sequence: session.sequence,
     title: session.title,
   };
+}
+
+function formatContextUsageSummary(
+  label: string,
+  summary: SessionContextSummary,
+): string {
+  const max =
+    summary.maxContextTokens === undefined
+      ? "unknown"
+      : String(summary.maxContextTokens);
+  const remaining =
+    summary.remainingTokens === undefined
+      ? "unknown"
+      : String(summary.remainingTokens);
+  const percent =
+    summary.maxContextTokens === undefined || summary.maxContextTokens <= 0
+      ? "unknown"
+      : `${((summary.estimatedTokens / summary.maxContextTokens) * 100).toFixed(1)}%`;
+  const kinds =
+    summary.byKind === undefined || summary.byKind.length === 0
+      ? ["  none"]
+      : summary.byKind.map(
+          (entry) =>
+            `  ${entry.kind}: ${entry.items} items, ${entry.estimatedTokens} tokens`,
+        );
+  return [
+    label,
+    `  total: ${summary.items ?? summary.restoredItems} items, ${summary.estimatedTokens}/${max} tokens (${percent})`,
+    `  remaining: ${remaining} tokens`,
+    "  by kind:",
+    ...kinds,
+  ].join("\n");
 }
 
 function estimateContextTokens(items: ModelConversationItem[]): number {

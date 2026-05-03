@@ -24,6 +24,8 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Object model catalogs with aliases, provider-facing names, effort, thinking, and sampling parameters.
 - `/model`, `/effort`, and `/think` command state changes for numbered model,
   effort, and thinking mode selection.
+- `/context`, `/compact`, and `/lite` command output includes context totals,
+  kind breakdown, remaining context, and compaction before/after changes.
 - `/lite on` filters completed prior tool call/result records from model
   context while leaving SQLite event and context rows intact.
 - `/lite off` refuses to expand context when the active model's `maxContext`

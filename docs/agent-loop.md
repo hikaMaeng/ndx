@@ -87,10 +87,12 @@ assembly layer, not from the current TypeScript loop.
 
 The inner loop receives the already-projected conversation stack from the
 session server. For saved sessions the server rebuilds that stack from SQLite
-before each new prompt, applying `/compact` first and `/lite` second. During a
-single active turn, tool calls and tool results remain in the loop's local
-follow-up context so tool execution can complete normally. Provider-side
-continuation is intentionally unused.
+before each new prompt, applying `/compact` first and `/lite` second.
+`AgentRuntime` can report the live stack by item kind for `/context` and for
+the before/after sections printed by `/compact` and `/lite`. During a single
+active turn, tool calls and tool results remain in the loop's local follow-up
+context so tool execution can complete normally. Provider-side continuation is
+intentionally unused.
 
 OpenAI-compatible providers first use Responses without `previous_response_id`.
 When `/responses` is unavailable, the client falls back to Chat Completions and

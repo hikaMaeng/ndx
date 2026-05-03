@@ -214,6 +214,38 @@ test("runtime events rebuild model conversation history", () => {
   ]);
 });
 
+test("runtime context summary updates when history is replaced", () => {
+  const runtime = new AgentRuntime({
+    cwd: process.cwd(),
+    config: {
+      ...baseConfig,
+      activeModel: { ...baseConfig.activeModel, maxContext: 1000 },
+    },
+    client: new MockModelClient(),
+    bootstrap: bootstrapReport(baseConfig.paths.globalDir),
+    history: [
+      { type: "message", role: "user", content: "first" },
+      { type: "message", role: "assistant", content: "second" },
+      { type: "message", role: "user", content: "third" },
+      { type: "message", role: "assistant", content: "fourth" },
+      { type: "message", role: "user", content: "fifth" },
+      { type: "message", role: "assistant", content: "sixth" },
+    ],
+  });
+
+  const before = runtime.contextSummary();
+  runtime.replaceHistory([
+    { type: "message", role: "user", content: "replacement" },
+  ]);
+  const after = runtime.contextSummary();
+
+  assert.equal(before.items, 6);
+  assert.equal(before.byKind?.length, 2);
+  assert.equal(after.items, 1);
+  assert.equal(after.byKind?.[0]?.kind, "user_message");
+  assert.equal(after.remainingTokens !== undefined, true);
+});
+
 function bootstrapReport(globalDir: string): NdxBootstrapReport {
   return {
     globalDir,

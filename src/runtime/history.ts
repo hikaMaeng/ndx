@@ -5,7 +5,7 @@ import type { RuntimeEvent } from "../shared/protocol.js";
 export function conversationHistoryFromRuntimeEvents(
   events: RuntimeEvent[],
 ): ModelConversationItem[] {
-  const history: ModelConversationItem[] = [];
+  let history: ModelConversationItem[] = [];
   const pendingToolCalls = new Map<string, ModelToolCall[]>();
   const turnToolCounts = new Map<string, number>();
 

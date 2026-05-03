@@ -15,6 +15,9 @@ The command registry is owned by the ndx TypeScript session server.
 | `/session`               | list sessions for the current workspace                                | session built-in |
 | `/restoreSession`        | restore a saved session by id or list number                           | session built-in |
 | `/deleteSession`         | delete another saved session for the current workspace                 | session built-in |
+| `/context`               | show current context usage by item kind                                | session built-in |
+| `/compact`               | compact older context and report before/after usage                    | session built-in |
+| `/lite`                  | aggressively compact older context and report before/after usage       | session built-in |
 | `/model`                 | choose the active session model by number or ID                        | session built-in |
 | `/effort`                | choose the active model effort by number or value                      | session built-in |
 | `/think`                 | choose active model thinking mode by number or value                   | session built-in |
@@ -33,7 +36,6 @@ The command registry is owned by the ndx TypeScript session server.
 | `/resume`                | resume a saved chat                                                    | session built-in |
 | `/fork`                  | fork the current chat                                                  | session built-in |
 | `/init`                  | create an AGENTS.md file with instructions for Codex                   | core candidate   |
-| `/compact`               | summarize conversation to prevent hitting the context limit            | session built-in |
 | `/plan`                  | switch to Plan mode                                                    | session built-in |
 | `/goal`                  | set or view the goal for a long-running task                           | session built-in |
 | `/collab`                | change collaboration mode                                              | session built-in |
@@ -93,14 +95,22 @@ default is on. Changing the model resets effort and thinking mode to those
 defaults. Unsupported `/effort` and `/think` calls print that the active model
 does not support the requested control.
 
-`/lite on` enables lightweight model context for the current saved session.
-All events remain in SQLite, but completed prior turns omit `tool_call` and
-`tool_result` records when the next model request is built. The active turn's
-tool follow-up context is not filtered. `/lite off` attempts to restore full
-context after the last compact point; if the estimated context would exceed the
-active model's `maxContext`, the command leaves lite mode enabled.
+`/context` prints current model-context estimates from the session runtime:
+total items, estimated tokens, configured max context, remaining tokens, and
+breakdown by `user_message`, `assistant_message`, `assistant_tool_calls`, and
+`tool_results`.
+
+`/lite` toggles lightweight model context for the current saved session.
+`/lite on` and `/lite off` set it explicitly. All events remain in SQLite, but
+completed prior turns omit `tool_call` and `tool_result` records when the next
+model request is built. The active turn's tool follow-up context is not
+filtered. `/lite off` attempts to restore full context after the last compact
+point; if the estimated context would exceed the active model's `maxContext`,
+the command leaves lite mode enabled. Every successful `/lite` change prints
+context usage before and after the change.
 
 ```text
+/lite
 /lite on
 /lite off
 ```
@@ -110,7 +120,8 @@ summary of prior turns. It excludes tool records and initialization/skill
 loading detail. Future model context starts with that compact summary, then
 continues with events recorded after the compact point. A later compact replaces
 the earlier compact point for future context calculation. Lite mode, when on,
-is applied only after the latest compact point.
+is applied only after the latest compact point. `/compact` prints context usage
+before and after the compact point is applied.
 
 ## Discovery Layers
 
@@ -160,8 +171,9 @@ Implemented now:
 - `/status`
 - `/init`
 - `/events`
-- `/lite`
+- `/context`
 - `/compact`
+- `/lite`
 - `/session`
 - `/restoreSession`
 - `/deleteSession`

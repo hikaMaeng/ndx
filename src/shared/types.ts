@@ -199,4 +199,13 @@ export interface SessionContextSummary {
   restoredItems: number;
   estimatedTokens: number;
   maxContextTokens?: number;
+  remainingTokens?: number;
+  items?: number;
+  byKind?: SessionContextKindUsage[];
+}
+
+export interface SessionContextKindUsage {
+  kind: string;
+  items: number;
+  estimatedTokens: number;
 }
