@@ -73,7 +73,9 @@ test("server address argument defaults to localhost port 45123", () => {
 test("managed server fallback reports current project sandbox metadata", async () => {
   const projectDir = mkdtempSync(join(tmpdir(), "ndx-project-"));
   const previousImage = process.env.NDX_SANDBOX_IMAGE;
+  const previousDashboardPort = process.env.NDX_DASHBOARD_PORT;
   process.env.NDX_SANDBOX_IMAGE = "hika00/ndx-sandbox:test";
+  delete process.env.NDX_DASHBOARD_PORT;
   try {
     const state = await ensureManagedServer({
       cwd: projectDir,
@@ -83,6 +85,7 @@ test("managed server fallback reports current project sandbox metadata", async (
 
     assert.equal(state.projectDir, projectDir);
     assert.equal(state.socketUrl, "ws://127.0.0.1:9");
+    assert.equal(state.dashboardUrl, "http://127.0.0.1:45124");
     assert.equal(state.image, "hika00/ndx-sandbox:test");
     assert.equal(state.reachable, false);
   } finally {
@@ -90,6 +93,11 @@ test("managed server fallback reports current project sandbox metadata", async (
       delete process.env.NDX_SANDBOX_IMAGE;
     } else {
       process.env.NDX_SANDBOX_IMAGE = previousImage;
+    }
+    if (previousDashboardPort === undefined) {
+      delete process.env.NDX_DASHBOARD_PORT;
+    } else {
+      process.env.NDX_DASHBOARD_PORT = previousDashboardPort;
     }
     rmSync(projectDir, { recursive: true, force: true });
   }

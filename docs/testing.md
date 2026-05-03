@@ -28,6 +28,8 @@ ndxserver --version
 - Session server auth, social login, WebSocket request/notification flow,
   SQLite persistence, session restore/delete, ownership reclaim, and dashboard
   reload.
+- Managed CLI startup discovery, detached `ndxserver` process lifetime, default
+  socket/dashboard port reporting, and attach-before-start behavior.
 - Docker sandbox state, container labels, path mapping, image override, and
   external tool/MCP sandbox execution.
 

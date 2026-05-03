@@ -16,8 +16,9 @@
 ## Flow
 
 1. `ndx` parses CLI flags and probes the requested WebSocket address.
-2. Managed startup connects to an existing server or starts a local
-   `SessionServer` at `127.0.0.1:45123` plus dashboard `127.0.0.1:45124`.
+2. Managed startup connects to an existing server or starts a detached
+   `ndxserver` host process at `127.0.0.1:45123` plus dashboard
+   `127.0.0.1:45124`, then connects over WebSocket.
 3. The CLI calls public `server/info`, logs in, calls `initialize`, and starts
    or restores one session for the current folder.
 4. The server loads global and project settings, bootstraps `/home/.ndx/system`,
@@ -31,6 +32,13 @@
    `NDX_SANDBOX_CONTAINER` is present.
 8. Runtime events, context records, session ownership, accounts, and social
    links persist in SQLite under the configured data directory.
+
+## Process Lifetime
+
+Managed `ndx` startup uses the same server mode as `ndxserver`. The CLI process
+only performs settings repair, detached server spawn, readiness polling, login,
+and session interaction. CLI exit closes the client socket but does not close
+the server process.
 
 ## Change Boundaries
 

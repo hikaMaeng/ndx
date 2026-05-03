@@ -39,6 +39,14 @@ SQLite stores accounts, social links, sessions, request records, runtime events,
 context replay rows, notifications, and ownership rows. Empty sessions remain
 unnumbered and unpersisted until the first prompt.
 
+## Managed CLI Server
+
+`runManagedWorkspace` probes the requested WebSocket URL. On a miss it repairs
+or creates settings in the foreground, spawns `ndxserver` in detached server
+mode with the current cwd and managed ports, polls readiness with `canConnect`,
+and then uses `SessionClient` like any other client. The managed server is not
+owned by the CLI object graph and is not closed by CLI cleanup.
+
 ## Tools
 
 `ToolRegistry` scans task, core, project, global, plugin, and MCP layers. Each

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
@@ -15,7 +17,11 @@ import {
   interactiveHelp,
   printWelcomeLogo,
 } from "./session-client.js";
-import { ensureManagedServer, normalizeSocketUrl } from "./workspace.js";
+import {
+  canConnect,
+  ensureManagedServer,
+  normalizeSocketUrl,
+} from "./workspace.js";
 import { loadConfig, resolveGlobalNdxDir } from "../config/index.js";
 import { createRoutedModelClient } from "../model/factory.js";
 import { MockModelClient } from "../model/mock-client.js";
@@ -296,7 +302,6 @@ async function runConnected(options: {
 async function runManagedWorkspace(args: CliArgs): Promise<void> {
   const rl =
     args.interactive && process.stdin.isTTY ? createCliPrompt() : undefined;
-  let localServer: SessionServer | undefined;
   try {
     const state = await ensureManagedServer({
       cwd: args.cwd,
@@ -305,25 +310,10 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
     });
     let socketUrl = state.socketUrl;
     if (!state.reachable) {
-      const loaded = await loadConfigForCli(args);
-      localServer = new SessionServer({
-        cwd: args.cwd,
-        config: loaded.config,
-        sources: loaded.sources,
-        createClient: (config) => createClient(args.mock, config),
-        requireDockerSandbox: true,
-        packageVersion: readPackageVersion(),
-      });
-      const address = await localServer.listen(
-        NDX_DEFAULTS.socketPort,
-        NDX_DEFAULTS.host,
-        NDX_DEFAULTS.dashboardPort,
-      );
-      socketUrl = address.url;
-      console.error(`[session-server] ${address.url}`);
-      if (address.dashboardUrl !== undefined) {
-        console.error(`[dashboard] ${address.dashboardUrl}`);
-      }
+      await loadConfigForCli(args);
+      socketUrl = await startDetachedManagedServer(args, state.socketUrl);
+      console.error(`[session-server] ${socketUrl}`);
+      console.error(`[dashboard] ${state.dashboardUrl}`);
     }
     const client = await SessionClient.connect(socketUrl);
     try {
@@ -363,8 +353,64 @@ async function runManagedWorkspace(args: CliArgs): Promise<void> {
     }
   } finally {
     rl?.close();
-    await localServer?.close();
   }
+}
+
+async function startDetachedManagedServer(
+  args: CliArgs,
+  socketUrl: string,
+): Promise<string> {
+  const socket = new URL(socketUrl);
+  const listenHost = socket.hostname || NDX_DEFAULTS.host;
+  const listenPort = socket.port || String(NDX_DEFAULTS.socketPort);
+  const configuredDashboardPort = process.env.NDX_DASHBOARD_PORT;
+  const dashboardPort = String(
+    configuredDashboardPort !== undefined &&
+      Number.isInteger(Number(configuredDashboardPort))
+      ? Number(configuredDashboardPort)
+      : NDX_DEFAULTS.dashboardPort,
+  );
+  const child = spawn(
+    process.execPath,
+    [
+      fileURLToPath(import.meta.url),
+      "serve",
+      "--cwd",
+      args.cwd,
+      "--listen",
+      `${listenHost}:${listenPort}`,
+      "--dashboard-listen",
+      `${NDX_DEFAULTS.host}:${dashboardPort}`,
+    ],
+    {
+      cwd: args.cwd,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    },
+  );
+  child.unref();
+  if (child.pid === undefined) {
+    throw new Error("failed to start detached ndx server process");
+  }
+  await waitForManagedServer(socketUrl);
+  return socketUrl;
+}
+
+async function waitForManagedServer(socketUrl: string): Promise<void> {
+  const startedAt = Date.now();
+  const timeoutMs = 10_000;
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await canConnect(socketUrl)) {
+      return;
+    }
+    await delay(100);
+  }
+  throw new Error(`timed out waiting for detached ndx server: ${socketUrl}`);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
 async function selectInitialSession(

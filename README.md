@@ -26,9 +26,11 @@ ndx
 ```
 
 `ndx` accepts one normal startup argument: an optional WebSocket server address.
-When no reachable server is supplied, the CLI starts a local host-process
-session server for the current folder. Docker is used only for workspace-bound
-external tool and MCP execution.
+When no reachable server is supplied, the CLI starts a detached local
+`ndxserver` host process for the current folder, then connects to it. The server
+continues running after the CLI exits until `ndxserver` receives a shutdown
+signal or the dashboard exit action is used. Docker is used only for
+workspace-bound external tool and MCP execution.
 
 ## Verification
 

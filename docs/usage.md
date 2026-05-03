@@ -25,8 +25,16 @@ node dist/src/cli/main.js
 ```
 
 The CLI tries `ws://127.0.0.1:45123`. If unreachable, it starts a local server
-for the current folder, prints server info, logs in, and offers session
-selection.
+for the current folder as a detached `ndxserver` process, waits for the
+WebSocket endpoint, prints server info, logs in, and offers session selection.
+Exiting the CLI does not stop that managed server; stop it with a process
+signal or the dashboard `Exit` action.
+
+Run the server explicitly when you want to own its terminal:
+
+```bash
+ndxserver --cwd /path/to/project --listen 127.0.0.1:45123 --dashboard-listen 127.0.0.1:45124
+```
 
 ## Settings
 

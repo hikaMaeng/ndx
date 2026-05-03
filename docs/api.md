@@ -11,6 +11,8 @@ ndx --mock [--cwd PATH] [prompt]
 ```
 
 - `SERVER_ADDRESS` defaults to `127.0.0.1:45123`.
+- Plain `ndx` starts a detached `ndxserver` process when `SERVER_ADDRESS` is
+  unreachable, then connects to it.
 - `--mock` uses the deterministic mock model and does not require provider
   credentials.
 - `--cwd` sets the server/session working directory.
@@ -36,6 +38,9 @@ added to model context.
 | `/deleteSession`  | Delete another session for the current cwd.          |
 | `/interrupt`      | Interrupt the current turn.                          |
 | `/exit`           | Close the CLI client.                                |
+
+`/exit` does not stop a managed detached server. Use a process signal or the
+dashboard exit endpoint for server shutdown.
 
 ## WebSocket JSON-RPC
 

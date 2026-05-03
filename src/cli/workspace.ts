@@ -64,7 +64,11 @@ function createManagedServerState(
   socketUrl: string,
 ): ManagedServerState {
   const socketPort = portFromSocketUrl(socketUrl);
-  const dashboardPort = Number(process.env.NDX_DASHBOARD_PORT ?? "");
+  const configuredDashboardPort = process.env.NDX_DASHBOARD_PORT;
+  const dashboardPort =
+    configuredDashboardPort === undefined
+      ? Number.NaN
+      : Number(configuredDashboardPort);
   const resolvedDashboardPort = Number.isInteger(dashboardPort)
     ? dashboardPort
     : NDX_DEFAULTS.dashboardPort;
