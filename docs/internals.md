@@ -93,17 +93,21 @@ the manifest command remains owned by the capability tool implementation.
 `src/session/server.ts` owns live sessions. `SessionServer` accepts WebSocket
 JSON-RPC, creates one `AgentRuntime` per live session, stores per-session event
 history, maps runtime events to client notifications, and stores server-owned
-records in `<dataDir>/ndx.sqlite`. The default data directory is
-`/home/.ndx/system`; `dataPath` overrides it and legacy `sessionPath` is accepted
-as the same override. Missing user defaults to `defaultUser`.
+records in `<dataDir>/ndx.sqlite`. WebSocket framing, notification mapping,
+dashboard rendering, request param parsing, runtime-event predicates, and
+bootstrap formatting live under `src/session/server/`. The default data
+directory is `/home/.ndx/system`; `dataPath` overrides it and legacy
+`sessionPath` is accepted as the same override. Missing user defaults to
+`defaultUser`.
 
-`session/list` scans SQLite and merges matching persisted live
-sessions with saved records for a requested user and resolved `cwd`. Workspace numbers
-are monotonically increasing sequence values assigned on the first user prompt,
-not temporary list indexes. `session/restore` reloads saved runtime events,
-rebuilds model conversation history from prior user turns, assistant messages,
-tool calls, and tool results, creates an `AgentRuntime` with the original
-session id, and claims the session owner row. `session/delete` marks a
+`session/list` reads indexed `sessions` projection rows and merges matching
+persisted live sessions for a requested user and resolved `cwd`. Workspace
+numbers are monotonically increasing sequence values assigned from
+`projects.next_sequence` on the first user prompt, not temporary list indexes.
+`session/restore` reloads saved runtime events for client replay, rebuilds
+model conversation history from `session_context_items`, creates an
+`AgentRuntime` with the original session id, and claims the session owner row.
+`session/delete` marks a
 non-current session deleted and clears its owner row. A server that still holds
 the deleted session checks SQLite when it receives a prompt and when a response
 reaches a terminal event; if deleted, it emits
@@ -131,9 +135,11 @@ belong to the session server so CLI, TUI, VS Code, and other clients observe the
 same source of truth.
 
 `SqliteSessionStore` owns schema initialization, default account creation,
-account password checks, session rows, event append, soft delete, and ownership
-claiming. It enables WAL, foreign keys, and a busy timeout for concurrent
-socket-server processes.
+account password checks, session rows, event append, context-item append, soft
+delete, and ownership claiming. It enables WAL, foreign keys, a busy timeout,
+and indexes for user/workspace list, session event replay, turn lookup, and
+context replay. Existing databases are migrated in place with projection
+columns and context rows backfilled from `session_events`.
 
 Socket close is also a persistence boundary. When a connection disappears and a
 persisted session has no subscribers left, the server records

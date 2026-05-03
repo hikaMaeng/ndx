@@ -21,7 +21,7 @@ import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import {
   SqliteSessionStore,
   type StoredSession,
-  type StoredSessionListEntry,
+  type StoredSessionContext,
 } from "./sqlite-store.js";
 import {
   BUILT_IN_SLASH_COMMANDS,
@@ -30,14 +30,13 @@ import {
   type SlashCommandExecution,
   type SlashCommandResult,
 } from "./commands/registry.js";
-import type { RuntimeEvent, RuntimeEventMsg } from "../shared/protocol.js";
+import type { RuntimeEvent } from "../shared/protocol.js";
 import type {
   ModelClient,
   ModelSettings,
   JsonObject,
   NdxBootstrapReport,
   NdxConfig,
-  SessionContextSummary,
 } from "../shared/types.js";
 import {
   defaultDockerSandboxImage,
@@ -46,6 +45,21 @@ import {
   reclaimDockerSandboxes,
   type DockerSandboxState,
 } from "./docker-sandbox.js";
+import {
+  deletedSessionNotification,
+  runtimeNotification,
+  type JsonRpcNotification,
+} from "./server/notifications.js";
+import { renderDashboardHtml } from "./server/dashboard.js";
+import { formatBootstrap, formatContext } from "./server/bootstrap-format.js";
+import {
+  requiredStringParam,
+  sessionIdParam,
+  slashCommandExecution,
+  stringParam,
+} from "./server/params.js";
+import { eventTurnId, isTerminalEvent } from "./server/runtime-events.js";
+import { WebSocketConnection } from "./server/websocket.js";
 
 type JsonRpcId = number | string | null;
 
@@ -59,11 +73,6 @@ interface JsonRpcError {
   code: number;
   message: string;
   data?: unknown;
-}
-
-interface JsonRpcNotification {
-  method: string;
-  params?: unknown;
 }
 
 /** Construction options for the live ndx WebSocket session server. */
@@ -133,6 +142,7 @@ interface PersistedSessionState {
   createdAt: number;
   updatedAt: number;
   events: RuntimeEvent[];
+  contextEvents: RuntimeEvent[];
   sequence: number;
   title: string;
 }
@@ -257,254 +267,14 @@ export class SessionServer {
   }
 
   private renderDashboardHtml(): string {
-    const version = this.options.packageVersion ?? readPackageVersion();
-    const socketUrl = this.address?.url ?? "not listening";
-    const dashboardUrl = this.address?.dashboardUrl ?? "not listening";
-    const sources =
-      this.sources.length === 0
-        ? "<li>None</li>"
-        : this.sources
-            .map((source) => `<li><code>${escapeHtml(source)}</code></li>`)
-            .join("");
-    const bootstrapRows = this.bootstrap.elements
-      .map(
-        (element) =>
-          `<li><span>${escapeHtml(element.status)}</span><code>${escapeHtml(element.name)}</code><small>${escapeHtml(element.path)}</small></li>`,
-      )
-      .join("");
-    return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>NDX Dashboard</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #f7f8f5;
-        color: #1f2428;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        background: #f7f8f5;
-        color: #1f2428;
-      }
-      .shell {
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: 248px minmax(0, 1fr);
-      }
-      aside {
-        border-right: 1px solid #d7ddd2;
-        background: #ffffff;
-        padding: 24px 18px;
-      }
-      .brand {
-        margin-bottom: 28px;
-      }
-      .brand strong {
-        display: block;
-        font-size: 30px;
-        line-height: 1;
-      }
-      .brand small {
-        display: block;
-        margin-top: 6px;
-        color: #647067;
-        font-size: 13px;
-      }
-      nav {
-        display: grid;
-        gap: 10px;
-      }
-      button {
-        width: 100%;
-        min-height: 42px;
-        border: 1px solid #cbd4c6;
-        border-radius: 6px;
-        background: #eef3ed;
-        color: #1f2428;
-        font: inherit;
-        font-weight: 650;
-        text-align: left;
-        padding: 10px 12px;
-        cursor: pointer;
-      }
-      button:hover { background: #e2ebdf; }
-      button.danger {
-        border-color: #e1b7ad;
-        background: #fff0ec;
-      }
-      button.danger:hover { background: #ffe3dc; }
-      main {
-        padding: 28px;
-      }
-      .hero {
-        display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-        gap: 24px;
-        align-items: start;
-      }
-      h1 {
-        margin: 0 0 14px;
-        font-size: 28px;
-        line-height: 1.15;
-      }
-      h2 {
-        margin: 0 0 12px;
-        font-size: 16px;
-      }
-      pre {
-        margin: 0;
-        overflow: auto;
-        border: 1px solid #d7ddd2;
-        border-radius: 6px;
-        background: #151a1e;
-        color: #d9f3df;
-        padding: 18px;
-        font: 14px/1.35 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-      }
-      section {
-        margin-bottom: 22px;
-      }
-      dl {
-        display: grid;
-        grid-template-columns: 128px minmax(0, 1fr);
-        gap: 8px 14px;
-        margin: 0;
-      }
-      dt {
-        color: #647067;
-        font-weight: 650;
-      }
-      dd {
-        margin: 0;
-        min-width: 0;
-        overflow-wrap: anywhere;
-      }
-      code {
-        font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-      }
-      ul {
-        margin: 0;
-        padding-left: 18px;
-      }
-      .bootstrap-list {
-        display: grid;
-        gap: 8px;
-        padding-left: 0;
-        list-style: none;
-      }
-      .bootstrap-list li {
-        display: grid;
-        grid-template-columns: 72px minmax(120px, 180px) minmax(0, 1fr);
-        gap: 10px;
-        align-items: baseline;
-      }
-      .bootstrap-list span {
-        color: #346b45;
-        font-size: 13px;
-        font-weight: 700;
-      }
-      .bootstrap-list small {
-        color: #647067;
-        overflow-wrap: anywhere;
-      }
-      [role="status"], [role="alert"] {
-        min-height: 24px;
-        margin-top: 16px;
-        color: #346b45;
-        font-weight: 650;
-      }
-      [role="alert"] { color: #a33a27; }
-      @media (max-width: 760px) {
-        .shell { grid-template-columns: 1fr; }
-        aside {
-          position: static;
-          border-right: 0;
-          border-bottom: 1px solid #d7ddd2;
-        }
-        .hero { grid-template-columns: 1fr; }
-        dl { grid-template-columns: 1fr; }
-        .bootstrap-list li { grid-template-columns: 1fr; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="shell">
-      <aside aria-label="Dashboard menu">
-        <div class="brand" aria-label="NDX version">
-          <strong>NDX</strong>
-          <small>Version ${escapeHtml(version)}</small>
-        </div>
-        <nav aria-label="Server actions">
-          <button type="button" id="reload-button">Reload</button>
-          <button type="button" id="exit-button" class="danger">Exit</button>
-        </nav>
-        <p id="action-status" role="status" data-testid="dashboard-action-status">Dashboard is running.</p>
-      </aside>
-      <main aria-labelledby="dashboard-title" data-testid="ndx-dashboard">
-        <div class="hero">
-          <section aria-labelledby="dashboard-title">
-            <h1 id="dashboard-title">Server Dashboard</h1>
-            <pre aria-label="NDX ASCII art">${DASHBOARD_ASCII_ART}</pre>
-          </section>
-          <section aria-labelledby="server-info-title">
-            <h2 id="server-info-title">Server Information</h2>
-            <dl>
-              <dt>Socket</dt>
-              <dd><code>${escapeHtml(socketUrl)}</code></dd>
-              <dt>Dashboard</dt>
-              <dd><code>${escapeHtml(dashboardUrl)}</code></dd>
-              <dt>Project</dt>
-              <dd><code>${escapeHtml(resolve(this.options.cwd))}</code></dd>
-              <dt>Model</dt>
-              <dd><code>${escapeHtml(this.config.model)}</code></dd>
-              <dt>Bootstrap</dt>
-              <dd>${escapeHtml(new Date(this.bootstrap.checkedAt).toISOString())}</dd>
-            </dl>
-          </section>
-        </div>
-        <section aria-labelledby="sources-title">
-          <h2 id="sources-title">Recognized Sources</h2>
-          <ul data-testid="dashboard-sources">${sources}</ul>
-        </section>
-        <section aria-labelledby="bootstrap-title">
-          <h2 id="bootstrap-title">Bootstrap Elements</h2>
-          <ul class="bootstrap-list" data-testid="dashboard-bootstrap">${bootstrapRows}</ul>
-        </section>
-      </main>
-    </div>
-    <script>
-      const status = document.getElementById("action-status");
-      async function postAction(path, pending) {
-        status.setAttribute("role", "status");
-        status.textContent = pending;
-        const response = await fetch(path, { method: "POST" });
-        const body = await response.json();
-        if (!response.ok || body.ok === false) {
-          status.setAttribute("role", "alert");
-          status.textContent = body.message || "Action failed.";
-          return body;
-        }
-        status.textContent = body.message || "Action completed.";
-        return body;
-      }
-      document.getElementById("reload-button").addEventListener("click", async () => {
-        const body = await postAction("/api/reload", "Reloading configuration.");
-        if (body.ok !== false) {
-          window.location.reload();
-        }
-      });
-      document.getElementById("exit-button").addEventListener("click", () => {
-        void postAction("/api/exit", "Requesting server exit.");
-      });
-    </script>
-  </body>
-</html>`;
+    return renderDashboardHtml({
+      address: this.address,
+      bootstrap: this.bootstrap,
+      config: this.config,
+      cwd: this.options.cwd,
+      packageVersion: this.options.packageVersion ?? readPackageVersion(),
+      sources: this.sources,
+    });
   }
 
   private clientContext(
@@ -1445,7 +1215,7 @@ export class SessionServer {
       config,
       client: this.options.createClient(config),
       sessionId: persisted.id,
-      history: conversationHistoryFromRuntimeEvents(persisted.events),
+      history: conversationHistoryFromRuntimeEvents(persisted.contextEvents),
       sources: this.sources,
       bootstrap: this.bootstrap,
     });
@@ -1541,10 +1311,7 @@ export class SessionServer {
   ): SessionListEntry[] {
     const normalizedCwd = resolve(cwd);
     const byId = new Map<string, Omit<SessionListEntry, "number">>();
-    for (const persisted of this.readPersistedSessions()) {
-      if (persisted.user !== user || resolve(persisted.cwd) !== normalizedCwd) {
-        continue;
-      }
+    for (const persisted of this.store.listSessions(user, normalizedCwd)) {
       byId.set(persisted.id, {
         id: persisted.id,
         user: persisted.user,
@@ -1553,7 +1320,7 @@ export class SessionServer {
         status: persisted.status,
         createdAt: persisted.createdAt,
         updatedAt: persisted.updatedAt,
-        eventCount: persisted.events.length,
+        eventCount: persisted.eventCount,
         live: false,
         title: persisted.title,
       });
@@ -1932,14 +1699,24 @@ export class SessionServer {
   }
 
   private readPersistedSessions(): PersistedSessionState[] {
-    return this.store.readSessions().map(storedSessionToPersisted);
+    return this.store
+      .readSessions()
+      .map((session) =>
+        storedSessionToPersisted(session, this.contextForSession(session.id)),
+      );
   }
 
   private readPersistedSession(
     sessionId: string,
   ): PersistedSessionState | undefined {
     const stored = this.store.readSession(sessionId);
-    return stored === undefined ? undefined : storedSessionToPersisted(stored);
+    return stored === undefined
+      ? undefined
+      : storedSessionToPersisted(stored, this.contextForSession(sessionId));
+  }
+
+  private contextForSession(sessionId: string): StoredSessionContext {
+    return this.store.readSessionContext(sessionId) ?? { events: [] };
   }
 
   private ensureSessionPersisted(session: LiveSession, prompt: string): void {
@@ -1967,12 +1744,8 @@ export class SessionServer {
   }
 
   private nextSequenceForCwd(user: string, cwd: string): number {
-    const normalizedCwd = resolve(cwd);
-    const maxSequence = this.readPersistedSessions()
-      .filter(
-        (session) =>
-          session.user === user && resolve(session.cwd) === normalizedCwd,
-      )
+    const maxSequence = this.store
+      .listSessions(user, resolve(cwd))
       .reduce((max, session) => Math.max(max, session.sequence), 0);
     return maxSequence + 1;
   }
@@ -2025,7 +1798,7 @@ export class SessionServer {
         config,
         client: this.options.createClient(config),
         sessionId: persisted.id,
-        history: conversationHistoryFromRuntimeEvents(persisted.events),
+        history: conversationHistoryFromRuntimeEvents(persisted.contextEvents),
         sources: this.sources,
         bootstrap: this.bootstrap,
       }),
@@ -2208,6 +1981,7 @@ function listenHttp(
 
 function storedSessionToPersisted(
   session: StoredSession,
+  context: StoredSessionContext,
 ): PersistedSessionState {
   return {
     id: session.id,
@@ -2218,34 +1992,10 @@ function storedSessionToPersisted(
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     events: session.events,
+    contextEvents: context.events,
     sequence: session.sequence,
     title: session.title,
   };
-}
-
-function sanitizePathSegment(value: string): string {
-  const sanitized = value.replace(/[^A-Za-z0-9._-]/g, "_");
-  return sanitized.length === 0 ? "defaultUser" : sanitized;
-}
-
-function userFromLogKey(logKey: string): string {
-  return logKey.split("/")[0] || "defaultUser";
-}
-
-const DASHBOARD_ASCII_ART = [
-  String.raw` _   _ ____  __  __`,
-  String.raw`| \ | |  _ \ \ \/ /`,
-  String.raw`|  \| | | | | \  /`,
-  String.raw`| |\  | |_| | /  \ `,
-  String.raw`|_| \_|____/ /_/\_\ `,
-].join("\n");
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function readPackageVersion(): string {
@@ -2271,204 +2021,6 @@ function sleepSync(ms: number): void {
   Atomics.wait(signal, 0, 0, ms);
 }
 
-class WebSocketConnection {
-  private buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-  user = "defaultUser";
-  clientId: string = randomUUID();
-  authenticated = false;
-
-  constructor(
-    private readonly socket: Socket,
-    private readonly onText: (message: string) => void,
-  ) {
-    socket.on("data", (chunk) => this.handleData(chunk));
-  }
-
-  sendJson(payload: unknown): void {
-    if (this.socket.destroyed || this.socket.writableEnded) {
-      return;
-    }
-    this.socket.write(encodeFrame(0x1, Buffer.from(JSON.stringify(payload))));
-  }
-
-  close(): void {
-    if (!this.socket.destroyed && !this.socket.writableEnded) {
-      this.socket.end(encodeFrame(0x8, Buffer.alloc(0)));
-    }
-  }
-
-  destroy(): void {
-    this.socket.destroy();
-  }
-
-  private handleData(chunk: Buffer): void {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    while (true) {
-      const frame = readFrame(this.buffer);
-      if (frame === undefined) {
-        return;
-      }
-      this.buffer = frame.remaining;
-      if (frame.opcode === 0x8) {
-        this.close();
-        return;
-      }
-      if (frame.opcode === 0x9) {
-        this.socket.write(encodeFrame(0xa, frame.payload));
-        continue;
-      }
-      if (frame.opcode !== 0x1) {
-        continue;
-      }
-      this.onText(frame.payload.toString("utf8"));
-    }
-  }
-}
-
-interface DecodedFrame {
-  opcode: number;
-  payload: Buffer;
-  remaining: Buffer;
-}
-
-function readFrame(buffer: Buffer): DecodedFrame | undefined {
-  if (buffer.length < 2) {
-    return undefined;
-  }
-  const opcode = buffer[0] & 0x0f;
-  const masked = (buffer[1] & 0x80) !== 0;
-  let length = buffer[1] & 0x7f;
-  let offset = 2;
-  if (length === 126) {
-    if (buffer.length < offset + 2) {
-      return undefined;
-    }
-    length = buffer.readUInt16BE(offset);
-    offset += 2;
-  } else if (length === 127) {
-    if (buffer.length < offset + 8) {
-      return undefined;
-    }
-    const bigLength = buffer.readBigUInt64BE(offset);
-    if (bigLength > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new Error("WebSocket frame is too large");
-    }
-    length = Number(bigLength);
-    offset += 8;
-  }
-  const maskLength = masked ? 4 : 0;
-  if (buffer.length < offset + maskLength + length) {
-    return undefined;
-  }
-  const mask = masked ? buffer.subarray(offset, offset + 4) : undefined;
-  offset += maskLength;
-  const payload = Buffer.from(buffer.subarray(offset, offset + length));
-  if (mask !== undefined) {
-    for (let i = 0; i < payload.length; i += 1) {
-      payload[i] ^= mask[i % 4];
-    }
-  }
-  return {
-    opcode,
-    payload,
-    remaining: buffer.subarray(offset + length),
-  };
-}
-
-function encodeFrame(opcode: number, payload: Buffer): Buffer {
-  const length = payload.length;
-  if (length < 126) {
-    return Buffer.concat([Buffer.from([0x80 | opcode, length]), payload]);
-  }
-  if (length <= 0xffff) {
-    const header = Buffer.alloc(4);
-    header[0] = 0x80 | opcode;
-    header[1] = 126;
-    header.writeUInt16BE(length, 2);
-    return Buffer.concat([header, payload]);
-  }
-  const header = Buffer.alloc(10);
-  header[0] = 0x80 | opcode;
-  header[1] = 127;
-  header.writeBigUInt64BE(BigInt(length), 2);
-  return Buffer.concat([header, payload]);
-}
-
-function runtimeNotification(
-  sessionId: string,
-  msg: RuntimeEventMsg,
-): JsonRpcNotification {
-  const params = { sessionId, event: msg };
-  switch (msg.type) {
-    case "session_configured":
-      return { method: "session/configured", params };
-    case "turn_started":
-      return { method: "turn/started", params };
-    case "agent_message":
-      return { method: "item/agentMessage", params };
-    case "tool_call":
-      return { method: "item/toolCall", params };
-    case "tool_result":
-      return { method: "item/toolResult", params };
-    case "token_count":
-      return { method: "session/tokenUsage/updated", params };
-    case "turn_complete":
-      return { method: "turn/completed", params };
-    case "turn_aborted":
-      return { method: "turn/aborted", params };
-    case "warning":
-      return { method: "warning", params };
-    case "error":
-      return { method: "error", params };
-  }
-}
-
-function deletedSessionNotification(
-  sessionId: string,
-  message = "session was deleted",
-): JsonRpcNotification {
-  return {
-    method: "session/deleted",
-    params: {
-      sessionId,
-      message,
-    },
-  };
-}
-
-function requiredStringParam(params: unknown, name: string): string {
-  const value = stringParam(params, name);
-  if (value === undefined) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
-}
-
-function sessionIdParam(params: unknown): string {
-  return stringParam(params, "sessionId") ?? requiredStringParam(params, "id");
-}
-
-function stringParam(params: unknown, name: string): string | undefined {
-  if (params === null || typeof params !== "object") {
-    return undefined;
-  }
-  const value = (params as Record<string, unknown>)[name];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function slashCommandExecution(params: unknown): SlashCommandExecution {
-  const name = requiredStringParam(params, "name");
-  if (name.startsWith("/")) {
-    throw new Error("command name must not include a leading slash");
-  }
-  return {
-    name,
-    args: stringParam(params, "args"),
-    sessionId: stringParam(params, "sessionId"),
-    cwd: stringParam(params, "cwd"),
-  };
-}
-
 function titleFromPrompt(prompt: string): string {
   const normalized = prompt.replace(/\s+/g, " ").trim();
   if (normalized.length === 0) {
@@ -2477,142 +2029,10 @@ function titleFromPrompt(prompt: string): string {
   return normalized.length > 64 ? `${normalized.slice(0, 61)}...` : normalized;
 }
 
-function recordTimestamp(record: Record<string, unknown>): number {
-  for (const key of [
-    "recordedAt",
-    "requestedAt",
-    "disconnectedAt",
-    "restoredAt",
-    "subscribedAt",
-    "createdAt",
-    "persistedAt",
-  ]) {
-    const value = record[key];
-    if (typeof value === "number") {
-      return value;
-    }
-  }
-  return 0;
-}
-
-function isRuntimeEvent(value: unknown): value is RuntimeEvent {
-  if (value === null || typeof value !== "object") {
-    return false;
-  }
-  const event = value as { id?: unknown; msg?: unknown };
-  return (
-    typeof event.id === "string" &&
-    event.msg !== null &&
-    typeof event.msg === "object"
-  );
-}
-
-function statusFromEvent(
-  event: RuntimeEvent,
-  fallback: LiveSession["status"],
-): LiveSession["status"] {
-  switch (event.msg.type) {
-    case "turn_started":
-      return "running";
-    case "turn_complete":
-      return "idle";
-    case "turn_aborted":
-      return "aborted";
-    case "error":
-      return "failed";
-    default:
-      return fallback;
-  }
-}
-
-function isTerminalEvent(event: RuntimeEvent): boolean {
-  return (
-    event.msg.type === "turn_complete" ||
-    event.msg.type === "turn_aborted" ||
-    event.msg.type === "error"
-  );
-}
-
-function eventTurnId(event: RuntimeEvent): string | undefined {
-  const value = (event.msg as { turnId?: unknown }).turnId;
-  return typeof value === "string" ? value : undefined;
-}
-
-function parseThreadStatus(value: unknown): LiveSession["status"] | undefined {
-  return value === "idle" ||
-    value === "running" ||
-    value === "aborted" ||
-    value === "failed"
-    ? value
-    : undefined;
-}
-
 function rpcError(code: number, message: string, data?: unknown): JsonRpcError {
   return { code, message, data: data instanceof Error ? data.message : data };
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function formatBootstrap(bootstrap: NdxBootstrapReport): string {
-  const installed = bootstrap.elements.filter(
-    (element) => element.status === "installed",
-  );
-  const existing = bootstrap.elements.length - installed.length;
-  const rows = summarizedBootstrapRows(bootstrap);
-  return [
-    `[bootstrap] ${bootstrap.globalDir}`,
-    `  installed: ${installed.length}`,
-    `  existing: ${existing}`,
-    ...rows,
-  ].join("\n");
-}
-
-function formatContext(context: SessionContextSummary | undefined): string {
-  if (context === undefined) {
-    return "restored 0 items, token estimate unavailable";
-  }
-  if (context.maxContextTokens === undefined) {
-    return `restored ${context.restoredItems} items, ${context.estimatedTokens}/unknown tokens`;
-  }
-  const percent =
-    context.maxContextTokens <= 0
-      ? 0
-      : (context.estimatedTokens / context.maxContextTokens) * 100;
-  return `restored ${context.restoredItems} items, ${context.estimatedTokens}/${context.maxContextTokens} tokens (${percent.toFixed(1)}%)`;
-}
-
-function summarizedBootstrapRows(bootstrap: NdxBootstrapReport): string[] {
-  const byName = new Map(
-    bootstrap.elements.map((element) => [element.name, element]),
-  );
-  const used = new Set<string>();
-  const rows: string[] = [];
-  for (const element of bootstrap.elements) {
-    if (used.has(element.name)) {
-      continue;
-    }
-    if (element.name.endsWith(" tool")) {
-      const base = element.name.slice(0, -" tool".length);
-      const manifest = byName.get(`${base} manifest`);
-      const runtime = byName.get(`${base} runtime`);
-      used.add(element.name);
-      used.add(`${base} manifest`);
-      used.add(`${base} runtime`);
-      rows.push(
-        `  ${element.status}: ${base} tool (${element.path}; manifest: ${manifest?.status ?? "missing"}, runtime: ${runtime?.status ?? "missing"})`,
-      );
-      continue;
-    }
-    if (
-      element.name.endsWith(" manifest") ||
-      element.name.endsWith(" runtime")
-    ) {
-      continue;
-    }
-    used.add(element.name);
-    rows.push(`  ${element.status}: ${element.name} (${element.path})`);
-  }
-  return rows;
 }

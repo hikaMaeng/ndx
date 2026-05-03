@@ -29,6 +29,10 @@ export interface StoredSession {
   title: string;
 }
 
+export interface StoredSessionContext {
+  events: RuntimeEvent[];
+}
+
 export interface StoredSessionListEntry {
   id: string;
   user: string;
@@ -169,9 +173,10 @@ export class SqliteSessionStore {
     model: string;
     createdAt: number;
   }): number {
-    this.transaction(() => {
+    return this.transaction(() => {
       this.ensureProject(input.user, input.cwd, input.createdAt);
-      const sequence = this.nextSequence(input.user, input.cwd);
+      const project = projectId(input.user, input.cwd);
+      const sequence = this.claimNextSequence(project);
       this.db
         .prepare(
           [
@@ -183,7 +188,7 @@ export class SqliteSessionStore {
         .run(
           input.id,
           input.user,
-          projectId(input.user, input.cwd),
+          project,
           sequence,
           input.title,
           input.status,
@@ -191,7 +196,7 @@ export class SqliteSessionStore {
           input.createdAt,
           input.createdAt,
         );
-      this.insertEvent(input.id, "session_started", {
+      this.insertEvent(input.id, "session_started", undefined, {
         type: "session_started",
         sessionId: input.id,
         user: input.user,
@@ -200,8 +205,8 @@ export class SqliteSessionStore {
         title: input.title,
         createdAt: input.createdAt,
       });
+      return sequence;
     });
-    return this.nextSequence(input.user, input.cwd) - 1;
   }
 
   appendRecord(
@@ -209,8 +214,16 @@ export class SqliteSessionStore {
     type: string,
     record: Record<string, unknown>,
   ) {
-    this.insertEvent(sessionId, type, record);
-    this.applySessionMutation(sessionId, type, record);
+    this.transaction(() => {
+      const eventId = this.insertEvent(
+        sessionId,
+        type,
+        runtimeEvent(record),
+        record,
+      );
+      this.insertContextItem(sessionId, eventId, record);
+      this.applySessionMutation(sessionId, type, eventId, record);
+    });
   }
 
   listSessions(user: string, cwd: string): StoredSessionListEntry[] {
@@ -218,8 +231,7 @@ export class SqliteSessionStore {
       .prepare(
         [
           "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
-          "s.updated_at as updatedAt, s.sequence, s.title,",
-          "(select count(1) from session_events e where e.session_id = s.id and e.type = 'runtime_event') as eventCount",
+          "s.updated_at as updatedAt, s.sequence, s.title, s.event_count as eventCount",
           "from sessions s join projects p on p.id = s.project_id",
           "where s.user_id = ? and p.cwd = ? and s.deleted_at is null",
           "order by s.sequence asc",
@@ -267,6 +279,15 @@ export class SqliteSessionStore {
     }));
   }
 
+  readSessionContext(sessionId: string): StoredSessionContext | undefined {
+    if (!this.sessionExists(sessionId)) {
+      return undefined;
+    }
+    return {
+      events: this.contextEvents(sessionId),
+    };
+  }
+
   deleteSession(sessionId: string): void {
     this.db
       .prepare(
@@ -279,7 +300,11 @@ export class SqliteSessionStore {
   }
 
   sessionExists(sessionId: string): boolean {
-    return this.readSession(sessionId) !== undefined;
+    return (
+      this.db
+        .prepare("select 1 from sessions where id = ? and deleted_at is null")
+        .get(sessionId) !== undefined
+    );
   }
 
   claimOwner(sessionId: string, serverId: string): void {
@@ -322,6 +347,7 @@ export class SqliteSessionStore {
         user_id text not null references users(id) on delete cascade,
         cwd text not null,
         created_at integer not null,
+        next_sequence integer not null default 1,
         unique(user_id, cwd)
       );
       create table if not exists clients (
@@ -352,14 +378,28 @@ export class SqliteSessionStore {
         created_at integer not null,
         updated_at integer not null,
         deleted_at integer,
+        event_count integer not null default 0,
+        last_event_id integer,
+        last_turn_id text,
         unique(user_id, project_id, sequence)
       );
       create table if not exists session_events (
         id integer primary key autoincrement,
         session_id text not null references sessions(id) on delete cascade,
         type text not null,
+        msg_type text,
+        turn_id text,
         payload_json text not null,
         created_at integer not null
+      );
+      create table if not exists session_context_items (
+        id integer primary key autoincrement,
+        session_id text not null references sessions(id) on delete cascade,
+        event_id integer not null references session_events(id) on delete cascade,
+        item_seq integer not null,
+        payload_json text not null,
+        created_at integer not null,
+        unique(session_id, item_seq)
       );
       create table if not exists session_owners (
         session_id text primary key references sessions(id) on delete cascade,
@@ -367,6 +407,17 @@ export class SqliteSessionStore {
         claimed_at integer not null
       );
     `);
+    this.migrateProjectionSchema();
+    this.db.exec(`
+      create index if not exists idx_projects_user_cwd on projects(user_id, cwd);
+      create index if not exists idx_sessions_project_sequence_live on sessions(project_id, sequence) where deleted_at is null;
+      create index if not exists idx_sessions_user_project_live on sessions(user_id, project_id) where deleted_at is null;
+      create index if not exists idx_session_events_session_id on session_events(session_id, id);
+      create index if not exists idx_session_events_type on session_events(session_id, type, id);
+      create index if not exists idx_session_events_turn on session_events(session_id, turn_id, id);
+      create index if not exists idx_session_context_items_session_seq on session_context_items(session_id, item_seq);
+    `);
+    this.backfillProjectionRows();
     if (!this.accountExists("defaultUser")) {
       this.createAccount("defaultUser", "");
     }
@@ -378,39 +429,76 @@ export class SqliteSessionStore {
     }
     this.db
       .prepare(
-        "insert or ignore into projects (id, user_id, cwd, created_at) values (?, ?, ?, ?)",
+        "insert or ignore into projects (id, user_id, cwd, created_at, next_sequence) values (?, ?, ?, ?, 1)",
       )
       .run(projectId(user, cwd), user, cwd, now);
   }
 
-  private nextSequence(user: string, cwd: string): number {
+  private claimNextSequence(project: string): number {
+    this.db
+      .prepare(
+        "update projects set next_sequence = next_sequence + 1 where id = ?",
+      )
+      .run(project);
     const row = this.db
       .prepare(
-        [
-          "select coalesce(max(s.sequence), 0) + 1 as next",
-          "from sessions s join projects p on p.id = s.project_id",
-          "where s.user_id = ? and p.cwd = ?",
-        ].join(" "),
+        "select next_sequence - 1 as sequence from projects where id = ?",
       )
-      .get(user, cwd) as { next?: unknown } | undefined;
-    return typeof row?.next === "number" ? row.next : 1;
+      .get(project) as { sequence?: unknown } | undefined;
+    if (typeof row?.sequence !== "number") {
+      throw new Error(`missing project sequence row: ${project}`);
+    }
+    return row.sequence;
   }
 
   private insertEvent(
     sessionId: string,
     type: string,
+    event: RuntimeEvent | undefined,
     payload: Record<string, unknown>,
+  ): number {
+    const msg = event?.msg;
+    const result = this.db
+      .prepare(
+        "insert into session_events (session_id, type, msg_type, turn_id, payload_json, created_at) values (?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        sessionId,
+        type,
+        msg?.type ?? null,
+        eventTurnId(event) ?? null,
+        JSON.stringify(payload),
+        Date.now(),
+      );
+    return result.lastInsertRowid;
+  }
+
+  private insertContextItem(
+    sessionId: string,
+    eventId: number,
+    record: Record<string, unknown>,
   ): void {
+    const event = runtimeEvent(record);
+    if (event === undefined || !isContextEvent(event)) {
+      return;
+    }
+    const row = this.db
+      .prepare(
+        "select coalesce(max(item_seq), 0) + 1 as next from session_context_items where session_id = ?",
+      )
+      .get(sessionId) as { next?: unknown } | undefined;
+    const next = typeof row?.next === "number" ? row.next : 1;
     this.db
       .prepare(
-        "insert into session_events (session_id, type, payload_json, created_at) values (?, ?, ?, ?)",
+        "insert into session_context_items (session_id, event_id, item_seq, payload_json, created_at) values (?, ?, ?, ?, ?)",
       )
-      .run(sessionId, type, JSON.stringify(payload), Date.now());
+      .run(sessionId, eventId, next, JSON.stringify(event), Date.now());
   }
 
   private applySessionMutation(
     sessionId: string,
     type: string,
+    eventId: number,
     record: Record<string, unknown>,
   ): void {
     const updatedAt = recordTimestamp(record);
@@ -419,9 +507,19 @@ export class SqliteSessionStore {
       if (isRuntimeEvent(event)) {
         this.db
           .prepare(
-            "update sessions set status = ?, updated_at = ? where id = ?",
+            [
+              "update sessions set status = ?, updated_at = ?,",
+              "event_count = event_count + 1, last_event_id = ?, last_turn_id = ?",
+              "where id = ?",
+            ].join(" "),
           )
-          .run(statusFromEvent(event, undefined), updatedAt, sessionId);
+          .run(
+            statusFromEvent(event, undefined),
+            updatedAt,
+            eventId,
+            eventTurnId(event) ?? null,
+            sessionId,
+          );
       }
       return;
     }
@@ -431,9 +529,9 @@ export class SqliteSessionStore {
       if (status !== undefined) {
         this.db
           .prepare(
-            "update sessions set status = ?, updated_at = ? where id = ?",
+            "update sessions set status = ?, updated_at = ?, last_event_id = ? where id = ?",
           )
-          .run(status, updatedAt, sessionId);
+          .run(status, updatedAt, eventId, sessionId);
       }
     }
   }
@@ -447,6 +545,145 @@ export class SqliteSessionStore {
       .map((row) => JSON.parse((row as { payload: string }).payload))
       .map((record) => record.event)
       .filter(isRuntimeEvent);
+  }
+
+  private contextEvents(sessionId: string): RuntimeEvent[] {
+    return this.db
+      .prepare(
+        "select payload_json as payload from session_context_items where session_id = ? order by item_seq asc",
+      )
+      .all(sessionId)
+      .map((row) => JSON.parse((row as { payload: string }).payload))
+      .filter(isRuntimeEvent);
+  }
+
+  private migrateProjectionSchema(): void {
+    for (const statement of [
+      [
+        "projects",
+        "next_sequence",
+        "alter table projects add column next_sequence integer not null default 1",
+      ],
+      [
+        "sessions",
+        "event_count",
+        "alter table sessions add column event_count integer not null default 0",
+      ],
+      [
+        "sessions",
+        "last_event_id",
+        "alter table sessions add column last_event_id integer",
+      ],
+      [
+        "sessions",
+        "last_turn_id",
+        "alter table sessions add column last_turn_id text",
+      ],
+      [
+        "session_events",
+        "msg_type",
+        "alter table session_events add column msg_type text",
+      ],
+      [
+        "session_events",
+        "turn_id",
+        "alter table session_events add column turn_id text",
+      ],
+    ] as const) {
+      const [table, column, sql] = statement;
+      if (!this.hasColumn(table, column)) {
+        this.db.exec(sql);
+      }
+    }
+  }
+
+  private backfillProjectionRows(): void {
+    this.db.exec(`
+      update projects
+      set next_sequence = (
+        select coalesce(max(s.sequence), 0) + 1
+        from sessions s
+        where s.project_id = projects.id
+      )
+      where next_sequence <= 1;
+      update sessions
+      set event_count = (
+        select count(1)
+        from session_events e
+        where e.session_id = sessions.id and e.type = 'runtime_event'
+      )
+      where event_count = 0;
+      update sessions
+      set last_event_id = (
+        select max(e.id)
+        from session_events e
+        where e.session_id = sessions.id
+      )
+      where last_event_id is null;
+    `);
+    this.backfillEventMetadata();
+    this.backfillContextItems();
+  }
+
+  private backfillEventMetadata(): void {
+    const rows = this.db
+      .prepare(
+        "select id, payload_json as payload from session_events where type = 'runtime_event' and (msg_type is null or turn_id is null)",
+      )
+      .all() as Array<{ id: number; payload: string }>;
+    for (const row of rows) {
+      const parsed = JSON.parse(row.payload) as Record<string, unknown>;
+      const event = runtimeEvent(parsed);
+      this.db
+        .prepare(
+          "update session_events set msg_type = ?, turn_id = ? where id = ?",
+        )
+        .run(event?.msg.type ?? null, eventTurnId(event) ?? null, row.id);
+    }
+  }
+
+  private backfillContextItems(): void {
+    const rows = this.db
+      .prepare(
+        [
+          "select e.id, e.session_id as sessionId, e.payload_json as payload",
+          "from session_events e",
+          "left join session_context_items c on c.event_id = e.id",
+          "where e.type = 'runtime_event' and c.id is null",
+          "order by e.session_id asc, e.id asc",
+        ].join(" "),
+      )
+      .all() as Array<{ id: number; sessionId: string; payload: string }>;
+    const nextBySession = new Map<string, number>();
+    for (const row of rows) {
+      const parsed = JSON.parse(row.payload) as Record<string, unknown>;
+      const event = runtimeEvent(parsed);
+      if (event === undefined || !isContextEvent(event)) {
+        continue;
+      }
+      let next = nextBySession.get(row.sessionId);
+      if (next === undefined) {
+        const nextRow = this.db
+          .prepare(
+            "select coalesce(max(item_seq), 0) + 1 as next from session_context_items where session_id = ?",
+          )
+          .get(row.sessionId) as { next?: unknown } | undefined;
+        next = typeof nextRow?.next === "number" ? nextRow.next : 1;
+      }
+      this.db
+        .prepare(
+          "insert or ignore into session_context_items (session_id, event_id, item_seq, payload_json, created_at) values (?, ?, ?, ?, ?)",
+        )
+        .run(row.sessionId, row.id, next, JSON.stringify(event), Date.now());
+      nextBySession.set(row.sessionId, next + 1);
+    }
+  }
+
+  private hasColumn(table: string, column: string): boolean {
+    return this.db
+      .prepare(`pragma table_info(${table})`)
+      .all()
+      .some((row) => (row as { name?: unknown }).name === column);
   }
 
   private transaction<T>(fn: () => T): T {
@@ -486,12 +723,38 @@ function isRuntimeEvent(value: unknown): value is RuntimeEvent {
   if (value === null || typeof value !== "object") {
     return false;
   }
-  const event = value as { msg?: unknown };
+  const event = value as { id?: unknown; msg?: unknown };
   return (
+    typeof event.id === "string" &&
     event.msg !== null &&
     typeof event.msg === "object" &&
     typeof (event.msg as { type?: unknown }).type === "string"
   );
+}
+
+function runtimeEvent(
+  record: Record<string, unknown>,
+): RuntimeEvent | undefined {
+  const event = record.event;
+  return isRuntimeEvent(event) ? event : undefined;
+}
+
+function isContextEvent(event: RuntimeEvent): boolean {
+  return (
+    event.msg.type === "turn_started" ||
+    event.msg.type === "agent_message" ||
+    event.msg.type === "tool_call" ||
+    event.msg.type === "tool_result" ||
+    event.msg.type === "turn_complete"
+  );
+}
+
+function eventTurnId(event: RuntimeEvent | undefined): string | undefined {
+  if (event === undefined) {
+    return undefined;
+  }
+  const value = (event.msg as { turnId?: unknown }).turnId;
+  return typeof value === "string" ? value : undefined;
 }
 
 function statusFromEvent(
