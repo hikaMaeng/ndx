@@ -135,11 +135,21 @@ belong to the session server so CLI, TUI, VS Code, and other clients observe the
 same source of truth.
 
 `SqliteSessionStore` owns schema initialization, default account creation,
-account password checks, session rows, event append, context-item append, soft
-delete, and ownership claiming. It enables WAL, foreign keys, a busy timeout,
-and indexes for user/workspace list, session event replay, turn lookup, and
-context replay. Existing databases are migrated in place with projection
-columns and context rows backfilled from `session_events`.
+account password checks, session rows, event append, context-item append,
+context mode state, compact records, soft delete, and ownership claiming. It
+enables WAL, foreign keys, a busy timeout, and indexes for user/workspace list,
+session event replay, turn lookup, owner lookup, and context replay. Existing
+databases are migrated in place with projection columns, context rows, and
+partition rows backfilled from `session_events`.
+
+Context replay is DB-originated on each saved turn. The server calls
+`readModelContext` before submitting a prompt so `/lite` and `/compact` changes
+do not depend on stale in-memory history. `session_context_state.compact_event_id`
+is applied first, then lite filtering removes completed prior tool call/result
+rows. `session_context_segments` assigns sessions to
+`session_context_items_00` through `session_context_items_0f` by user/workspace
+segment key; this keeps append and replay indexes smaller while preserving the
+legacy `session_context_items` projection for migration and tests.
 
 Socket close is also a persistence boundary. When a connection disappears and a
 persisted session has no subscribers left, the server records

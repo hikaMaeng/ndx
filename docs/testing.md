@@ -24,6 +24,12 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
 - Object model catalogs with aliases, provider-facing names, effort, thinking, and sampling parameters.
 - `/model`, `/effort`, and `/think` command state changes for numbered model,
   effort, and thinking mode selection.
+- `/lite on` filters completed prior tool call/result records from model
+  context while leaving SQLite event and context rows intact.
+- `/lite off` refuses to expand context when the active model's `maxContext`
+  would be exceeded.
+- `/compact` writes a `context_compact` record and restarts future model
+  context from the compact summary plus later turns.
 - Session server keeps sessions on the base config while provider routing happens per request.
 - Missing global and project settings fail in the loader without falling back to a default model.
 - TTY setup wizard creates global `/home/.ndx/settings.json` from permission, provider, model, and context answers.
@@ -74,6 +80,9 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
   non-current session deletion.
 - Restore rebuilds provider-facing model conversation history from saved
   context items rather than notification or server-control records.
+- Saved turns rebuild provider-facing history through DB context queries before
+  each prompt; tests should assert compact, lite, and partitioned context rows
+  when context policy changes.
 - SQLite list and ownership checks use indexed session projection rows; tests
   should assert `event_count`, `last_event_id`, and context replay rows when
   persistence behavior changes.

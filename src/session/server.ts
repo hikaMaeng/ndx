@@ -31,6 +31,7 @@ import {
   type SlashCommandResult,
 } from "./commands/registry.js";
 import type { RuntimeEvent } from "../shared/protocol.js";
+import type { ModelConversationItem } from "../model/types.js";
 import type {
   ModelClient,
   ModelSettings,
@@ -142,7 +143,7 @@ interface PersistedSessionState {
   createdAt: number;
   updatedAt: number;
   events: RuntimeEvent[];
-  contextEvents: RuntimeEvent[];
+  contextItems: ModelConversationItem[];
   sequence: number;
   title: string;
 }
@@ -694,7 +695,7 @@ export class SessionServer {
       config,
       client: this.options.createClient(config),
       sessionId: session.id,
-      history: conversationHistoryFromRuntimeEvents(session.events),
+      history: this.historyForSession(session),
       sources: this.sources,
       bootstrap: this.bootstrap,
     });
@@ -891,6 +892,18 @@ export class SessionServer {
           action: "print",
           output: this.configureThink(execution),
         };
+      case "lite":
+        return {
+          handled: true,
+          action: "print",
+          output: this.configureLite(execution),
+        };
+      case "compact":
+        return {
+          handled: true,
+          action: "print",
+          output: this.compactContext(execution),
+        };
       case "init":
         return {
           handled: true,
@@ -999,6 +1012,7 @@ export class SessionServer {
     session.clientIds.add(context.clientId);
     session.subscribers.add(connection);
     this.ensureSessionPersisted(session, prompt);
+    this.refreshRuntimeHistory(session);
     session.status = "running";
     session.updatedAt = Date.now();
     this.appendSessionRecord(session, {
@@ -1215,7 +1229,7 @@ export class SessionServer {
       config,
       client: this.options.createClient(config),
       sessionId: persisted.id,
-      history: conversationHistoryFromRuntimeEvents(persisted.contextEvents),
+      history: persisted.contextItems,
       sources: this.sources,
       bootstrap: this.bootstrap,
     });
@@ -1434,6 +1448,56 @@ export class SessionServer {
     this.setThink(active, this.resolveThinkSelection(args[0]));
     session.updatedAt = Date.now();
     return this.formatThinkSelection(active);
+  }
+
+  private configureLite(execution: SlashCommandExecution): string {
+    const session = this.sessionForCommand(execution.sessionId);
+    if (!session.persisted) {
+      return "lite: unchanged (no saved turns yet)";
+    }
+    const value = (execution.args ?? "").trim();
+    if (value !== "on" && value !== "off") {
+      return "usage: /lite <on|off>";
+    }
+    if (value === "on") {
+      this.store.setLiteMode(session.id, true);
+      this.refreshRuntimeHistory(session);
+      return "lite: on";
+    }
+    const state = this.store.readSessionContext(session.id);
+    if (state?.liteEnabled !== true) {
+      return "lite: off";
+    }
+    const items = this.store.readModelContext(session.id, {
+      liteEnabled: false,
+    });
+    const estimatedTokens = estimateContextTokens(items);
+    const maxContext = session.config.activeModel.maxContext;
+    if (maxContext !== undefined && estimatedTokens > maxContext) {
+      return [
+        "lite: still on",
+        `off would restore about ${estimatedTokens}/${maxContext} context tokens`,
+      ].join("\n");
+    }
+    this.store.setLiteMode(session.id, false);
+    this.refreshRuntimeHistory(session);
+    return maxContext === undefined
+      ? `lite: off (${estimatedTokens} estimated context tokens)`
+      : `lite: off (${estimatedTokens}/${maxContext} estimated context tokens)`;
+  }
+
+  private compactContext(execution: SlashCommandExecution): string {
+    const session = this.sessionForCommand(execution.sessionId);
+    if (!session.persisted) {
+      return "compact: unchanged (no saved turns yet)";
+    }
+    const result = this.store.compactSession(session.id);
+    this.refreshRuntimeHistory(session);
+    return [
+      "compact: created",
+      `event: ${result.eventId}`,
+      `summary: ${estimateTextTokens(result.summary)} estimated tokens`,
+    ].join("\n");
   }
 
   private sessionForCommand(sessionId: string | undefined): LiveSession {
@@ -1716,7 +1780,24 @@ export class SessionServer {
   }
 
   private contextForSession(sessionId: string): StoredSessionContext {
-    return this.store.readSessionContext(sessionId) ?? { events: [] };
+    return (
+      this.store.readSessionContext(sessionId) ?? {
+        events: [],
+        items: [],
+        liteEnabled: false,
+      }
+    );
+  }
+
+  private refreshRuntimeHistory(session: LiveSession): void {
+    session.runtime.replaceHistory(this.historyForSession(session));
+  }
+
+  private historyForSession(session: LiveSession): ModelConversationItem[] {
+    if (session.persisted) {
+      return this.store.readModelContext(session.id);
+    }
+    return conversationHistoryFromRuntimeEvents(session.events);
   }
 
   private ensureSessionPersisted(session: LiveSession, prompt: string): void {
@@ -1798,7 +1879,7 @@ export class SessionServer {
         config,
         client: this.options.createClient(config),
         sessionId: persisted.id,
-        history: conversationHistoryFromRuntimeEvents(persisted.contextEvents),
+        history: persisted.contextItems,
         sources: this.sources,
         bootstrap: this.bootstrap,
       }),
@@ -1992,10 +2073,18 @@ function storedSessionToPersisted(
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     events: session.events,
-    contextEvents: context.events,
+    contextItems: context.items,
     sequence: session.sequence,
     title: session.title,
   };
+}
+
+function estimateContextTokens(items: ModelConversationItem[]): number {
+  return estimateTextTokens(JSON.stringify(items));
+}
+
+function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 function readPackageVersion(): string {

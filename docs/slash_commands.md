@@ -18,6 +18,7 @@ The command registry is owned by the ndx TypeScript session server.
 | `/model`                 | choose the active session model by number or ID                        | session built-in |
 | `/effort`                | choose the active model effort by number or value                      | session built-in |
 | `/think`                 | choose active model thinking mode by number or value                   | session built-in |
+| `/lite`                  | toggle lite context mode                                               | session built-in |
 | `/fast`                  | toggle Fast mode to enable fastest inference with increased plan usage | session built-in |
 | `/approvals`             | choose what Codex is allowed to do                                     | session built-in |
 | `/permissions`           | choose what Codex is allowed to do                                     | session built-in |
@@ -92,6 +93,25 @@ default is on. Changing the model resets effort and thinking mode to those
 defaults. Unsupported `/effort` and `/think` calls print that the active model
 does not support the requested control.
 
+`/lite on` enables lightweight model context for the current saved session.
+All events remain in SQLite, but completed prior turns omit `tool_call` and
+`tool_result` records when the next model request is built. The active turn's
+tool follow-up context is not filtered. `/lite off` attempts to restore full
+context after the last compact point; if the estimated context would exceed the
+active model's `maxContext`, the command leaves lite mode enabled.
+
+```text
+/lite on
+/lite off
+```
+
+`/compact` writes a `context_compact` record containing a pure user/assistant
+summary of prior turns. It excludes tool records and initialization/skill
+loading detail. Future model context starts with that compact summary, then
+continues with events recorded after the compact point. A later compact replaces
+the earlier compact point for future context calculation. Lite mode, when on,
+is applied only after the latest compact point.
+
 ## Discovery Layers
 
 Command names are directory names. Each directory must contain `command.json`.
@@ -140,6 +160,8 @@ Implemented now:
 - `/status`
 - `/init`
 - `/events`
+- `/lite`
+- `/compact`
 - `/session`
 - `/restoreSession`
 - `/deleteSession`

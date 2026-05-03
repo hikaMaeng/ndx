@@ -315,6 +315,8 @@ erDiagram
   accounts ||--o{ session_owners : claims
   projects ||--o{ sessions : groups
   sessions ||--o{ session_events : records
+  sessions ||--o| session_context_state : context_mode
+  sessions ||--o| session_context_segments : context_partition
   sessions ||--o| session_owners : current_owner
 
   accounts {
@@ -374,6 +376,33 @@ erDiagram
     number created_at
   }
 
+  session_context_state {
+    string session_id
+    number lite_enabled
+    number compact_event_id
+    number updated_at
+  }
+
+  session_context_segments {
+    string session_id
+    string user_id
+    string project_id
+    string segment_key
+    string table_name
+    number created_at
+  }
+
+  session_context_items_XX {
+    string id
+    string session_id
+    number event_id
+    number item_seq
+    string payload_json
+    string msg_type
+    string turn_id
+    number created_at
+  }
+
   session_owners {
     string session_id
     string owner_id
@@ -384,6 +413,12 @@ erDiagram
 The store lives at `<dataDir>/ndx.sqlite`. The default data directory is
 `/home/.ndx/system`. `dataPath` overrides it; legacy `sessionPath` is accepted
 as the same override.
+
+Context replay is built from SQLite before each saved prompt. The latest
+`context_compact` event is applied first, then lite mode can filter completed
+prior tool rows. `session_context_segments` maps each session to one of the
+`session_context_items_00` through `session_context_items_0f` partition tables;
+`session_context_items` remains a compatibility projection.
 
 ## Config And Bootstrap
 
@@ -681,7 +716,7 @@ Current published package contract:
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.13`                                     |
+| Version                                  | `0.1.14`                                     |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |

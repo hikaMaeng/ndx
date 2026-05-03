@@ -35,7 +35,7 @@ export class AgentRuntime {
   private readonly client: ModelClient;
   private readonly sources: string[];
   private readonly bootstrap: NdxBootstrapReport;
-  private readonly history: ModelConversationItem[];
+  private history: ModelConversationItem[];
   private readonly context: SessionContextSummary;
   private configured = false;
   private activeTurn: ActiveTurn | undefined;
@@ -165,6 +165,13 @@ export class AgentRuntime {
   interrupt(reason = "interrupted", onEvent?: RuntimeEventHandler): void {
     this.activeTurn?.controller.abort(reason);
     this.emitTurnAborted(this.activeTurn?.turnId, reason, onEvent);
+  }
+
+  replaceHistory(history: ModelConversationItem[]): void {
+    this.history = [...history];
+    this.context.restoredItems = history.length;
+    const serialized = history.length === 0 ? "" : JSON.stringify(history);
+    this.context.estimatedTokens = Math.ceil(serialized.length / 4);
   }
 
   private ensureConfigured(onEvent?: RuntimeEventHandler): void {
