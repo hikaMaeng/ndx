@@ -38,6 +38,21 @@ export interface DetachedManagedServerLaunch {
   cwd: string;
   detached: boolean;
   windowsHide: boolean;
+  diagnostic: DetachedManagedServerDiagnostic;
+}
+
+export interface DetachedManagedServerDiagnostic {
+  platform: NodeJS.Platform;
+  launcher: string;
+  execPath: string;
+  serverArgs: string[];
+  logPaths: string[];
+}
+
+export interface ConnectionProbeResult {
+  reachable: boolean;
+  stage: "connect" | "login" | "initialize" | "server-name";
+  error?: string;
 }
 
 /** Attach to the requested ndx server, returning fallback metadata on miss. */
@@ -49,12 +64,18 @@ export async function ensureManagedServer(
   const print = options.print ?? console.error;
   const state = createManagedServerState(projectDir, socketUrl);
 
-  if (await canConnect(socketUrl)) {
+  const probe = await probeManagedServer(socketUrl);
+  if (probe.reachable) {
     return { ...state, reachable: true };
   }
 
   print(
     `[server] ${socketUrl} is not reachable; starting local default server`,
+  );
+  print(
+    `[server] initial probe failed at ${probe.stage}${
+      probe.error === undefined ? "" : `: ${probe.error}`
+    }`,
   );
   return { ...state, reachable: false };
 }
@@ -124,23 +145,55 @@ function portFromSocketUrl(socketUrl: string): number {
 }
 
 export async function canConnect(url: string): Promise<boolean> {
+  return (await probeManagedServer(url)).reachable;
+}
+
+export async function probeManagedServer(
+  url: string,
+): Promise<ConnectionProbeResult> {
+  let client: SessionClient | undefined;
   try {
-    const client = await SessionClient.connect(url);
+    client = await SessionClient.connect(url);
+  } catch (error) {
+    return { reachable: false, stage: "connect", error: describeError(error) };
+  }
+  try {
     try {
       await client.request("account/login", {
         username: "defaultUser",
         password: "",
       });
-      const initialize = await client.request<{ server?: unknown }>(
-        "initialize",
-      );
-      return initialize.server === NDX_DEFAULTS.serverName;
-    } finally {
-      client.close();
+    } catch (error) {
+      return { reachable: false, stage: "login", error: describeError(error) };
     }
-  } catch {
-    return false;
+    let initialize: { server?: unknown };
+    try {
+      initialize = await client.request<{ server?: unknown }>("initialize");
+    } catch (error) {
+      return {
+        reachable: false,
+        stage: "initialize",
+        error: describeError(error),
+      };
+    }
+    if (initialize.server !== NDX_DEFAULTS.serverName) {
+      return {
+        reachable: false,
+        stage: "server-name",
+        error: `unexpected server ${JSON.stringify(initialize.server)}`,
+      };
+    }
+    return { reachable: true, stage: "server-name" };
+  } finally {
+    client.close();
   }
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  return String(error);
 }
 
 export function detachedManagedServerLaunch(
@@ -163,6 +216,11 @@ export function detachedManagedServerLaunch(
   ];
   const execPath = options.execPath ?? process.execPath;
   const platform = options.platform ?? process.platform;
+  const diagnosticBase = {
+    platform,
+    execPath,
+    serverArgs,
+  };
   if (platform === "win32") {
     const logPath = join(
       NDX_DEFAULTS.globalDir,
@@ -170,12 +228,16 @@ export function detachedManagedServerLaunch(
       "logs",
       "managed-server.log",
     );
+    const fallbackLogPath = join(
+      process.env.TEMP ?? process.env.TMP ?? options.cwd,
+      "ndx-managed-server.log",
+    );
     const payload = Buffer.from(
       JSON.stringify({
         cwd: options.cwd,
         exe: execPath,
         args: serverArgs,
-        logPath,
+        logPaths: [logPath, fallbackLogPath],
       }),
       "utf8",
     ).toString("base64");
@@ -185,21 +247,31 @@ export function detachedManagedServerLaunch(
       "$config = $json | ConvertFrom-Json",
       "$ErrorActionPreference = 'Stop'",
       "function L($message) {",
+      "$line = '[' + (Get-Date).ToString('o') + '] ' + $message",
+      "foreach ($path in @($config.logPaths)) {",
       "try {",
-      "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $config.logPath) | Out-Null",
-      "Add-Content -LiteralPath $config.logPath -Value ('[' + (Get-Date).ToString('o') + '] ' + $message)",
+      "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null",
+      "Add-Content -LiteralPath $path -Value $line",
+      "return",
       "} catch { }",
       "}",
+      "}",
       "L 'starting managed ndx server'",
+      "L ('cwd=' + $config.cwd)",
+      "L ('exe=' + $config.exe)",
+      "L ('args=' + (($config.args | ForEach-Object { [string]$_ }) -join ' '))",
       "try {",
       "Set-Location -LiteralPath $config.cwd",
+      "L ('set-location ok: ' + (Get-Location).Path)",
       "$argv = @($config.args | ForEach-Object { [string]$_ })",
+      "L 'invoking managed ndx server process body'",
       "& $config.exe @argv",
       "$code = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }",
       "L ('managed ndx server exited: ' + $code)",
       "exit $code",
       "} catch {",
       "L ('managed ndx server failed: ' + $_.Exception.Message)",
+      "L ('managed ndx server failure detail: ' + $_.InvocationInfo.PositionMessage)",
       "exit 1",
       "}",
     ].join("; ");
@@ -224,6 +296,11 @@ export function detachedManagedServerLaunch(
       cwd: options.cwd,
       detached: true,
       windowsHide: true,
+      diagnostic: {
+        ...diagnosticBase,
+        launcher: "windows-powershell-hidden",
+        logPaths: [logPath, fallbackLogPath],
+      },
     };
   }
   if (platform === "darwin") {
@@ -245,6 +322,11 @@ export function detachedManagedServerLaunch(
       cwd: options.cwd,
       detached: true,
       windowsHide: true,
+      diagnostic: {
+        ...diagnosticBase,
+        launcher: "darwin-nohup",
+        logPaths: [],
+      },
     };
   }
   if (platform === "linux") {
@@ -270,6 +352,11 @@ export function detachedManagedServerLaunch(
       cwd: options.cwd,
       detached: true,
       windowsHide: true,
+      diagnostic: {
+        ...diagnosticBase,
+        launcher: "linux-setsid-nohup",
+        logPaths: [],
+      },
     };
   }
   return {
@@ -278,5 +365,10 @@ export function detachedManagedServerLaunch(
     cwd: options.cwd,
     detached: true,
     windowsHide: true,
+    diagnostic: {
+      ...diagnosticBase,
+      launcher: "direct-detached-spawn",
+      logPaths: [],
+    },
   };
 }

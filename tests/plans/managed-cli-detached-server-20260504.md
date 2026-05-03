@@ -43,9 +43,13 @@ an already-running server.
 - CLI managed fallback spawns server mode instead of embedding a
   `SessionServer` that closes during CLI cleanup.
 - Windows launcher uses an encoded hidden PowerShell host, writes
-  `managed-server.log` on a best-effort basis, and starts the server without
-  redirecting server stdout/stderr to that diagnostic path; macOS launcher uses
-  `nohup`; Linux launcher uses `setsid` with `nohup` fallback.
+  `managed-server.log` on a best-effort basis with `%TEMP%` fallback, and
+  starts the server without redirecting server stdout/stderr to that diagnostic
+  path; macOS launcher uses `nohup`; Linux launcher uses `setsid` with `nohup`
+  fallback.
+- CLI startup logs include launcher type, detached command metadata, server
+  args, spawned pid, readiness attempt count, failed probe stage, and last probe
+  error.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 
@@ -57,6 +61,8 @@ an already-running server.
 - `npm run deploy` output.
 - Windows `%USERPROFILE%\.ndx\system\logs\managed-server.log` when startup
   times out.
+- Windows `%TEMP%\ndx-managed-server.log` when the primary managed log path is
+  not writable.
 
 ## Locator Contract
 

@@ -17,6 +17,7 @@ import {
   detachedManagedServerLaunch,
   ensureManagedServer,
   normalizeSocketUrl,
+  probeManagedServer,
 } from "../src/cli/workspace.js";
 
 const baseConfig: NdxConfig = {
@@ -104,6 +105,15 @@ test("managed server fallback reports current project sandbox metadata", async (
   }
 });
 
+test("managed server probe reports connection failure stage", async () => {
+  const probe = await probeManagedServer("ws://127.0.0.1:9");
+
+  assert.equal(probe.reachable, false);
+  assert.equal(probe.stage, "connect");
+  assert.equal(typeof probe.error, "string");
+  assert.equal((probe.error ?? "").length > 0, true);
+});
+
 test("managed server attaches to the requested socket before Docker fallback", async () => {
   const projectDir = mkdtempSync(join(tmpdir(), "ndx-project-"));
   const globalDir = join(projectDir, "home", ".ndx");
@@ -156,6 +166,15 @@ test("managed server launch uses encoded PowerShell host on Windows", () => {
   assert.equal(script.includes("ConvertFrom-Json"), true);
   assert.equal(script.includes("function L($message)"), true);
   assert.equal(script.includes("} catch { }"), true);
+  assert.equal(script.includes("foreach ($path in @($config.logPaths))"), true);
+  assert.equal(script.includes("cwd="), true);
+  assert.equal(script.includes("exe="), true);
+  assert.equal(script.includes("args="), true);
+  assert.equal(script.includes("set-location ok"), true);
+  assert.equal(
+    script.includes("invoking managed ndx server process body"),
+    true,
+  );
   assert.equal(
     script.includes("$argv = @($config.args | ForEach-Object"),
     true,
@@ -168,7 +187,7 @@ test("managed server launch uses encoded PowerShell host on Windows", () => {
   assert.notEqual(payloadMatch, null);
   const payload = JSON.parse(
     Buffer.from(payloadMatch?.[1] ?? "", "base64").toString("utf8"),
-  ) as { cwd: string; exe: string; args: string[]; logPath: string };
+  ) as { cwd: string; exe: string; args: string[]; logPaths: string[] };
   assert.equal(payload.exe, "C:\\Program Files\\nodejs\\node.exe");
   assert.equal(payload.cwd, "F:\\dev\\test1");
   assert.deepEqual(payload.args, [
@@ -181,7 +200,10 @@ test("managed server launch uses encoded PowerShell host on Windows", () => {
     "--dashboard-listen",
     "127.0.0.1:45124",
   ]);
-  assert.equal(payload.logPath.endsWith("managed-server.log"), true);
+  assert.equal(payload.logPaths[0]?.endsWith("managed-server.log"), true);
+  assert.equal(payload.logPaths[1]?.endsWith("ndx-managed-server.log"), true);
+  assert.equal(launch.diagnostic.launcher, "windows-powershell-hidden");
+  assert.equal(launch.diagnostic.logPaths.length, 2);
 });
 
 test("managed server launch uses nohup user background mode on macOS", () => {

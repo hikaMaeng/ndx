@@ -22,6 +22,7 @@ import {
   detachedManagedServerLaunch,
   ensureManagedServer,
   normalizeSocketUrl,
+  probeManagedServer,
 } from "./workspace.js";
 import { loadConfig, resolveGlobalNdxDir } from "../config/index.js";
 import { createRoutedModelClient } from "../model/factory.js";
@@ -374,6 +375,22 @@ async function startDetachedManagedServer(
     socketUrl,
     dashboardPort,
   });
+  console.error(
+    `[server] detached launch selected: ${launch.diagnostic.launcher}`,
+  );
+  console.error(`[server] detached cwd: ${launch.cwd}`);
+  console.error(`[server] detached command: ${launch.command}`);
+  console.error(`[server] detached exec: ${launch.diagnostic.execPath}`);
+  console.error(
+    `[server] detached server args: ${launch.diagnostic.serverArgs.join(" ")}`,
+  );
+  if (launch.diagnostic.logPaths.length > 0) {
+    console.error(
+      `[server] detached diagnostic logs: ${launch.diagnostic.logPaths.join(
+        ", ",
+      )}`,
+    );
+  }
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     detached: launch.detached,
@@ -384,6 +401,7 @@ async function startDetachedManagedServer(
   if (child.pid === undefined) {
     throw new Error("failed to start detached ndx server process");
   }
+  console.error(`[server] detached process spawned: pid=${child.pid}`);
   await waitForManagedServer(socketUrl);
   return socketUrl;
 }
@@ -391,13 +409,36 @@ async function startDetachedManagedServer(
 async function waitForManagedServer(socketUrl: string): Promise<void> {
   const startedAt = Date.now();
   const timeoutMs = 10_000;
+  let attempts = 0;
+  let lastLogAt = 0;
+  let lastProbe: Awaited<ReturnType<typeof probeManagedServer>> | undefined =
+    undefined;
   while (Date.now() - startedAt < timeoutMs) {
-    if (await canConnect(socketUrl)) {
+    attempts += 1;
+    const probe = await probeManagedServer(socketUrl);
+    lastProbe = probe;
+    if (probe.reachable) {
+      console.error(
+        `[server] detached server reachable after ${Date.now() - startedAt}ms (${attempts} probes)`,
+      );
       return;
+    }
+    const elapsed = Date.now() - startedAt;
+    if (attempts === 1 || elapsed - lastLogAt >= 1_000) {
+      console.error(
+        `[server] waiting for detached server: elapsed=${elapsed}ms attempt=${attempts} stage=${probe.stage}${
+          probe.error === undefined ? "" : ` error=${probe.error}`
+        }`,
+      );
+      lastLogAt = elapsed;
     }
     await delay(100);
   }
-  throw new Error(`timed out waiting for detached ndx server: ${socketUrl}`);
+  throw new Error(
+    `timed out waiting for detached ndx server: ${socketUrl}; attempts=${attempts}; lastStage=${lastProbe?.stage ?? "none"}${
+      lastProbe?.error === undefined ? "" : `; lastError=${lastProbe.error}`
+    }`,
+  );
 }
 
 function delay(ms: number): Promise<void> {

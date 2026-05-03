@@ -48,18 +48,22 @@ limit.
 
 `runManagedWorkspace` probes the requested WebSocket URL. On a miss it repairs
 or creates settings in the foreground, spawns `ndxserver` in detached server
-mode with the current cwd and managed ports, polls readiness with `canConnect`,
-and then uses `SessionClient` like any other client. The managed server is not
-owned by the CLI object graph and is not closed by CLI cleanup.
+mode with the current cwd and managed ports, polls readiness with staged
+connection probes, and then uses `SessionClient` like any other client. Probe
+logs distinguish connect, login, initialize, and server-name failures. The
+managed server is not owned by the CLI object graph and is not closed by CLI
+cleanup.
 
 Managed startup chooses the background launcher by OS instead of relying on a
 single `spawn` contract. Windows launches a hidden PowerShell host that runs the
 current Node entrypoint directly. The launcher only appends lifecycle
 diagnostics to `~/.ndx/system/logs/managed-server.log` when that path is
-writable; diagnostic write failures and server stdout/stderr logging do not gate
-server execution. macOS launches the current Node entrypoint through `nohup` as
-a user background process. Linux launches through `setsid` when available,
-falling back to `nohup`. Unknown platforms use direct detached Node spawn.
+writable, falling back to the user temp directory as
+`ndx-managed-server.log`; diagnostic write failures and server stdout/stderr
+logging do not gate server execution. macOS launches the current Node entrypoint
+through `nohup` as a user background process. Linux launches through `setsid`
+when available, falling back to `nohup`. Unknown platforms use direct detached
+Node spawn.
 
 ## Tools
 
