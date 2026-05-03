@@ -30,6 +30,7 @@ export interface ToolExecutionResult {
 export type ToolKind = "task" | "external";
 
 export interface ExternalToolRuntime {
+  name?: string;
   command: string;
   args: string[];
   cwd?: string;

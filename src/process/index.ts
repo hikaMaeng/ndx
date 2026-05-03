@@ -16,6 +16,7 @@ export interface ProcessRunResult {
   command: string;
   args: string[];
   cwd: string;
+  pid?: number;
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -189,6 +190,7 @@ export async function runProcess(
         command: options.command,
         args,
         cwd,
+        pid: child.pid,
         exitCode,
         stdout,
         stderr,

@@ -572,6 +572,8 @@ sequenceDiagram
 | `shellTimeoutMs`                   | manifest override가 없으면 external timeout 기본값이다.  |
 | Abort                              | worker와 immediate external process로 전파된다.          |
 | Deep child cleanup                 | external capability tool implementation이 소유한다.      |
+| `/root` path alias                 | core path tool에서 active workspace cwd로 매핑된다.      |
+| Sandbox audit log                  | `/home/.ndx/system/logs` JSONL과 Docker log에 남는다.    |
 
 ## Docker 샌드박스
 
@@ -702,7 +704,7 @@ flowchart TD
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.10`                                     |
+| Version                                  | `0.1.12`                                     |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |

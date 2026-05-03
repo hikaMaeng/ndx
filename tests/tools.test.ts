@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -173,6 +174,29 @@ test("registry exposes bootstrapped core capability tools as external tools", as
       env: {},
       timeoutMs: 30_000,
     };
+    writeFileSync(join(root, "mapped-root.txt"), "ok");
+    const shellRoot = await registry.execute(
+      "shell",
+      { cwd: "/root", command: "pwd && printf tool-write > root-alias.txt" },
+      context,
+    );
+    const shellRootPayload = parseExternalStdout(shellRoot.output);
+    assert.equal(shellRootPayload.cwd, root);
+    assert.equal(shellRootPayload.stdout.split(/\r?\n/)[0], root);
+    assert.equal(existsSync(join(root, "root-alias.txt")), true);
+
+    const listRoot = await registry.execute(
+      "list_dir",
+      { dir_path: "/root", depth: 1, limit: 20 },
+      context,
+    );
+    assert.equal(
+      parseExternalStdout(listRoot.output).entries.some(
+        (entry: { path: string }) => entry.path.endsWith("mapped-root.txt"),
+      ),
+      true,
+    );
+
     const listDir = await registry.execute(
       "list_dir",
       { dir_path: join(globalDir, "system"), depth: 2, limit: 5 },

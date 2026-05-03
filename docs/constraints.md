@@ -103,6 +103,14 @@
   container paths before they are used as `docker exec -w`; the active
   workspace maps to `/workspace` and global state maps to `/home/.ndx`. The
   default pinned image is `hika00/ndx-sandbox:0.1.0`.
+- Core filesystem path tools map `/root` and `/root/...` to the active
+  workspace cwd. This keeps model-selected container-home paths on the project
+  bind mount rather than the sandbox home directory.
+- Every sandboxed external tool execution must write JSONL audit records under
+  `/home/.ndx/system/logs/tool-executions.jsonl` and mirror them to container
+  stdout for `docker logs` inspection. Records include tool name, mapped cwd,
+  process id when available, stdout, stderr, exit code, timeout, and
+  cancellation status.
 - Restored persisted sessions must rebind their runtime config to the current
   workspace sandbox before handling the next turn.
 - Server-managed sandbox containers are named `ndx-tool-<folder-name>` and are

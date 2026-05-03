@@ -41,7 +41,7 @@ ${READ_STDIN}
 const request = await readRequest();
 const args = request.arguments ?? {};
 const command = String(args.command ?? "");
-const cwd = resolve(String(args.cwd ?? request.cwd ?? process.env.NDX_TOOL_CWD ?? process.cwd()));
+const cwd = resolve(toSandboxPath(String(args.cwd ?? request.cwd ?? process.env.NDX_TOOL_CWD ?? process.cwd())));
 const timeoutMs = Number.isInteger(args.timeoutMs) ? args.timeoutMs : 120000;
 const shell = process.platform === "win32" ? "cmd.exe" : "/bin/bash";
 const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-lc", command];
@@ -67,14 +67,14 @@ const result = await new Promise((resolveResult, reject) => {
   child.on("error", reject);
   child.on("close", (exitCode) => {
     clearTimeout(timer);
-    resolveResult({ command, cwd: sandbox.length > 0 ? sandboxCwd : cwd, exitCode, stdout, stderr, timedOut });
+    resolveResult({ command, cwd: sandbox.length > 0 ? sandboxCwd : cwd, pid: child.pid, exitCode, stdout, stderr, timedOut });
   });
 });
 process.stdout.write(JSON.stringify(result) + "\n");
 function toSandboxPath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
-  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? process.env.NDX_TOOL_CWD ?? sandboxRoot;
   const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
   return mapPath(path, [
     [hostRoot, sandboxRoot],
@@ -85,6 +85,9 @@ function mapPath(path, mappings, fallback) {
   if (path.length === 0) return fallback;
   const absolute = isAbsolutePath(path);
   const normalized = absolute ? normalizePath(path) : path;
+  if (normalized === "/root" || normalized.startsWith("/root/")) {
+    return fallback + normalized.slice("/root".length);
+  }
   for (const root of [fallback, "/workspace", "/home/.ndx"]) {
     if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
   }
@@ -146,7 +149,7 @@ process.stdout.write(JSON.stringify(result) + "\n");
 function toSandboxPath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
-  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? process.env.NDX_TOOL_CWD ?? sandboxRoot;
   const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
   return mapPath(path, [
     [hostRoot, sandboxRoot],
@@ -157,6 +160,9 @@ function mapPath(path, mappings, fallback) {
   if (path.length === 0) return fallback;
   const absolute = isAbsolutePath(path);
   const normalized = absolute ? normalizePath(path) : path;
+  if (normalized === "/root" || normalized.startsWith("/root/")) {
+    return fallback + normalized.slice("/root".length);
+  }
   for (const root of [fallback, "/workspace", "/home/.ndx"]) {
     if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
   }
@@ -225,21 +231,22 @@ async function collectEntries(dir, depth, entries) {
 function toRuntimePath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
-  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const toolCwd = process.env.NDX_TOOL_CWD ?? process.cwd();
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? toolCwd ?? sandboxRoot;
   const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
-  const sandboxActive = process.env.NDX_TOOL_EXECUTION_ENV === "container" || hostRoot.length > 0 || hostGlobal.length > 0;
-  if (!sandboxActive) return resolve(path || process.env.NDX_TOOL_CWD || process.cwd());
   const mapped = mapPath(path, [
     [hostRoot, sandboxRoot],
     [hostGlobal, "/home/.ndx"],
   ], sandboxCwd);
-  if (mapped !== path) return mapped;
-  return resolve(path || process.env.NDX_TOOL_CWD || process.cwd());
+  return isAbsolutePath(mapped) ? resolve(mapped) : resolve(toolCwd, mapped || ".");
 }
 function mapPath(path, mappings, fallback) {
   if (path.length === 0) return fallback;
   const absolute = isAbsolutePath(path);
   const normalized = absolute ? normalizePath(path) : path;
+  if (normalized === "/root" || normalized.startsWith("/root/")) {
+    return fallback + normalized.slice("/root".length);
+  }
   for (const root of [fallback, "/workspace", "/home/.ndx"]) {
     if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
   }
@@ -280,7 +287,7 @@ function pathKey(path) {
       ["path"],
     ),
     runtime: String.raw`import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
+import { extname, resolve } from "node:path";
 ${READ_STDIN}
 const request = await readRequest();
 const args = request.arguments ?? {};
@@ -308,19 +315,22 @@ function mimeType(path) {
 function toRuntimePath(path) {
   const hostRoot = process.env.NDX_SANDBOX_HOST_WORKSPACE ?? "";
   const sandboxRoot = process.env.NDX_SANDBOX_WORKSPACE ?? "/workspace";
-  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? sandboxRoot;
+  const toolCwd = process.env.NDX_TOOL_CWD ?? process.cwd();
+  const sandboxCwd = process.env.NDX_SANDBOX_CWD ?? toolCwd ?? sandboxRoot;
   const hostGlobal = process.env.NDX_SANDBOX_HOST_GLOBAL ?? "";
-  const sandboxActive = process.env.NDX_TOOL_EXECUTION_ENV === "container" || hostRoot.length > 0 || hostGlobal.length > 0;
-  if (!sandboxActive) return path;
-  return mapPath(path, [
+  const mapped = mapPath(path, [
     [hostRoot, sandboxRoot],
     [hostGlobal, "/home/.ndx"],
   ], sandboxCwd);
+  return isAbsolutePath(mapped) ? mapped : resolve(toolCwd, mapped || ".");
 }
 function mapPath(path, mappings, fallback) {
   if (path.length === 0) return fallback;
   const absolute = isAbsolutePath(path);
   const normalized = absolute ? normalizePath(path) : path;
+  if (normalized === "/root" || normalized.startsWith("/root/")) {
+    return fallback + normalized.slice("/root".length);
+  }
   for (const root of [fallback, "/workspace", "/home/.ndx"]) {
     if (root && (normalized === root || normalized.startsWith(root + "/"))) return normalized;
   }

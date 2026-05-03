@@ -82,7 +82,7 @@ test("CLI session controller prints server info before startup login prompt", as
   await controller.initialize();
 
   const serverInfoIndex = events.findIndex((event) =>
-    event.includes("[session-server] ndx-ts-session-server 0.1.10"),
+    event.includes("[session-server] ndx-ts-session-server 0.1.12"),
   );
   const loginMenuIndex = events.findIndex((event) =>
     event.startsWith("out:login"),
@@ -350,7 +350,7 @@ class FakeTransport implements CliSessionTransport {
     if (method === "initialize") {
       return {
         server: "ndx-ts-session-server",
-        version: "0.1.10",
+        version: "0.1.12",
         protocolVersion: 1,
         dashboardUrl: "http://127.0.0.1:45124",
         runtime: runtimeInfo(),
@@ -369,7 +369,7 @@ class FakeTransport implements CliSessionTransport {
     if (method === "server/info") {
       return {
         server: "ndx-ts-session-server",
-        version: "0.1.10",
+        version: "0.1.12",
         protocolVersion: 1,
         dashboardUrl: "http://127.0.0.1:45124",
         runtime: runtimeInfo(),

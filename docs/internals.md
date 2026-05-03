@@ -177,5 +177,13 @@ supervisor that starts `docker exec`, passes stdin, and handles cancellation.
 Before calling `docker exec`, the server maps Windows and POSIX host paths to
 the Linux sandbox namespace so `-w` is always `/workspace`, `/home/.ndx`, or a
 child path under those roots.
+Core path tools also treat `/root` as a workspace alias. If a model supplies
+`cwd: "/root"` or a `/root/...` path from container habit, the runtime maps it
+to the active session cwd under `/workspace` instead of writing to the
+container home directory.
+Each sandboxed external tool call appends JSONL start and finish records to
+`/home/.ndx/system/logs/tool-executions.jsonl` and mirrors those records to the
+tool sandbox stdout so `docker logs <container>` shows the command, mapped
+cwd, process id, stdout, stderr, exit code, timeout, and cancellation result.
 Restored sessions rebuild their `AgentRuntime` with sandbox environment before
 the next turn so model-selected file writes target `/workspace`.

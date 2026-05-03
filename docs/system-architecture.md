@@ -533,6 +533,8 @@ Execution rules:
 | `runProcess`                   | Owns spawn, stdout/stderr capture, timeout, and abort. |
 | `shellTimeoutMs`               | Default external timeout unless manifest overrides it. |
 | Abort                          | Propagates to worker and immediate external process.   |
+| `/root` path alias             | Maps to the active workspace cwd for core path tools.  |
+| Sandbox audit log              | JSONL records in `/home/.ndx/system/logs` and logs.    |
 | Deep child cleanup             | Owned by the external capability tool implementation.  |
 
 ## Docker Sandbox
@@ -665,7 +667,7 @@ Current published package contract:
 | Field                                    | Value                                        |
 | ---------------------------------------- | -------------------------------------------- |
 | Package                                  | `@neurondev/ndx`                             |
-| Version                                  | `0.1.10`                                     |
+| Version                                  | `0.1.12`                                     |
 | Binaries                                 | `ndx`, `ndxserver`                           |
 | Packed files                             | `dist/src`, `README.md`, `LICENSE`, `NOTICE` |
 | Local global prefix used in verification | `/home/hika/.local`                          |

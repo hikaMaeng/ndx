@@ -60,6 +60,7 @@ export function loadToolManifest(
     layer,
     schema,
     runtime: {
+      name: schema.function.name,
       command: manifest.command,
       args: manifest.args ?? [],
       cwd:
