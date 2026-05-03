@@ -42,9 +42,10 @@ an already-running server.
   `NDX_DASHBOARD_PORT` is unset.
 - CLI managed fallback spawns server mode instead of embedding a
   `SessionServer` that closes during CLI cleanup.
-- Windows launcher uses an encoded hidden PowerShell host and writes
-  `managed-server.log` on a best-effort basis; macOS launcher uses `nohup`;
-  Linux launcher uses `setsid` with `nohup` fallback.
+- Windows launcher uses an encoded hidden PowerShell host, writes
+  `managed-server.log` on a best-effort basis, and starts the server without
+  redirecting server stdout/stderr to that diagnostic path; macOS launcher uses
+  `nohup`; Linux launcher uses `setsid` with `nohup` fallback.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 
