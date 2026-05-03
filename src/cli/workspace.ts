@@ -23,6 +23,23 @@ export interface ManagedServerOptions {
   print?: (message: string) => void;
 }
 
+export interface DetachedManagedServerLaunchOptions {
+  cwd: string;
+  entrypoint: string;
+  socketUrl: string;
+  dashboardPort?: string;
+  execPath?: string;
+  platform?: NodeJS.Platform;
+}
+
+export interface DetachedManagedServerLaunch {
+  command: string;
+  args: string[];
+  cwd: string;
+  detached: boolean;
+  windowsHide: boolean;
+}
+
 /** Attach to the requested ndx server, returning fallback metadata on miss. */
 export async function ensureManagedServer(
   options: ManagedServerOptions,
@@ -124,4 +141,113 @@ export async function canConnect(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export function detachedManagedServerLaunch(
+  options: DetachedManagedServerLaunchOptions,
+): DetachedManagedServerLaunch {
+  const socket = new URL(options.socketUrl);
+  const listenHost = socket.hostname || NDX_DEFAULTS.host;
+  const listenPort = socket.port || String(NDX_DEFAULTS.socketPort);
+  const dashboardPort =
+    options.dashboardPort ?? String(NDX_DEFAULTS.dashboardPort);
+  const serverArgs = [
+    options.entrypoint,
+    "serve",
+    "--cwd",
+    options.cwd,
+    "--listen",
+    `${listenHost}:${listenPort}`,
+    "--dashboard-listen",
+    `${NDX_DEFAULTS.host}:${dashboardPort}`,
+  ];
+  const execPath = options.execPath ?? process.execPath;
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
+    return {
+      command: process.env.SystemRoot
+        ? join(
+            process.env.SystemRoot,
+            "System32",
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe",
+          )
+        : "powershell.exe",
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        [
+          "function Q($v) { '\"' + ($v -replace '\"', '\\\"') + '\"' }",
+          "$exe = $args[0]",
+          "$work = $args[1]",
+          "$rest = @($args[2..($args.Count - 1)])",
+          "$argLine = ($rest | ForEach-Object { Q $_ }) -join ' '",
+          "Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $work -WindowStyle Hidden",
+        ].join("; "),
+        execPath,
+        options.cwd,
+        ...serverArgs,
+      ],
+      cwd: options.cwd,
+      detached: true,
+      windowsHide: true,
+    };
+  }
+  if (platform === "darwin") {
+    return {
+      command: "/bin/sh",
+      args: [
+        "-c",
+        [
+          "work=$1",
+          "shift",
+          'cd "$work" || exit 1',
+          'nohup "$@" >/dev/null 2>&1 </dev/null &',
+        ].join("; "),
+        "ndx-managed-server",
+        options.cwd,
+        execPath,
+        ...serverArgs,
+      ],
+      cwd: options.cwd,
+      detached: true,
+      windowsHide: true,
+    };
+  }
+  if (platform === "linux") {
+    return {
+      command: "/bin/sh",
+      args: [
+        "-c",
+        [
+          "work=$1",
+          "shift",
+          'cd "$work" || exit 1',
+          "if command -v setsid >/dev/null 2>&1; then",
+          'setsid "$@" >/dev/null 2>&1 </dev/null &',
+          "else",
+          'nohup "$@" >/dev/null 2>&1 </dev/null &',
+          "fi",
+        ].join("; "),
+        "ndx-managed-server",
+        options.cwd,
+        execPath,
+        ...serverArgs,
+      ],
+      cwd: options.cwd,
+      detached: true,
+      windowsHide: true,
+    };
+  }
+  return {
+    command: execPath,
+    args: serverArgs,
+    cwd: options.cwd,
+    detached: true,
+    windowsHide: true,
+  };
 }

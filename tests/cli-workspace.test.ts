@@ -14,6 +14,7 @@ import {
 import { mapHostPathToSandboxPath } from "../src/session/sandbox-paths.js";
 import type { NdxConfig } from "../src/shared/types.js";
 import {
+  detachedManagedServerLaunch,
   ensureManagedServer,
   normalizeSocketUrl,
 } from "../src/cli/workspace.js";
@@ -128,6 +129,77 @@ test("managed server attaches to the requested socket before Docker fallback", a
     await server?.close();
     rmSync(projectDir, { recursive: true, force: true });
   }
+});
+
+test("managed server launch uses PowerShell Start-Process on Windows", () => {
+  const launch = detachedManagedServerLaunch({
+    cwd: "F:\\dev\\test1",
+    entrypoint:
+      "C:\\Users\\hika0\\AppData\\Roaming\\npm\\node_modules\\@neurondev\\ndx\\dist\\src\\cli\\main.js",
+    socketUrl: "ws://127.0.0.1:45123",
+    dashboardPort: "45124",
+    execPath: "C:\\Program Files\\nodejs\\node.exe",
+    platform: "win32",
+  });
+
+  assert.equal(launch.command.endsWith("powershell.exe"), true);
+  assert.equal(launch.detached, true);
+  assert.equal(launch.windowsHide, true);
+  assert.equal(launch.args.includes("-NoProfile"), true);
+  assert.equal(
+    launch.args.includes("C:\\Program Files\\nodejs\\node.exe"),
+    true,
+  );
+  assert.equal(launch.args.includes("F:\\dev\\test1"), true);
+  assert.equal(launch.args.includes("--listen"), true);
+  assert.equal(launch.args.includes("127.0.0.1:45123"), true);
+  assert.equal(launch.args.includes("--dashboard-listen"), true);
+  assert.equal(launch.args.includes("127.0.0.1:45124"), true);
+  assert.equal(launch.args.join(" ").includes("Start-Process"), true);
+  assert.equal(launch.args.join(" ").includes("-WindowStyle Hidden"), true);
+});
+
+test("managed server launch uses nohup user background mode on macOS", () => {
+  const launch = detachedManagedServerLaunch({
+    cwd: "/workspace",
+    entrypoint: "/workspace/dist/src/cli/main.js",
+    socketUrl: "ws://127.0.0.1:55123",
+    dashboardPort: "55124",
+    execPath: "/usr/bin/node",
+    platform: "darwin",
+  });
+
+  assert.equal(launch.command, "/bin/sh");
+  assert.equal(launch.args.includes("/usr/bin/node"), true);
+  assert.equal(launch.args.includes("/workspace/dist/src/cli/main.js"), true);
+  assert.equal(launch.args.includes("--listen"), true);
+  assert.equal(launch.args.includes("127.0.0.1:55123"), true);
+  assert.equal(launch.args.join(" ").includes("nohup"), true);
+  assert.equal(launch.cwd, "/workspace");
+  assert.equal(launch.detached, true);
+  assert.equal(launch.windowsHide, true);
+});
+
+test("managed server launch uses setsid user background mode on Linux", () => {
+  const launch = detachedManagedServerLaunch({
+    cwd: "/workspace",
+    entrypoint: "/workspace/dist/src/cli/main.js",
+    socketUrl: "ws://127.0.0.1:55123",
+    dashboardPort: "55124",
+    execPath: "/usr/bin/node",
+    platform: "linux",
+  });
+
+  assert.equal(launch.command, "/bin/sh");
+  assert.equal(launch.args.includes("/usr/bin/node"), true);
+  assert.equal(launch.args.includes("/workspace/dist/src/cli/main.js"), true);
+  assert.equal(launch.args.includes("--dashboard-listen"), true);
+  assert.equal(launch.args.includes("127.0.0.1:55124"), true);
+  assert.equal(launch.args.join(" ").includes("setsid"), true);
+  assert.equal(launch.args.join(" ").includes("nohup"), true);
+  assert.equal(launch.cwd, "/workspace");
+  assert.equal(launch.detached, true);
+  assert.equal(launch.windowsHide, true);
 });
 
 test("docker sandbox state is stable per workspace and maps host paths", () => {

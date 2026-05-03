@@ -19,6 +19,7 @@ import {
 } from "./session-client.js";
 import {
   canConnect,
+  detachedManagedServerLaunch,
   ensureManagedServer,
   normalizeSocketUrl,
 } from "./workspace.js";
@@ -360,9 +361,6 @@ async function startDetachedManagedServer(
   args: CliArgs,
   socketUrl: string,
 ): Promise<string> {
-  const socket = new URL(socketUrl);
-  const listenHost = socket.hostname || NDX_DEFAULTS.host;
-  const listenPort = socket.port || String(NDX_DEFAULTS.socketPort);
   const configuredDashboardPort = process.env.NDX_DASHBOARD_PORT;
   const dashboardPort = String(
     configuredDashboardPort !== undefined &&
@@ -370,25 +368,18 @@ async function startDetachedManagedServer(
       ? Number(configuredDashboardPort)
       : NDX_DEFAULTS.dashboardPort,
   );
-  const child = spawn(
-    process.execPath,
-    [
-      fileURLToPath(import.meta.url),
-      "serve",
-      "--cwd",
-      args.cwd,
-      "--listen",
-      `${listenHost}:${listenPort}`,
-      "--dashboard-listen",
-      `${NDX_DEFAULTS.host}:${dashboardPort}`,
-    ],
-    {
-      cwd: args.cwd,
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    },
-  );
+  const launch = detachedManagedServerLaunch({
+    cwd: args.cwd,
+    entrypoint: fileURLToPath(import.meta.url),
+    socketUrl,
+    dashboardPort,
+  });
+  const child = spawn(launch.command, launch.args, {
+    cwd: launch.cwd,
+    detached: launch.detached,
+    stdio: "ignore",
+    windowsHide: launch.windowsHide,
+  });
   child.unref();
   if (child.pid === undefined) {
     throw new Error("failed to start detached ndx server process");

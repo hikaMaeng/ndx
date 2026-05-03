@@ -30,7 +30,8 @@ an already-running server.
 2. Run `node --test dist/tests/cli-workspace.test.js`.
 3. Run `yarn test`.
 4. Run `npm run deploy`.
-5. For manual runtime verification, start `ndx` against an unused socket
+5. Inspect the managed launcher unit coverage for Windows, macOS, and Linux.
+6. For manual runtime verification, start `ndx` against an unused socket
    address, exit the CLI, and confirm the server socket still accepts a later
    connection until the server is explicitly stopped.
 
@@ -41,6 +42,8 @@ an already-running server.
   `NDX_DASHBOARD_PORT` is unset.
 - CLI managed fallback spawns server mode instead of embedding a
   `SessionServer` that closes during CLI cleanup.
+- Windows launcher uses PowerShell `Start-Process`; macOS launcher uses
+  `nohup`; Linux launcher uses `setsid` with `nohup` fallback.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 

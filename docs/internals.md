@@ -52,6 +52,14 @@ mode with the current cwd and managed ports, polls readiness with `canConnect`,
 and then uses `SessionClient` like any other client. The managed server is not
 owned by the CLI object graph and is not closed by CLI cleanup.
 
+Managed startup chooses the background launcher by OS instead of relying on a
+single `spawn` contract. Windows launches server mode through PowerShell
+`Start-Process` with a hidden window so the server is not tied to the `ndx`
+client process or its console control lifetime. macOS launches the current Node
+entrypoint through `nohup` as a user background process. Linux launches through
+`setsid` when available, falling back to `nohup`. Unknown platforms use direct
+detached Node spawn.
+
 ## Tools
 
 `ToolRegistry` scans task, core, project, global, plugin, and MCP layers. Each

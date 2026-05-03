@@ -28,7 +28,8 @@ The CLI tries `ws://127.0.0.1:45123`. If unreachable, it starts a local server
 for the current folder as a detached `ndxserver` process, waits for the
 WebSocket endpoint, prints server info, logs in, and offers session selection.
 Exiting the CLI does not stop that managed server; stop it with a process
-signal or the dashboard `Exit` action.
+signal or the dashboard `Exit` action. Windows, macOS, and Linux use separate
+background launcher paths so CLI exit is not the server lifetime owner.
 
 Run the server explicitly when you want to own its terminal:
 
@@ -47,7 +48,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.15",
+  "version": "0.1.16",
   "model": "local-model",
   "providers": {
     "local": {
