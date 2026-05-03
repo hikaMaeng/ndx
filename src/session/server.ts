@@ -20,6 +20,7 @@ import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import {
   SqliteSessionStore,
+  type DashboardSessionLogFilters,
   type StoredSession,
   type StoredSessionContext,
 } from "./sqlite-store.js";
@@ -217,6 +218,58 @@ export class SessionServer {
         "content-type": "text/html; charset=utf-8",
       });
       response.end(this.renderDashboardHtml());
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/session-log/facets"
+    ) {
+      writeJson(response, 200, this.store.dashboardSessionLogFacets());
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/session-log/sessions"
+    ) {
+      writeJson(response, 200, {
+        sessions: this.store.listDashboardSessionLogs(
+          dashboardSessionLogFilters(url),
+        ),
+      });
+      return;
+    }
+    const eventMatch = url.pathname.match(
+      /^\/api\/session-log\/sessions\/([^/]+)\/events$/,
+    );
+    if (request.method === "GET" && eventMatch !== null) {
+      const page = this.store.readDashboardSessionLogEvents(
+        decodeURIComponent(eventMatch[1] ?? ""),
+        dashboardIntegerParam(url, "offset", 0, 0, 100_000),
+        dashboardIntegerParam(url, "limit", 50, 1, 200),
+      );
+      if (page === undefined) {
+        writeJson(response, 404, { ok: false, message: "Session not found." });
+        return;
+      }
+      writeJson(response, 200, page);
+      return;
+    }
+    const deleteMatch = url.pathname.match(
+      /^\/api\/session-log\/sessions\/([^/]+)$/,
+    );
+    if (request.method === "DELETE" && deleteMatch !== null) {
+      const session = this.deleteDashboardSessionById(
+        decodeURIComponent(deleteMatch[1] ?? ""),
+      );
+      if (session === undefined) {
+        writeJson(response, 404, { ok: false, message: "Session not found." });
+        return;
+      }
+      writeJson(response, 200, {
+        ok: true,
+        session,
+        message: `Deleted session ${session.sequence}: ${session.title}`,
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/reload") {
@@ -1309,6 +1362,53 @@ export class SessionServer {
     return session;
   }
 
+  private deleteDashboardSessionById(
+    sessionId: string,
+  ): SessionListEntry | undefined {
+    const stored = this.store.dashboardSessionById(sessionId);
+    const live = this.sessions.get(sessionId);
+    if (stored === undefined && live === undefined) {
+      return undefined;
+    }
+    const session: SessionListEntry =
+      stored === undefined
+        ? {
+            number: live?.sequence ?? 0,
+            sequence: live?.sequence ?? 0,
+            id: live?.id ?? sessionId,
+            user: live?.user ?? "unknown",
+            cwd: live?.cwd ?? "",
+            status: live?.status ?? "idle",
+            createdAt: live?.createdAt ?? Date.now(),
+            updatedAt: live?.updatedAt ?? Date.now(),
+            eventCount: live?.events.length ?? 0,
+            live: true,
+            title: live?.title ?? "unknown",
+          }
+        : {
+            number: stored.sequence,
+            sequence: stored.sequence,
+            id: stored.id,
+            user: stored.user,
+            cwd: stored.cwd,
+            status: stored.status,
+            createdAt: stored.createdAt,
+            updatedAt: stored.updatedAt,
+            eventCount: stored.eventCount,
+            live: live !== undefined,
+            title: stored.title,
+          };
+    if (live !== undefined && live.subscribers.size > 0) {
+      this.publishEphemeral(live, deletedSessionNotification(live.id));
+      for (const subscriber of live.subscribers) {
+        subscriber.close();
+      }
+    }
+    this.sessions.delete(sessionId);
+    this.store.deleteSession(sessionId);
+    return session;
+  }
+
   private deletableSessionsForCwd(
     user: string,
     cwd: string,
@@ -2085,6 +2185,48 @@ function estimateContextTokens(items: ModelConversationItem[]): number {
 
 function estimateTextTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+function writeJson(
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+): void {
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+  });
+  response.end(JSON.stringify(body));
+}
+
+function dashboardSessionLogFilters(url: URL): DashboardSessionLogFilters {
+  return {
+    accounts: dashboardStringListParam(url, "accounts"),
+    projects: dashboardStringListParam(url, "projects"),
+    sessions: dashboardStringListParam(url, "sessions"),
+  };
+}
+
+function dashboardStringListParam(url: URL, name: string): string[] {
+  const values = url.searchParams
+    .getAll(name)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return [...new Set(values)];
+}
+
+function dashboardIntegerParam(
+  url: URL,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const value = Number.parseInt(url.searchParams.get(name) ?? "", 10);
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, value));
 }
 
 function readPackageVersion(): string {

@@ -172,6 +172,16 @@ reloads settings plus discovered `AGENTS.md` sources for later sessions.
 has no authentication or authorization; agent interaction remains on
 authenticated WebSocket JSON-RPC.
 
+Dashboard Session Logs uses dashboard HTTP JSON endpoints backed directly by
+`SqliteSessionStore`. Facets are distinct account ids, project `cwd` strings,
+and live session ids from non-deleted `sessions` rows. Session listing builds
+SQL `IN` clauses per selected category: values inside `accounts`, `projects`,
+or `sessions` are ORed; the category clauses are ANDed together. Session detail
+pages raw `session_events` rows ordered by SQLite autoincrement id and returns
+the parsed `payload_json`. Dashboard delete soft-deletes by session id, clears
+ownership through the store, removes any live in-memory session, publishes
+`session/deleted`, and closes subscribers when the deleted session is live.
+
 ## Mock Client
 
 `MockModelClient` emits one `shell` call on the first turn and final text on the second turn. It is intentionally deterministic so Docker verification does not depend on external APIs.

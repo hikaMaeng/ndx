@@ -133,9 +133,16 @@ authenticated WebSocket JSON-RPC.
 Dashboard actions:
 
 ```text
+Session Logs  Browse all persisted SQLite sessions and raw event pages.
 Reload  Re-run global .ndx bootstrap and re-read settings plus AGENTS.md sources.
 Exit    Request the local server process to stop.
 ```
+
+Session Logs shows all non-deleted sessions across accounts and project cwd
+values. Selecting an account, project, or session adds a removable filter tag.
+Tags in the same category are ORed; tags across categories are ANDed. Opening a
+session shows raw `session_events` from first record to latest record with
+pagination. Delete soft-deletes the selected session; there is no edit action.
 
 Dashboard UI copy is English-only.
 

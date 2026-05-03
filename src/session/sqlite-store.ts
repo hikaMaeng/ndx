@@ -76,6 +76,47 @@ interface RuntimeEventRow {
 
 const CONTEXT_PARTITION_COUNT = 16;
 
+export interface DashboardSessionLogFilters {
+  accounts: string[];
+  projects: string[];
+  sessions: string[];
+}
+
+export interface DashboardSessionLogFacets {
+  accounts: string[];
+  projects: string[];
+  sessions: Array<{
+    id: string;
+    user: string;
+    cwd: string;
+    sequence: number;
+    title: string;
+  }>;
+}
+
+export interface DashboardSessionLogEntry extends StoredSessionListEntry {
+  lastEventId?: number;
+  lastTurnId?: string;
+}
+
+export interface DashboardSessionLogEvent {
+  id: number;
+  sessionId: string;
+  type: string;
+  msgType?: string;
+  turnId?: string;
+  payload: Record<string, unknown>;
+  createdAt: number;
+}
+
+export interface DashboardSessionLogEventPage {
+  session: DashboardSessionLogEntry;
+  events: DashboardSessionLogEvent[];
+  offset: number;
+  limit: number;
+  total: number;
+}
+
 /** SQLite-backed durable state for ndx server accounts and sessions. */
 export class SqliteSessionStore {
   private readonly db: DatabaseSync;
@@ -310,6 +351,132 @@ export class SqliteSessionStore {
     }));
   }
 
+  dashboardSessionLogFacets(): DashboardSessionLogFacets {
+    const accounts = this.db
+      .prepare(
+        [
+          "select distinct s.user_id as user",
+          "from sessions s",
+          "where s.deleted_at is null",
+          "order by s.user_id asc",
+        ].join(" "),
+      )
+      .all()
+      .map((row) => (row as { user: string }).user);
+    const projects = this.db
+      .prepare(
+        [
+          "select distinct p.cwd",
+          "from sessions s join projects p on p.id = s.project_id",
+          "where s.deleted_at is null",
+          "order by p.cwd asc",
+        ].join(" "),
+      )
+      .all()
+      .map((row) => (row as { cwd: string }).cwd);
+    const sessions = this.db
+      .prepare(
+        [
+          "select s.id, s.user_id as user, p.cwd, s.sequence, s.title",
+          "from sessions s join projects p on p.id = s.project_id",
+          "where s.deleted_at is null",
+          "order by s.created_at asc",
+        ].join(" "),
+      )
+      .all() as DashboardSessionLogFacets["sessions"];
+    return { accounts, projects, sessions };
+  }
+
+  listDashboardSessionLogs(
+    filters: DashboardSessionLogFilters,
+  ): DashboardSessionLogEntry[] {
+    const where = ["s.deleted_at is null"];
+    const values: unknown[] = [];
+    addInFilter(where, values, "s.user_id", filters.accounts);
+    addInFilter(where, values, "p.cwd", filters.projects);
+    addInFilter(where, values, "s.id", filters.sessions);
+    return this.db
+      .prepare(
+        [
+          "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
+          "s.updated_at as updatedAt, s.sequence, s.title, s.event_count as eventCount,",
+          "s.last_event_id as lastEventId, s.last_turn_id as lastTurnId",
+          "from sessions s join projects p on p.id = s.project_id",
+          `where ${where.join(" and ")}`,
+          "order by s.created_at asc",
+        ].join(" "),
+      )
+      .all(...values) as DashboardSessionLogEntry[];
+  }
+
+  readDashboardSessionLogEvents(
+    sessionId: string,
+    offset: number,
+    limit: number,
+  ): DashboardSessionLogEventPage | undefined {
+    const session = this.dashboardSessionById(sessionId);
+    if (session === undefined) {
+      return undefined;
+    }
+    const totalRow = this.db
+      .prepare(
+        "select count(1) as total from session_events where session_id = ?",
+      )
+      .get(sessionId) as { total?: unknown } | undefined;
+    const total = typeof totalRow?.total === "number" ? totalRow.total : 0;
+    const rows = this.db
+      .prepare(
+        [
+          "select id, session_id as sessionId, type, msg_type as msgType,",
+          "turn_id as turnId, payload_json as payloadJson, created_at as createdAt",
+          "from session_events",
+          "where session_id = ?",
+          "order by id asc",
+          "limit ? offset ?",
+        ].join(" "),
+      )
+      .all(sessionId, limit, offset) as Array<{
+      id: number;
+      sessionId: string;
+      type: string;
+      msgType?: string | null;
+      turnId?: string | null;
+      payloadJson: string;
+      createdAt: number;
+    }>;
+    return {
+      session,
+      events: rows.map((row) => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        type: row.type,
+        msgType: row.msgType ?? undefined,
+        turnId: row.turnId ?? undefined,
+        payload: JSON.parse(row.payloadJson) as Record<string, unknown>,
+        createdAt: row.createdAt,
+      })),
+      offset,
+      limit,
+      total,
+    };
+  }
+
+  dashboardSessionById(
+    sessionId: string,
+  ): DashboardSessionLogEntry | undefined {
+    return this.db
+      .prepare(
+        [
+          "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
+          "s.updated_at as updatedAt, s.sequence, s.title, s.event_count as eventCount,",
+          "s.last_event_id as lastEventId, s.last_turn_id as lastTurnId",
+          "from sessions s join projects p on p.id = s.project_id",
+          "where s.id = ? and s.deleted_at is null",
+        ].join(" "),
+      )
+      .get(sessionId) as DashboardSessionLogEntry | undefined;
+  }
+
   readSessionContext(sessionId: string): StoredSessionContext | undefined {
     if (!this.sessionExists(sessionId)) {
       return undefined;
@@ -367,13 +534,18 @@ export class SqliteSessionStore {
       const state = this.contextModeState(sessionId);
       const summary = this.buildCompactSummary(sessionId, state.compactEventId);
       const compactedAt = Date.now();
-      const eventId = this.insertEvent(sessionId, "context_compact", undefined, {
-        type: "context_compact",
+      const eventId = this.insertEvent(
         sessionId,
-        previousCompactEventId: state.compactEventId ?? null,
-        summary,
-        compactedAt,
-      });
+        "context_compact",
+        undefined,
+        {
+          type: "context_compact",
+          sessionId,
+          previousCompactEventId: state.compactEventId ?? null,
+          summary,
+          compactedAt,
+        },
+      );
       this.db
         .prepare(
           [
@@ -1213,6 +1385,20 @@ function hashToPartition(value: string): number {
 
 function projectId(user: string, cwd: string): string {
   return `${user}:${cwd}`;
+}
+
+function addInFilter(
+  where: string[],
+  values: unknown[],
+  column: string,
+  selected: string[],
+): void {
+  const normalized = selected.filter((value) => value.length > 0);
+  if (normalized.length === 0) {
+    return;
+  }
+  where.push(`${column} in (${normalized.map(() => "?").join(", ")})`);
+  values.push(...normalized);
 }
 
 function recordTimestamp(record: Record<string, unknown>): number {
