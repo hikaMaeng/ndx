@@ -965,7 +965,7 @@ test("session server restores a saved workspace session by id or number", async 
   }
 });
 
-test("session lite mode filters completed tool logs only from model context", async () => {
+test("session lite mode prunes previous tool logs when a new user turn starts", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-lite-"));
   const globalDir = join(root, "home", ".ndx");
   const persistenceDir = join(root, "server-sessions");
@@ -1009,6 +1009,12 @@ test("session lite mode filters completed tool logs only from model context", as
     assert.equal(enabled.output.includes("lite: on"), true);
     assert.equal(enabled.output.includes("before"), true);
     assert.equal(enabled.output.includes("after"), true);
+    const activeContext = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "context", sessionId },
+    );
+    assert.equal(activeContext.output.includes("assistant_tool_calls"), true);
+    assert.equal(activeContext.output.includes("tool_results"), true);
     const rejected = await client.request<{ handled: true; output: string }>(
       "command/execute",
       { name: "lite", args: "off", sessionId },
@@ -1053,6 +1059,75 @@ test("session lite mode filters completed tool logs only from model context", as
         sessionId,
       ).length >= contextEvents.length,
       true,
+    );
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session lite mode prunes failed prior turn tool logs on next user request", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-lite-failed-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  const model = new MaxTurnsThenTextModelClient("second answer");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        maxTurns: 1,
+        paths: { globalDir },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => model,
+      persistenceDir,
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await initializeAndLoginClient(client);
+    const start = await client.request<{ session: { id: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const sessionId = start.session.id;
+
+    const firstFailed = waitForMethod(client, "error");
+    await client.request("turn/start", {
+      sessionId,
+      prompt: "first failed turn",
+    });
+    await firstFailed;
+    await server.flushPersistence();
+
+    const enabled = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "lite", args: "on", sessionId },
+    );
+    assert.equal(enabled.output.includes("lite: on"), true);
+
+    const secondCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "second turn" });
+    await secondCompleted;
+    await server.flushPersistence();
+
+    const secondInput = model.inputs[1];
+    assert.ok(Array.isArray(secondInput));
+    assert.deepEqual(
+      secondInput.map((item) => (item as { type?: string }).type),
+      ["message", "message"],
+    );
+    assert.deepEqual(
+      (secondInput as Array<{ content?: string }>)
+        .map((item) => item.content)
+        .filter((content): content is string => content !== undefined),
+      ["first failed turn", "second turn"],
     );
   } finally {
     client?.close();
@@ -1999,6 +2074,38 @@ class ScriptedToolModelClient implements ModelClient {
     return {
       id: `scripted-text-${this.step}`,
       text: this.texts.shift() ?? "done",
+      toolCalls: [],
+      raw: { input },
+    };
+  }
+}
+
+class MaxTurnsThenTextModelClient implements ModelClient {
+  readonly inputs: Array<Array<unknown>> = [];
+  private step = 0;
+
+  constructor(private readonly text: string) {}
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.inputs.push(Array.isArray(input) ? input : [input]);
+    this.step += 1;
+    if (this.step === 1) {
+      return {
+        id: "max-turns-tool-call",
+        text: "",
+        toolCalls: [
+          {
+            callId: "max-turns-call-1",
+            name: "shell",
+            arguments: JSON.stringify({ command: "printf max-turns" }),
+          },
+        ],
+        raw: { input },
+      };
+    }
+    return {
+      id: `max-turns-text-${this.step}`,
+      text: this.text,
       toolCalls: [],
       raw: { input },
     };

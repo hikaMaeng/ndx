@@ -1047,7 +1047,7 @@ export class SessionServer {
     session.clientIds.add(context.clientId);
     session.subscribers.add(connection);
     this.ensureSessionPersisted(session, prompt);
-    this.refreshRuntimeHistory(session);
+    this.refreshRuntimeHistory(session, { pruneToolLogsForNewUserTurn: true });
     session.status = "running";
     session.updatedAt = Date.now();
     this.appendSessionRecord(session, {
@@ -1905,13 +1905,19 @@ export class SessionServer {
     );
   }
 
-  private refreshRuntimeHistory(session: LiveSession): void {
-    session.runtime.replaceHistory(this.historyForSession(session));
+  private refreshRuntimeHistory(
+    session: LiveSession,
+    options?: { pruneToolLogsForNewUserTurn?: boolean },
+  ): void {
+    session.runtime.replaceHistory(this.historyForSession(session, options));
   }
 
-  private historyForSession(session: LiveSession): ModelConversationItem[] {
+  private historyForSession(
+    session: LiveSession,
+    options?: { pruneToolLogsForNewUserTurn?: boolean },
+  ): ModelConversationItem[] {
     if (session.persisted) {
-      return this.store.readModelContext(session.id);
+      return this.store.readModelContext(session.id, options);
     }
     return conversationHistoryFromRuntimeEvents(session.events);
   }

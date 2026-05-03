@@ -55,6 +55,11 @@ export interface ContextModeState {
   updatedAt?: number;
 }
 
+interface ModelContextReadOptions {
+  liteEnabled?: boolean;
+  pruneToolLogsForNewUserTurn?: boolean;
+}
+
 export interface CompactSessionResult {
   summary: string;
   eventId: number;
@@ -512,18 +517,18 @@ export class SqliteSessionStore {
 
   readModelContext(
     sessionId: string,
-    override?: { liteEnabled?: boolean },
+    options?: ModelContextReadOptions,
   ): ModelConversationItem[] {
     if (!this.sessionExists(sessionId)) {
       return [];
     }
     const state = {
       ...this.contextModeState(sessionId),
-      ...(override?.liteEnabled === undefined
+      ...(options?.liteEnabled === undefined
         ? {}
-        : { liteEnabled: override.liteEnabled }),
+        : { liteEnabled: options.liteEnabled }),
     };
-    return this.modelContextItems(sessionId, state);
+    return this.modelContextItems(sessionId, state, options);
   }
 
   compactSession(sessionId: string): CompactSessionResult {
@@ -856,7 +861,7 @@ export class SqliteSessionStore {
     sessionId: string,
     state: ContextModeState,
   ): RuntimeEvent[] {
-    return this.filteredContextRows(sessionId, state)
+    return this.filteredContextRows(sessionId, state, {})
       .map((row) => JSON.parse(row.payload))
       .filter(isRuntimeEvent);
   }
@@ -864,6 +869,7 @@ export class SqliteSessionStore {
   private modelContextItems(
     sessionId: string,
     state: ContextModeState,
+    options?: ModelContextReadOptions,
   ): ModelConversationItem[] {
     const items: ModelConversationItem[] = [];
     const compact = this.compactRecord(sessionId, state.compactEventId);
@@ -876,7 +882,7 @@ export class SqliteSessionStore {
     }
     items.push(
       ...conversationItemsFromRuntimeEvents(
-        this.filteredContextRows(sessionId, state)
+        this.filteredContextRows(sessionId, state, options ?? {})
           .map((row) => JSON.parse(row.payload))
           .filter(isRuntimeEvent),
       ),
@@ -887,6 +893,7 @@ export class SqliteSessionStore {
   private filteredContextRows(
     sessionId: string,
     state: ContextModeState,
+    options: ModelContextReadOptions,
   ): ContextEventRow[] {
     const afterEventId = state.compactEventId ?? 0;
     const rows = this.contextRows(sessionId).filter(
@@ -895,32 +902,24 @@ export class SqliteSessionStore {
     if (!state.liteEnabled) {
       return rows;
     }
-    const completedTurns = new Set<string>();
+    if (options.pruneToolLogsForNewUserTurn === true) {
+      return rows.filter((row) => !isToolContextRow(row));
+    }
+    let latestUserTurnEventId = 0;
     for (const row of rows) {
       const event = JSON.parse(row.payload);
       if (!isRuntimeEvent(event)) {
         continue;
       }
-      const turnId = eventTurnId(event);
-      if (
-        turnId !== undefined &&
-        (event.msg.type === "turn_complete" ||
-          event.msg.type === "turn_aborted" ||
-          event.msg.type === "error")
-      ) {
-        completedTurns.add(turnId);
+      if (event.msg.type === "turn_started") {
+        latestUserTurnEventId = row.eventId;
       }
     }
     return rows.filter((row) => {
-      const event = JSON.parse(row.payload);
-      if (!isRuntimeEvent(event)) {
-        return false;
-      }
-      if (event.msg.type !== "tool_call" && event.msg.type !== "tool_result") {
+      if (!isToolContextRow(row)) {
         return true;
       }
-      const turnId = eventTurnId(event);
-      return turnId === undefined || !completedTurns.has(turnId);
+      return latestUserTurnEventId === 0 || row.eventId > latestUserTurnEventId;
     });
   }
 
@@ -1444,6 +1443,14 @@ function isContextEvent(event: RuntimeEvent): boolean {
     event.msg.type === "tool_call" ||
     event.msg.type === "tool_result" ||
     event.msg.type === "turn_complete"
+  );
+}
+
+function isToolContextRow(row: ContextEventRow): boolean {
+  const event = JSON.parse(row.payload);
+  return (
+    isRuntimeEvent(event) &&
+    (event.msg.type === "tool_call" || event.msg.type === "tool_result")
   );
 }
 
