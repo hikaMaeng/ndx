@@ -108,7 +108,7 @@ test("session server owns session events, subscribers, and SQLite persistence", 
     assert.equal(info.runtime.kind, "host-process");
     assert.equal(info.runtime.node.startsWith("v"), true);
     assert.equal(info.toolSandbox.kind, "disabled");
-    assert.equal(info.toolSandbox.image, "hika00/ndx-sandbox:0.1.0");
+    assert.equal(info.toolSandbox.image, "hika00/ndx-sandbox:0.1.1");
 
     await loginClient(client);
     const initialize = await client.request<{

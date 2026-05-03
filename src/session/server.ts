@@ -62,6 +62,7 @@ import {
 } from "./server/params.js";
 import { eventTurnId, isTerminalEvent } from "./server/runtime-events.js";
 import { WebSocketConnection } from "./server/websocket.js";
+import { filesystemToolRequirements } from "./tools/registry.js";
 
 type JsonRpcId = number | string | null;
 
@@ -728,6 +729,9 @@ export class SessionServer {
       globalDir: this.config.paths.globalDir,
       image:
         this.options.dockerSandboxImage ?? this.config.tools.dockerSandboxImage,
+      requirements: filesystemToolRequirements(this.config, {
+        includeCore: false,
+      }),
     });
     this.sandboxes.set(workspaceDir, sandbox);
     return sandbox;

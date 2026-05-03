@@ -18,7 +18,7 @@ persistence, dashboard, deploy, and package distribution boundaries.
 - Non-login WebSocket JSON-RPC methods require a successful login except public
   `server/info`. The server ignores unauthenticated non-login requests.
 - The server depends on a pinned sandbox image. The default image is
-  `hika00/ndx-sandbox:0.1.0`.
+  `hika00/ndx-sandbox:0.1.1`.
 - Sandbox image changes require a new Docker Hub tag under `hika00`, a pushed
   image, and server verification against that exact tag.
 - Package distribution publishes the root package as `@neurondev/ndx`.
@@ -591,7 +591,7 @@ Execution rules:
 ```mermaid
 flowchart TD
   need["Server needs shell-like tool execution for workspace"]
-  image["Pinned image\nhika00/ndx-sandbox:0.1.0"]
+  image["Pinned image\nhika00/ndx-sandbox:0.1.1"]
   checkDocker{"Docker available?"}
   pullOrUse["Use or pull pinned image"]
   container{"Workspace sandbox container exists?"}

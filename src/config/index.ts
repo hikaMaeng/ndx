@@ -239,6 +239,9 @@ function ensureCoreToolPackage(
       },
       command: "node",
       args: ["tool.mjs"],
+      ...(tool.requirements === undefined
+        ? {}
+        : { requirements: tool.requirements }),
     });
   }
   elements.push({

@@ -1,11 +1,32 @@
 import type { JsonObject } from "../shared/types.js";
 
+interface CoreToolRequirements {
+  apt?: string[];
+  npmGlobal?: string[];
+  pip?: string[];
+  binaries?: string[];
+  playwright?: {
+    browsers?: string[];
+    withDeps?: boolean;
+  };
+}
+
 export interface CoreToolPackage {
   name: string;
   description: string;
   parameters: JsonObject;
   runtime: string;
+  requirements?: CoreToolRequirements;
 }
+
+const NODE_TOOL_REQUIREMENTS = {
+  binaries: ["node"],
+};
+
+const SHELL_TOOL_REQUIREMENTS = {
+  apt: ["bash"],
+  binaries: ["bash"],
+};
 
 const READ_STDIN = String.raw`
 async function readRequest() {
@@ -23,6 +44,7 @@ export const CORE_TOOL_PACKAGES: CoreToolPackage[] = [
     name: "shell",
     description:
       "Run a shell command in the local workspace and return stdout, stderr, and exit status.",
+    requirements: SHELL_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         command: stringSchema(
@@ -118,6 +140,10 @@ function pathKey(path) {
     name: "apply_patch",
     description:
       "Apply a unified patch to files in the local workspace using the apply_patch command.",
+    requirements: {
+      apt: ["bash", "patch", "python3"],
+      binaries: ["apply_patch", "bash", "patch", "python3"],
+    },
     parameters: objectSchema(
       {
         input: stringSchema("The entire contents of the apply_patch command."),
@@ -193,6 +219,7 @@ function pathKey(path) {
     name: "list_dir",
     description:
       "Lists entries in a local directory with 1-indexed entry numbers and simple type labels.",
+    requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         dir_path: stringSchema("Absolute path to the directory to list."),
@@ -277,6 +304,7 @@ function pathKey(path) {
     name: "view_image",
     description:
       "View a local image from the filesystem when given a full filepath by the user.",
+    requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         path: stringSchema("Local filesystem path to an image file."),
@@ -361,6 +389,7 @@ function pathKey(path) {
     name: "web_search",
     description:
       "Search the web through the configured Tavily-compatible websearch provider.",
+    requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         query: stringSchema("Search query."),
@@ -400,6 +429,7 @@ process.stdout.write(JSON.stringify(await response.json()) + "\n");
     name: "image_generation",
     description:
       "Placeholder image generation contract for clients that provide an image backend.",
+    requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         prompt: stringSchema("Image generation prompt."),
@@ -420,6 +450,7 @@ process.stdout.write(JSON.stringify({
     name: "tool_suggest",
     description:
       "Suggests a missing connector or plugin when the user clearly wants a capability that is not currently available.",
+    requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         tool_type: stringSchema("connector or plugin"),
@@ -442,6 +473,7 @@ process.stdout.write(JSON.stringify({
     name: "tool_search",
     description:
       "Searches filesystem tool metadata from core, project, global, and plugin tool layers.",
+    requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         query: stringSchema("Search query for deferred tools."),
@@ -508,6 +540,7 @@ function score(tool, terms) {
     name: "request_permissions",
     description:
       "Request additional filesystem or network permissions from the user.",
+    requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         reason: stringSchema(

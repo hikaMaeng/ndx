@@ -41,7 +41,7 @@ ndx is a TypeScript-first local coding agent runtime.
 - `keys` entries in settings are injected into shell tool executions.
 - Docker is a per-physical-project-folder tool sandbox only. The server is a
   local process and depends on the pinned sandbox image
-  `hika00/ndx-sandbox:0.1.0` for external capability tool and MCP execution.
+  `hika00/ndx-sandbox:0.1.1` for external capability tool and MCP execution.
 - `--mock` runs the full agent/tool loop without a provider key.
 - Real model execution uses the provider declared in settings. OpenAI-compatible providers try Responses first and fall back to Chat Completions when `/responses` is unavailable; Anthropic providers use Messages.
 - Provider requests never depend on server-side response continuation state. The agent sends the local client-side conversation stack on every model request and does not send `previous_response_id`.

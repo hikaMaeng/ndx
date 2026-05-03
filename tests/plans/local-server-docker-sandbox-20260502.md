@@ -14,7 +14,7 @@ the sandbox image deployable from Docker Hub.
 
 - Workspace: `/mnt/f/dev/ndx`
 - Runtime: Node.js 22, Yarn 4, Docker Compose
-- Sandbox image: `hika00/ndx-sandbox:0.1.0`
+- Sandbox image: `hika00/ndx-sandbox:0.1.1`
 
 ## Preconditions
 
@@ -28,8 +28,8 @@ the sandbox image deployable from Docker Hub.
 1. Run `yarn build`.
 2. Run `yarn test`.
 3. Run `npm run deploy`.
-4. Push `hika00/ndx-sandbox:0.1.0`.
-5. Pull `hika00/ndx-sandbox:0.1.0`.
+4. Push `hika00/ndx-sandbox:0.1.1`.
+5. Pull `hika00/ndx-sandbox:0.1.1`.
 6. Start a `SessionServer` with `requireDockerSandbox: true` and
    `tools.dockerSandboxImage` set to the pushed tag.
 7. Fetch the dashboard URL from that local server.

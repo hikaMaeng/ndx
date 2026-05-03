@@ -2,7 +2,7 @@ services:
   ndx-sandbox:
     build:
       context: .
-    image: ${NDX_SANDBOX_IMAGE:-hika00/ndx-sandbox:0.1.0}
+    image: ${NDX_SANDBOX_IMAGE:-hika00/ndx-sandbox:0.1.1}
     working_dir: /workspace
     command: ["sleep", "infinity"]
     volumes:

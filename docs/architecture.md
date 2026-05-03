@@ -205,7 +205,7 @@ down.
 The default compose service is `ndx-sandbox`. It runs `sleep infinity` and is
 only a tool-execution sandbox. It does not run `ndxserver`, publish service
 ports, or contain authoritative session state. Production server builds depend
-on the pinned Docker Hub image `hika00/ndx-sandbox:0.1.0`; any sandbox
+on the pinned Docker Hub image `hika00/ndx-sandbox:0.1.1`; any sandbox
 Dockerfile change must be pushed under a new Docker Hub tag and tested by the
 server against that pushed tag.
 
@@ -222,3 +222,9 @@ paths. The image itself contains the baseline shell/tool runtime; startup only b
 container state from the server-owned Docker run argument template in
 `src/session/docker-sandbox.ts`.
 the user `.ndx`, project folder, and Docker socket volumes.
+
+Core capability tools are source-controlled through `src/config/core-tools.ts`
+and bootstrapped into `/home/.ndx/system/tools` as external manifests. The
+pinned base sandbox image carries core tool dependencies. Non-core filesystem
+tool requirements are read from manifest `requirements` and prepared inside the
+reused workspace container using a requirements fingerprint.

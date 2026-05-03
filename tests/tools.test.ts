@@ -135,6 +135,92 @@ test("registry discovers tool.json layers and keeps higher priority names", asyn
   }
 });
 
+test("registry aggregates external tool requirements from manifests", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-tool-requirements-"));
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    const projectNdxDir = join(root, "repo", ".ndx");
+    writeEchoTool(join(globalDir, "system", "tools", "echo"), "core", {
+      apt: ["bash"],
+      binaries: ["bash"],
+    });
+    writeEchoTool(join(projectNdxDir, "tools", "browser"), "project", {
+      apt: ["jq", "ripgrep", "jq"],
+      npmGlobal: ["playwright"],
+      binaries: ["jq", "rg"],
+      playwright: { browsers: ["chromium"], withDeps: true },
+    });
+    writeEchoTool(
+      join(projectNdxDir, "plugins", "lint", "tools", "lint_files"),
+      "project-plugin",
+      {
+        pip: ["ruff"],
+        binaries: ["ruff"],
+      },
+    );
+    const registry = await createToolRegistry({
+      ...baseConfig,
+      paths: {
+        globalDir,
+        projectDir: join(root, "repo"),
+        projectNdxDir,
+      },
+    });
+
+    assert.deepEqual(registry.requirements({ includeCore: false }), {
+      apt: ["jq", "ripgrep"],
+      npmGlobal: ["playwright"],
+      pip: ["ruff"],
+      binaries: ["jq", "rg", "ruff"],
+      playwright: { browsers: ["chromium"], withDeps: true },
+      sources: [
+        {
+          tool: "browser",
+          layer: "project",
+          manifestPath: join(projectNdxDir, "tools", "browser", "tool.json"),
+        },
+        {
+          tool: "lint_files",
+          layer: "project-plugin",
+          manifestPath: join(
+            projectNdxDir,
+            "plugins",
+            "lint",
+            "tools",
+            "lint_files",
+            "tool.json",
+          ),
+        },
+      ],
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("registry rejects unsupported tool requirement keys", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-tool-bad-requirements-"));
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    writeEchoTool(join(globalDir, "system", "tools", "echo"), "core");
+    const manifest = join(globalDir, "system", "tools", "echo", "tool.json");
+    const parsed = JSON.parse(readFileSync(manifest, "utf8"));
+    parsed.requirements = { apk: ["ripgrep"] };
+    writeFileSync(manifest, `${JSON.stringify(parsed, null, 2)}\n`);
+
+    await assert.rejects(
+      () =>
+        createToolRegistry({
+          ...baseConfig,
+          paths: { globalDir },
+        }),
+      /requirements\.apk is not supported/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("registry exposes bootstrapped core capability tools as external tools", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-core-tools-"));
   try {
@@ -286,7 +372,11 @@ test("parallel shell tool calls run in separate worker node processes", async ()
   }
 });
 
-function writeEchoTool(toolDir: string, value: string): void {
+function writeEchoTool(
+  toolDir: string,
+  value: string,
+  requirements?: Record<string, unknown>,
+): void {
   mkdirSync(toolDir, { recursive: true });
   writeFileSync(
     join(toolDir, "tool.json"),
@@ -304,6 +394,7 @@ function writeEchoTool(toolDir: string, value: string): void {
         },
         command: "node",
         args: ["tool.mjs"],
+        ...(requirements === undefined ? {} : { requirements }),
       },
       null,
       2,

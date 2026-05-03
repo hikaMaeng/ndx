@@ -355,6 +355,18 @@ test("ensureGlobalNdxHome installs system directories and tool packages", () => 
       existsSync(join(globalDir, "system", "tools", "shell", "tool.mjs")),
       true,
     );
+    assert.deepEqual(
+      JSON.parse(
+        readFileSync(
+          join(globalDir, "system", "tools", "shell", "tool.json"),
+          "utf8",
+        ),
+      ).requirements,
+      {
+        apt: ["bash"],
+        binaries: ["bash"],
+      },
+    );
     for (const tool of [
       "apply_patch",
       "list_dir",

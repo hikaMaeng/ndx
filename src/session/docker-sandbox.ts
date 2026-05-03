@@ -4,12 +4,18 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
 import { mapHostPathToSandboxPath } from "./sandbox-paths.js";
+import {
+  isEmptyRequirementSet,
+  toolRequirementsFingerprint,
+} from "./tools/requirements.js";
+import type { ToolRequirementSet } from "./tools/types.js";
 
 export interface DockerSandboxOptions {
   workspaceDir: string;
   globalDir?: string;
   image?: string;
   containerName?: string;
+  requirements?: ToolRequirementSet;
 }
 
 export interface DockerSandboxState {
@@ -21,7 +27,7 @@ export interface DockerSandboxState {
   containerGlobalDir: string;
 }
 
-const DEFAULT_SANDBOX_IMAGE = "hika00/ndx-sandbox:0.1.0";
+const DEFAULT_SANDBOX_IMAGE = "hika00/ndx-sandbox:0.1.1";
 const CONTAINER_WORKSPACE_DIR = "/workspace";
 const CONTAINER_GLOBAL_DIR = "/home/.ndx";
 const SANDBOX_ROLE_LABEL = "dev.ndx.role";
@@ -127,16 +133,22 @@ export async function ensureDockerSandbox(
   const labeled = await findLabeledSandbox(state);
   if (labeled !== undefined) {
     if (labeled.running) {
-      return { ...state, containerName: labeled.name };
+      const runningState = { ...state, containerName: labeled.name };
+      await prepareDockerSandbox(runningState, options.requirements);
+      return runningState;
     }
     await runDocker(["rm", "-f", labeled.name]);
   }
   const container = await availableContainerName(state);
   if (container.running) {
-    return { ...state, containerName: container.name };
+    const runningState = { ...state, containerName: container.name };
+    await prepareDockerSandbox(runningState, options.requirements);
+    return runningState;
   }
   await runDocker(dockerSandboxRunArgs(state, container.name));
-  return { ...state, containerName: container.name };
+  const createdState = { ...state, containerName: container.name };
+  await prepareDockerSandbox(createdState, options.requirements);
+  return createdState;
 }
 
 export function dockerSandboxRunArgs(
@@ -162,6 +174,81 @@ function dockerNamePart(path: string): string {
 
 function dockerNameHash(path: string): string {
   return createHash("sha256").update(path).digest("hex").slice(0, 12);
+}
+
+async function prepareDockerSandbox(
+  state: DockerSandboxState,
+  requirements: ToolRequirementSet | undefined,
+): Promise<void> {
+  if (requirements === undefined || isEmptyRequirementSet(requirements)) {
+    return;
+  }
+  const fingerprint = toolRequirementsFingerprint(requirements);
+  await runDocker([
+    "exec",
+    "-i",
+    state.containerName,
+    "/bin/bash",
+    "-lc",
+    sandboxPrepareScript(requirements, fingerprint),
+  ]);
+}
+
+function sandboxPrepareScript(
+  requirements: ToolRequirementSet,
+  fingerprint: string,
+): string {
+  const stamp = JSON.stringify({
+    fingerprint,
+    requirements,
+    preparedAt: new Date().toISOString(),
+  });
+  const lines = [
+    "set -euo pipefail",
+    "stamp_dir=/home/.ndx/system/sandbox-requirements",
+    "stamp_file=${stamp_dir}/current.json",
+    `fingerprint=${shellQuote(fingerprint)}`,
+    'if [ -f "${stamp_file}" ] && node -e \'const fs=require("fs"); const p=process.argv[1]; const f=process.argv[2]; try { process.exit(JSON.parse(fs.readFileSync(p, "utf8")).fingerprint === f ? 0 : 1); } catch { process.exit(1); }\' "${stamp_file}" "${fingerprint}"; then exit 0; fi',
+    'mkdir -p "${stamp_dir}"',
+  ];
+  if (requirements.apt.length > 0) {
+    lines.push(
+      "export DEBIAN_FRONTEND=noninteractive",
+      "apt-get update",
+      `apt-get install -y --no-install-recommends ${requirements.apt
+        .map(shellQuote)
+        .join(" ")}`,
+      "rm -rf /var/lib/apt/lists/*",
+    );
+  }
+  if (requirements.npmGlobal.length > 0) {
+    lines.push(
+      `npm install -g ${requirements.npmGlobal.map(shellQuote).join(" ")}`,
+    );
+  }
+  if (requirements.pip.length > 0) {
+    lines.push(
+      `python3 -m pip install ${requirements.pip.map(shellQuote).join(" ")}`,
+    );
+  }
+  if (requirements.playwright !== undefined) {
+    const playwrightArgs = [
+      "playwright",
+      "install",
+      ...(requirements.playwright.withDeps ? ["--with-deps"] : []),
+      ...requirements.playwright.browsers,
+    ];
+    lines.push(`npx ${playwrightArgs.map(shellQuote).join(" ")}`);
+  }
+  for (const binary of requirements.binaries) {
+    lines.push(`command -v ${shellQuote(binary)} >/dev/null`);
+  }
+  lines.push(`cat > "${"${stamp_file}"}" <<'JSON'\n${stamp}\nJSON`);
+  return lines.join("\n");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function renderDockerArgs(

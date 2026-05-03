@@ -15,7 +15,7 @@ active workspace and records detailed Docker tool audit logs.
 - Workspace: `/mnt/f/dev/ndx`
 - Package: `@neurondev/ndx@0.1.12`
 - Registry: `https://verdaccio.neurondev.net/`
-- Sandbox image: `hika00/ndx-sandbox:0.1.0`
+- Sandbox image: `hika00/ndx-sandbox:0.1.1`
 
 ## Preconditions
 
