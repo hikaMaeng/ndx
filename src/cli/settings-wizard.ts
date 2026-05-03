@@ -5,11 +5,12 @@ import {
   currentSettingsVersion,
   resolveGlobalNdxDir,
 } from "../config/index.js";
+import { NDX_DEFAULTS } from "../config/defaults.js";
 import type { JsonObject } from "../shared/types.js";
 
 const PERMISSION_OPTIONS = [
   {
-    label: "danger-full-access",
+    label: NDX_DEFAULTS.permissionMode,
     description: "no sandbox restrictions",
   },
   {

@@ -1,6 +1,4 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { dirname, join, parse, resolve } from "node:path";
 import type {
   EnvMap,
@@ -21,12 +19,10 @@ import type {
   WebSearchSettings,
 } from "../shared/types.js";
 import { CORE_TOOL_PACKAGES, type CoreToolPackage } from "./core-tools.js";
+import { NDX_DEFAULTS } from "./defaults.js";
+import { currentSettingsVersion } from "./package-version.js";
 
-const DEFAULT_GLOBAL_NDX_DIR = join(homedir(), ".ndx");
-const CONFIG_DIR = ".ndx";
-const SETTINGS_FILE = "settings.json";
-const SEARCH_FILE = "search.json";
-const SYSTEM_DIR = "system";
+export { currentSettingsVersion } from "./package-version.js";
 
 export interface ConfigLoadOptions {
   globalDir?: string;
@@ -65,7 +61,7 @@ interface PartialModelPools {
 
 /** Return the single global ndx configuration directory. */
 export function resolveGlobalNdxDir(options: ConfigLoadOptions = {}): string {
-  return resolve(options.globalDir ?? DEFAULT_GLOBAL_NDX_DIR);
+  return resolve(options.globalDir ?? NDX_DEFAULTS.globalDir);
 }
 
 /** Return settings files in strict global-then-project order. */
@@ -73,7 +69,9 @@ export function configFiles(
   cwd: string,
   options: ConfigLoadOptions = {},
 ): string[] {
-  const files = [join(resolveGlobalNdxDir(options), SETTINGS_FILE)];
+  const files = [
+    join(resolveGlobalNdxDir(options), NDX_DEFAULTS.settingsFile),
+  ];
   const project = projectSettingsFile(cwd);
   if (project !== undefined && project !== files[0]) {
     files.push(project);
@@ -102,7 +100,7 @@ export function loadConfig(
       parseSettings(readFileSync(file, "utf8"), file),
       file,
     );
-    if (file === join(globalDir, SETTINGS_FILE)) {
+    if (file === join(globalDir, NDX_DEFAULTS.settingsFile)) {
       globalMcp = parsed.mcp ?? {};
     } else {
       projectMcp = parsed.mcp ?? {};
@@ -141,7 +139,9 @@ export function loadConfig(
       globalDir,
       projectDir,
       projectNdxDir:
-        projectDir === undefined ? undefined : join(projectDir, CONFIG_DIR),
+        projectDir === undefined
+          ? undefined
+          : join(projectDir, NDX_DEFAULTS.configDir),
       globalMcp,
       projectMcp,
     }),
@@ -151,12 +151,12 @@ export function loadConfig(
 
 /** Return the global search rule file path. */
 export function searchRulesFile(options: ConfigLoadOptions = {}): string {
-  return join(resolveGlobalNdxDir(options), SEARCH_FILE);
+  return join(resolveGlobalNdxDir(options), NDX_DEFAULTS.searchFile);
 }
 
 /** Return the code-managed ndx system directory below the global home. */
 export function systemDir(globalDir: string): string {
-  return join(globalDir, SYSTEM_DIR);
+  return join(globalDir, NDX_DEFAULTS.systemDir);
 }
 
 /** Install required global .ndx directories and core tools when missing. */
@@ -170,9 +170,9 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
     status: globalDirStatus,
   });
   for (const directory of [
-    SYSTEM_DIR,
-    join(SYSTEM_DIR, "tools"),
-    join(SYSTEM_DIR, "skills"),
+    NDX_DEFAULTS.systemDir,
+    join(NDX_DEFAULTS.systemDir, "tools"),
+    join(NDX_DEFAULTS.systemDir, "skills"),
   ]) {
     const path = join(globalDir, directory);
     const status = existsSync(path) ? "existing" : "installed";
@@ -195,13 +195,13 @@ function runtimeDefaults(): PartialSettings {
   return {
     instructions:
       "You are ndx, a local coding agent. Prefer concise plans, inspect before editing, and use shell when facts must be verified.",
-    maxTurns: 8,
-    shellTimeoutMs: 120_000,
-    permissions: { defaultMode: "danger-full-access" },
+    maxTurns: NDX_DEFAULTS.maxTurns,
+    shellTimeoutMs: NDX_DEFAULTS.shellTimeoutMs,
+    permissions: { defaultMode: NDX_DEFAULTS.permissionMode },
     search: {},
     mcp: {},
     plugins: [],
-    tools: { imageGeneration: false },
+    tools: { imageGeneration: NDX_DEFAULTS.imageGenerationEnabled },
     keys: {},
     env: {},
   };
@@ -266,7 +266,11 @@ function writeJsonFile(path: string, value: unknown): void {
 }
 
 function projectSettingsFile(cwd: string): string | undefined {
-  const candidate = join(resolve(cwd), CONFIG_DIR, SETTINGS_FILE);
+  const candidate = join(
+    resolve(cwd),
+    NDX_DEFAULTS.configDir,
+    NDX_DEFAULTS.settingsFile,
+  );
   return existsSync(candidate) ? candidate : undefined;
 }
 
@@ -313,28 +317,6 @@ function parseSettings(contents: string, file: string): PartialSettings {
   assertPlugins(parsed.plugins, file);
   assertTools(parsed.tools, file);
   return parsed;
-}
-
-/** Return the package version that settings.json must declare. */
-export function currentSettingsVersion(): string {
-  let current = dirname(fileURLToPath(import.meta.url));
-  while (true) {
-    const candidate = join(current, "package.json");
-    if (existsSync(candidate)) {
-      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
-        version?: unknown;
-      };
-      if (typeof parsed.version === "string" && parsed.version.length > 0) {
-        return parsed.version;
-      }
-      throw new Error(`${candidate} must contain a package version`);
-    }
-    const parent = dirname(current);
-    if (parent === current) {
-      throw new Error("package.json was not found for settings version");
-    }
-    current = parent;
-  }
 }
 
 function normalizeSettingsVersion(
@@ -524,7 +506,8 @@ function finalizeConfig(
     activeModel,
     activeProvider,
     permissions: {
-      defaultMode: settings.permissions?.defaultMode ?? "danger-full-access",
+      defaultMode:
+        settings.permissions?.defaultMode ?? NDX_DEFAULTS.permissionMode,
     },
     websearch: settings.websearch ?? {},
     search: settings.search ?? {},

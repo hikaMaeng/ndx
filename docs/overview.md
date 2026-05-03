@@ -1,59 +1,32 @@
 # Overview
 
-ndx is a TypeScript-first local coding agent runtime.
+ndx is a single TypeScript package for a local coding agent. The active product
+surface is the root package, `src/`, `tests/`, `docs/`, and the Docker deploy
+flow.
 
-## Current Contract
+## Runtime Shape
 
-- `src/cli/main.ts` is the active CLI entrypoint.
-- `ndx` remains the CLI command. `ndxserver` directly runs the long-lived
-  server path.
-- CLI one-shot and interactive modes both run through `AgentRuntime`.
-- `AgentRuntime` exposes a session/turn/submission/event protocol that future TUI, app-server, and tool registry work will reuse.
-- `ndx` accepts one startup argument: the server address. If omitted, it uses
-  `127.0.0.1:45123`.
-- `ndx` first connects to that server unless `--mock`, `--connect`, `serve`,
-  `ndxserver`, or `NDX_EMBEDDED_SERVER=1` is used.
-- If no server is reachable, `ndx` reports the miss, starts a local default
-  server at the default address, logs in, and then connects through the normal
-  session flow.
-- In interactive mode, startup asks whether to use `defaultUser`, continue the
-  previous non-default login, or start a new Google device login. The previous
-  login option is hidden when the stored login is `defaultUser`.
-- Interactive slash commands are session-server controls exposed through `command/list` and `command/execute`.
-- User `.ndx/settings.json` is the global settings path.
-- User `.ndx/system` is the default SQLite and code-managed system directory;
-  optional `dataPath` overrides it and legacy `sessionPath` is treated as the
-  same override.
-- Accounts, social account links, sessions, events, and ownership are stored in
-  `<dataDir>/ndx.sqlite`. Omitted user is `defaultUser`.
-- Host CLI last-login state is stored in the CLI app-state directory. It is a
-  single value shared by CLI instances and is separate from `/home/.ndx` and
-  project `.ndx`.
-- The server exposes a WebSocket socket port and a separate dashboard HTTP
-  port. The dashboard has no auth and exposes server information plus Reload
-  and Exit actions; the socket exposes public `server/info` for pre-login
-  identity display and ignores other non-login methods until account login
-  succeeds.
-- Project-local settings are discovered from the current project folder's `.ndx/settings.json`.
-- Settings files carry the installed ndx package version. Valid stale files are
-  version-bumped in place; incomplete files require TTY wizard repair.
-- `/home/.ndx/search.json` externalizes web-search parsing and interpretation rules.
-- `keys` entries in settings are injected into shell tool executions.
-- Docker is a per-physical-project-folder tool sandbox only. The server is a
-  local process and depends on the pinned sandbox image
-  `hika00/ndx-sandbox:0.1.0` for external capability tool and MCP execution.
-- `--mock` runs the full agent/tool loop without a provider key.
-- Real model execution uses the provider declared in settings. OpenAI-compatible providers try Responses first and fall back to Chat Completions when `/responses` is unavailable; Anthropic providers use Messages.
-- Provider requests never depend on server-side response continuation state. The agent sends the local client-side conversation stack on every model request and does not send `previous_response_id`.
-- Settings may define `model.session` and `model.custom` pools. Live sessions keep sticky model bindings per selected pool to preserve prefix-cache locality; `/model`, `/effort`, and `/think` can explicitly change model, effort, and thinking mode.
-- Missing user `.ndx/system` directories and core tools are installed before
-  config loading. If no settings file exists in a TTY CLI run, ndx asks for
-  minimal provider/model settings and writes `/home/.ndx/settings.json`.
-- Startup login and `/login` let an interactive CLI choose Google, GitHub,
-  current account, or `defaultUser`. Google and GitHub use device login and require
-  `NDX_GOOGLE_CLIENT_ID` or `NDX_GITHUB_CLIENT_ID` in the host CLI environment.
+- The CLI binary is `ndx`; `ndxserver` is the same entrypoint in server mode.
+- Normal `ndx` startup accepts only an optional server address. The default is
+  `ws://127.0.0.1:45123`.
+- If the requested server is not reachable, the CLI starts a local
+  `SessionServer` host process for the current folder and connects to it.
+- The server owns auth, live sessions, SQLite persistence, runtime events,
+  dashboard HTTP, Docker sandbox preparation, and tool execution.
+- Docker is not the server body. Docker provides the per-workspace sandbox used
+  by external tools and MCP stdio commands.
 
-## Source Of Truth
+## Configuration
 
-The root TypeScript package, `src/`, `docs/`, and `tests/` are the active source
-of truth for ndx behavior.
+Runtime settings are JSON files. Global settings live at
+`/home/.ndx/settings.json`; a project override may live at
+`<project>/.ndx/settings.json`. Global search rules live at
+`/home/.ndx/search.json`.
+
+Code-owned defaults are centralized in `src/config/defaults.ts`. User-editable
+model, provider, key, tool, and MCP settings remain in settings JSON files.
+
+## Distribution
+
+The package name is `@neurondev/ndx`. Verdaccio is the default install-test
+registry. Public npm publishing is explicit-only.
