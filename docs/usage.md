@@ -47,7 +47,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.14",
+  "version": "0.1.15",
   "model": "local-model",
   "providers": {
     "local": {
