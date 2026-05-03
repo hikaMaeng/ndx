@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import type { ModelConversationItem } from "../model/types.js";
 import type { RuntimeEvent } from "../shared/protocol.js";
 
 type DatabaseSync = {
@@ -31,6 +32,9 @@ export interface StoredSession {
 
 export interface StoredSessionContext {
   events: RuntimeEvent[];
+  items: ModelConversationItem[];
+  liteEnabled: boolean;
+  compactEventId?: number;
 }
 
 export interface StoredSessionListEntry {
@@ -44,6 +48,33 @@ export interface StoredSessionListEntry {
   sequence: number;
   title: string;
 }
+
+export interface ContextModeState {
+  liteEnabled: boolean;
+  compactEventId?: number;
+  updatedAt?: number;
+}
+
+export interface CompactSessionResult {
+  summary: string;
+  eventId: number;
+  compactedAt: number;
+}
+
+interface ContextEventRow {
+  eventId: number;
+  itemSeq: number;
+  payload: string;
+}
+
+interface RuntimeEventRow {
+  id: number;
+  payload: string;
+  msgType?: string;
+  turnId?: string;
+}
+
+const CONTEXT_PARTITION_COUNT = 16;
 
 /** SQLite-backed durable state for ndx server accounts and sessions. */
 export class SqliteSessionStore {
@@ -283,9 +314,79 @@ export class SqliteSessionStore {
     if (!this.sessionExists(sessionId)) {
       return undefined;
     }
+    const state = this.contextModeState(sessionId);
+    const events = this.contextEvents(sessionId, state);
     return {
-      events: this.contextEvents(sessionId),
+      events,
+      items: this.modelContextItems(sessionId, state),
+      liteEnabled: state.liteEnabled,
+      compactEventId: state.compactEventId,
     };
+  }
+
+  setLiteMode(sessionId: string, enabled: boolean): ContextModeState {
+    if (!this.sessionExists(sessionId)) {
+      throw new Error(`unknown session: ${sessionId}`);
+    }
+    const now = Date.now();
+    this.db
+      .prepare(
+        [
+          "insert into session_context_state",
+          "(session_id, lite_enabled, updated_at)",
+          "values (?, ?, ?)",
+          "on conflict(session_id) do update set",
+          "lite_enabled = excluded.lite_enabled, updated_at = excluded.updated_at",
+        ].join(" "),
+      )
+      .run(sessionId, enabled ? 1 : 0, now);
+    return this.contextModeState(sessionId);
+  }
+
+  readModelContext(
+    sessionId: string,
+    override?: { liteEnabled?: boolean },
+  ): ModelConversationItem[] {
+    if (!this.sessionExists(sessionId)) {
+      return [];
+    }
+    const state = {
+      ...this.contextModeState(sessionId),
+      ...(override?.liteEnabled === undefined
+        ? {}
+        : { liteEnabled: override.liteEnabled }),
+    };
+    return this.modelContextItems(sessionId, state);
+  }
+
+  compactSession(sessionId: string): CompactSessionResult {
+    if (!this.sessionExists(sessionId)) {
+      throw new Error(`unknown session: ${sessionId}`);
+    }
+    return this.transaction(() => {
+      const state = this.contextModeState(sessionId);
+      const summary = this.buildCompactSummary(sessionId, state.compactEventId);
+      const compactedAt = Date.now();
+      const eventId = this.insertEvent(sessionId, "context_compact", undefined, {
+        type: "context_compact",
+        sessionId,
+        previousCompactEventId: state.compactEventId ?? null,
+        summary,
+        compactedAt,
+      });
+      this.db
+        .prepare(
+          [
+            "insert into session_context_state",
+            "(session_id, lite_enabled, compact_event_id, updated_at)",
+            "values (?, ?, ?, ?)",
+            "on conflict(session_id) do update set",
+            "compact_event_id = excluded.compact_event_id, updated_at = excluded.updated_at",
+          ].join(" "),
+        )
+        .run(sessionId, state.liteEnabled ? 1 : 0, eventId, compactedAt);
+      return { summary, eventId, compactedAt };
+    });
   }
 
   deleteSession(sessionId: string): void {
@@ -401,12 +502,27 @@ export class SqliteSessionStore {
         created_at integer not null,
         unique(session_id, item_seq)
       );
+      create table if not exists session_context_state (
+        session_id text primary key references sessions(id) on delete cascade,
+        lite_enabled integer not null default 0,
+        compact_event_id integer references session_events(id) on delete set null,
+        updated_at integer not null
+      );
+      create table if not exists session_context_segments (
+        session_id text primary key references sessions(id) on delete cascade,
+        user_id text not null,
+        project_id text not null,
+        segment_key text not null,
+        table_name text not null,
+        created_at integer not null
+      );
       create table if not exists session_owners (
         session_id text primary key references sessions(id) on delete cascade,
         server_id text not null,
         claimed_at integer not null
       );
     `);
+    this.initializeContextPartitions();
     this.migrateProjectionSchema();
     this.db.exec(`
       create index if not exists idx_projects_user_cwd on projects(user_id, cwd);
@@ -416,6 +532,9 @@ export class SqliteSessionStore {
       create index if not exists idx_session_events_type on session_events(session_id, type, id);
       create index if not exists idx_session_events_turn on session_events(session_id, turn_id, id);
       create index if not exists idx_session_context_items_session_seq on session_context_items(session_id, item_seq);
+      create index if not exists idx_session_context_state_compact on session_context_state(session_id, compact_event_id);
+      create index if not exists idx_session_context_segments_user_project on session_context_segments(user_id, project_id);
+      create index if not exists idx_session_context_segments_table on session_context_segments(table_name, segment_key);
     `);
     this.backfillProjectionRows();
     if (!this.accountExists("defaultUser")) {
@@ -482,6 +601,7 @@ export class SqliteSessionStore {
     if (event === undefined || !isContextEvent(event)) {
       return;
     }
+    const table = this.contextTableForSession(sessionId);
     const row = this.db
       .prepare(
         "select coalesce(max(item_seq), 0) + 1 as next from session_context_items where session_id = ?",
@@ -493,6 +613,19 @@ export class SqliteSessionStore {
         "insert into session_context_items (session_id, event_id, item_seq, payload_json, created_at) values (?, ?, ?, ?, ?)",
       )
       .run(sessionId, eventId, next, JSON.stringify(event), Date.now());
+    this.db
+      .prepare(
+        `insert or ignore into ${table} (session_id, event_id, item_seq, payload_json, msg_type, turn_id, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        sessionId,
+        eventId,
+        next,
+        JSON.stringify(event),
+        event.msg.type,
+        eventTurnId(event) ?? null,
+        Date.now(),
+      );
   }
 
   private applySessionMutation(
@@ -547,14 +680,195 @@ export class SqliteSessionStore {
       .filter(isRuntimeEvent);
   }
 
-  private contextEvents(sessionId: string): RuntimeEvent[] {
+  private contextEvents(
+    sessionId: string,
+    state: ContextModeState,
+  ): RuntimeEvent[] {
+    return this.filteredContextRows(sessionId, state)
+      .map((row) => JSON.parse(row.payload))
+      .filter(isRuntimeEvent);
+  }
+
+  private modelContextItems(
+    sessionId: string,
+    state: ContextModeState,
+  ): ModelConversationItem[] {
+    const items: ModelConversationItem[] = [];
+    const compact = this.compactRecord(sessionId, state.compactEventId);
+    if (compact !== undefined) {
+      items.push({
+        type: "message",
+        role: "user",
+        content: `Earlier conversation summary:\n${compact.summary}`,
+      });
+    }
+    items.push(
+      ...conversationItemsFromRuntimeEvents(
+        this.filteredContextRows(sessionId, state)
+          .map((row) => JSON.parse(row.payload))
+          .filter(isRuntimeEvent),
+      ),
+    );
+    return items;
+  }
+
+  private filteredContextRows(
+    sessionId: string,
+    state: ContextModeState,
+  ): ContextEventRow[] {
+    const afterEventId = state.compactEventId ?? 0;
+    const rows = this.contextRows(sessionId).filter(
+      (row) => row.eventId > afterEventId,
+    );
+    if (!state.liteEnabled) {
+      return rows;
+    }
+    const completedTurns = new Set<string>();
+    for (const row of rows) {
+      const event = JSON.parse(row.payload);
+      if (!isRuntimeEvent(event)) {
+        continue;
+      }
+      const turnId = eventTurnId(event);
+      if (
+        turnId !== undefined &&
+        (event.msg.type === "turn_complete" ||
+          event.msg.type === "turn_aborted" ||
+          event.msg.type === "error")
+      ) {
+        completedTurns.add(turnId);
+      }
+    }
+    return rows.filter((row) => {
+      const event = JSON.parse(row.payload);
+      if (!isRuntimeEvent(event)) {
+        return false;
+      }
+      if (event.msg.type !== "tool_call" && event.msg.type !== "tool_result") {
+        return true;
+      }
+      const turnId = eventTurnId(event);
+      return turnId === undefined || !completedTurns.has(turnId);
+    });
+  }
+
+  private contextRows(sessionId: string): ContextEventRow[] {
+    const table = this.readContextTableForSession(sessionId);
+    if (table !== undefined) {
+      const rows = this.db
+        .prepare(
+          `select event_id as eventId, item_seq as itemSeq, payload_json as payload from ${table} where session_id = ? order by item_seq asc`,
+        )
+        .all(sessionId) as ContextEventRow[];
+      if (rows.length > 0) {
+        return rows;
+      }
+    }
     return this.db
       .prepare(
-        "select payload_json as payload from session_context_items where session_id = ? order by item_seq asc",
+        "select event_id as eventId, item_seq as itemSeq, payload_json as payload from session_context_items where session_id = ? order by item_seq asc",
       )
-      .all(sessionId)
-      .map((row) => JSON.parse((row as { payload: string }).payload))
-      .filter(isRuntimeEvent);
+      .all(sessionId) as ContextEventRow[];
+  }
+
+  private contextModeState(sessionId: string): ContextModeState {
+    const row = this.db
+      .prepare(
+        "select lite_enabled as liteEnabled, compact_event_id as compactEventId, updated_at as updatedAt from session_context_state where session_id = ?",
+      )
+      .get(sessionId) as
+      | { liteEnabled?: unknown; compactEventId?: unknown; updatedAt?: unknown }
+      | undefined;
+    return {
+      liteEnabled: row?.liteEnabled === 1,
+      compactEventId:
+        typeof row?.compactEventId === "number"
+          ? row.compactEventId
+          : undefined,
+      updatedAt: typeof row?.updatedAt === "number" ? row.updatedAt : undefined,
+    };
+  }
+
+  private compactRecord(
+    sessionId: string,
+    eventId: number | undefined,
+  ): { summary: string } | undefined {
+    if (eventId === undefined) {
+      return undefined;
+    }
+    const row = this.db
+      .prepare(
+        "select payload_json as payload from session_events where session_id = ? and id = ? and type = 'context_compact'",
+      )
+      .get(sessionId, eventId) as { payload?: unknown } | undefined;
+    if (typeof row?.payload !== "string") {
+      return undefined;
+    }
+    const parsed = JSON.parse(row.payload) as { summary?: unknown };
+    return typeof parsed.summary === "string"
+      ? { summary: parsed.summary }
+      : undefined;
+  }
+
+  private buildCompactSummary(
+    sessionId: string,
+    previousCompactEventId: number | undefined,
+  ): string {
+    const parts: string[] = [];
+    const previous = this.compactRecord(sessionId, previousCompactEventId);
+    if (previous !== undefined) {
+      parts.push(previous.summary);
+    }
+    const rows = this.db
+      .prepare(
+        [
+          "select id, payload_json as payload, msg_type as msgType, turn_id as turnId",
+          "from session_events",
+          "where session_id = ? and type = 'runtime_event' and id > ?",
+          "order by id asc",
+        ].join(" "),
+      )
+      .all(sessionId, previousCompactEventId ?? 0) as RuntimeEventRow[];
+    const turnPrompts = new Map<string, string>();
+    const turnAnswers = new Map<string, string>();
+    for (const row of rows) {
+      const event = runtimeEvent(
+        JSON.parse(row.payload) as Record<string, unknown>,
+      );
+      if (event === undefined) {
+        continue;
+      }
+      const turnId = eventTurnId(event);
+      if (event.msg.type === "turn_started") {
+        turnPrompts.set(event.msg.turnId, event.msg.prompt);
+        continue;
+      }
+      if (
+        event.msg.type === "agent_message" &&
+        turnId !== undefined &&
+        event.msg.text.length > 0
+      ) {
+        turnAnswers.set(turnId, event.msg.text);
+        continue;
+      }
+      if (
+        event.msg.type === "turn_complete" &&
+        event.msg.finalText.length > 0
+      ) {
+        turnAnswers.set(event.msg.turnId, event.msg.finalText);
+      }
+    }
+    for (const [turnId, prompt] of turnPrompts) {
+      const answer = turnAnswers.get(turnId) ?? "";
+      parts.push(
+        [`User: ${prompt}`, answer.length > 0 ? `Assistant: ${answer}` : ""]
+          .filter((line) => line.length > 0)
+          .join("\n"),
+      );
+    }
+    return parts.length === 0
+      ? "No completed user and assistant turns before this compact point."
+      : parts.join("\n\n");
   }
 
   private migrateProjectionSchema(): void {
@@ -623,6 +937,7 @@ export class SqliteSessionStore {
     `);
     this.backfillEventMetadata();
     this.backfillContextItems();
+    this.backfillContextPartitions();
   }
 
   private backfillEventMetadata(): void {
@@ -675,8 +990,125 @@ export class SqliteSessionStore {
           "insert or ignore into session_context_items (session_id, event_id, item_seq, payload_json, created_at) values (?, ?, ?, ?, ?)",
         )
         .run(row.sessionId, row.id, next, JSON.stringify(event), Date.now());
+      const table = this.contextTableForSession(row.sessionId);
+      this.db
+        .prepare(
+          `insert or ignore into ${table} (session_id, event_id, item_seq, payload_json, msg_type, turn_id, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          row.sessionId,
+          row.id,
+          next,
+          JSON.stringify(event),
+          event.msg.type,
+          eventTurnId(event) ?? null,
+          Date.now(),
+        );
       nextBySession.set(row.sessionId, next + 1);
     }
+  }
+
+  private backfillContextPartitions(): void {
+    const rows = this.db
+      .prepare(
+        [
+          "select session_id as sessionId, event_id as eventId, item_seq as itemSeq,",
+          "payload_json as payload, created_at as createdAt",
+          "from session_context_items",
+          "order by session_id asc, item_seq asc",
+        ].join(" "),
+      )
+      .all() as Array<{
+      sessionId: string;
+      eventId: number;
+      itemSeq: number;
+      payload: string;
+      createdAt: number;
+    }>;
+    for (const row of rows) {
+      const event = JSON.parse(row.payload);
+      if (!isRuntimeEvent(event)) {
+        continue;
+      }
+      const table = this.contextTableForSession(row.sessionId);
+      this.db
+        .prepare(
+          `insert or ignore into ${table} (session_id, event_id, item_seq, payload_json, msg_type, turn_id, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          row.sessionId,
+          row.eventId,
+          row.itemSeq,
+          row.payload,
+          event.msg.type,
+          eventTurnId(event) ?? null,
+          row.createdAt,
+        );
+    }
+  }
+
+  private initializeContextPartitions(): void {
+    for (let index = 0; index < CONTEXT_PARTITION_COUNT; index += 1) {
+      const table = contextPartitionTable(index);
+      this.db.exec(`
+        create table if not exists ${table} (
+          id integer primary key autoincrement,
+          session_id text not null references sessions(id) on delete cascade,
+          event_id integer not null references session_events(id) on delete cascade,
+          item_seq integer not null,
+          payload_json text not null,
+          msg_type text,
+          turn_id text,
+          created_at integer not null,
+          unique(session_id, item_seq),
+          unique(event_id)
+        );
+        create index if not exists idx_${table}_session_seq on ${table}(session_id, item_seq);
+        create index if not exists idx_${table}_session_event on ${table}(session_id, event_id);
+        create index if not exists idx_${table}_turn on ${table}(session_id, turn_id, item_seq);
+      `);
+    }
+  }
+
+  private contextTableForSession(sessionId: string): string {
+    const existing = this.readContextTableForSession(sessionId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const row = this.db
+      .prepare(
+        [
+          "select s.user_id as userId, s.project_id as projectId",
+          "from sessions s where s.id = ?",
+        ].join(" "),
+      )
+      .get(sessionId) as { userId?: unknown; projectId?: unknown } | undefined;
+    const userId = typeof row?.userId === "string" ? row.userId : "";
+    const projectId = typeof row?.projectId === "string" ? row.projectId : "";
+    const segmentKey = `${userId}:${projectId}`;
+    const table = contextPartitionTable(hashToPartition(segmentKey));
+    this.db
+      .prepare(
+        [
+          "insert or ignore into session_context_segments",
+          "(session_id, user_id, project_id, segment_key, table_name, created_at)",
+          "values (?, ?, ?, ?, ?, ?)",
+        ].join(" "),
+      )
+      .run(sessionId, userId, projectId, segmentKey, table, Date.now());
+    return table;
+  }
+
+  private readContextTableForSession(sessionId: string): string | undefined {
+    const row = this.db
+      .prepare(
+        "select table_name as tableName from session_context_segments where session_id = ?",
+      )
+      .get(sessionId) as { tableName?: unknown } | undefined;
+    return typeof row?.tableName === "string" &&
+      /^session_context_items_[0-9a-f]{2}$/.test(row.tableName)
+      ? row.tableName
+      : undefined;
   }
 
   private hasColumn(table: string, column: string): boolean {
@@ -697,6 +1129,86 @@ export class SqliteSessionStore {
       throw error;
     }
   }
+}
+
+function conversationItemsFromRuntimeEvents(
+  events: RuntimeEvent[],
+): ModelConversationItem[] {
+  const history: ModelConversationItem[] = [];
+  const pendingToolCalls = new Map<
+    string,
+    Array<{ callId: string; name: string; arguments: string }>
+  >();
+  const turnToolCounts = new Map<string, number>();
+
+  for (const event of events) {
+    const msg = event.msg;
+    if (msg.type === "turn_started") {
+      history.push({ type: "message", role: "user", content: msg.prompt });
+      continue;
+    }
+    if (msg.type === "tool_call") {
+      const count = (turnToolCounts.get(msg.turnId) ?? 0) + 1;
+      turnToolCounts.set(msg.turnId, count);
+      const call = {
+        callId: `restored-${msg.turnId}-${count}`,
+        name: msg.name,
+        arguments: msg.arguments,
+      };
+      pendingToolCalls.set(msg.turnId, [
+        ...(pendingToolCalls.get(msg.turnId) ?? []),
+        call,
+      ]);
+      history.push({ type: "assistant_tool_calls", toolCalls: [call] });
+      continue;
+    }
+    if (msg.type === "tool_result") {
+      const pending = pendingToolCalls.get(msg.turnId) ?? [];
+      const call = pending.shift();
+      pendingToolCalls.set(msg.turnId, pending);
+      if (call !== undefined) {
+        history.push({
+          type: "function_call_output",
+          call_id: call.callId,
+          output: msg.output,
+        });
+      }
+      continue;
+    }
+    if (msg.type === "agent_message" && msg.text.length > 0) {
+      history.push({ type: "message", role: "assistant", content: msg.text });
+      continue;
+    }
+    if (msg.type === "turn_complete" && msg.finalText.length > 0) {
+      const last = history.at(-1);
+      if (
+        last?.type !== "message" ||
+        last.role !== "assistant" ||
+        last.content !== msg.finalText
+      ) {
+        history.push({
+          type: "message",
+          role: "assistant",
+          content: msg.finalText,
+        });
+      }
+    }
+  }
+
+  return history;
+}
+
+function contextPartitionTable(index: number): string {
+  return `session_context_items_${index.toString(16).padStart(2, "0")}`;
+}
+
+function hashToPartition(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash) % CONTEXT_PARTITION_COUNT;
 }
 
 function projectId(user: string, cwd: string): string {

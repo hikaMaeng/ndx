@@ -146,6 +146,9 @@ Dashboard UI copy is English-only.
 /status     Show socket, server, and current session status.
 /init       Show the latest session initialization detail received from server events.
 /events     Show recent runtime event types recorded on the current session.
+/lite on    Omit completed prior tool call/result records from future model context.
+/lite off   Restore full post-compact context if it fits the active model context.
+/compact    Save a user/assistant summary and restart future context from it.
 /login      Choose Google login, GitHub login, current account, or defaultUser.
 /session    List live and saved sessions for the current workspace.
 /restoreSession N  Switch to a session by UUID or by the number shown in /session.
@@ -157,6 +160,10 @@ Dashboard UI copy is English-only.
 Slash commands are sent to the session server with `command/execute`.
 Initialization detail is for operator visibility only. The CLI does not append
 slash command text or initialization detail to the model prompt.
+
+`/lite` and `/compact` change only provider-facing context construction. The
+session event log, tool records, notifications, and compact records all remain
+durable in SQLite. `/compact` has no effect on unsaved empty sessions.
 
 `/session` is scoped to the `cwd` passed when `ndx` started or connected. The
 number column is the session creation sequence for that workspace. Empty

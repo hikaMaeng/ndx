@@ -28,6 +28,8 @@ context.
 | `/status`         | Print initialized server and current session status. |
 | `/init`           | Print the latest session initialization event.       |
 | `/events`         | Print recent runtime event types for the session.    |
+| `/lite on|off`    | Toggle lightweight provider-facing context.          |
+| `/compact`        | Save a compact summary and restart future context.   |
 | `/login`          | Choose Google, GitHub, current, or default user.     |
 | `/session`        | List saved and live sessions for the current `cwd`.  |
 | `/restoreSession` | Switch to a session by UUID or `/session` number.    |
@@ -118,11 +120,15 @@ same SQLite session. `/deleteSession` lists sessions for the same `cwd`, omits
 the current session, accepts Enter as cancel, and marks the selected session
 deleted.
 
-Restore also replays prior turns into model context. Runtime events are
-converted back into provider-facing conversation items: `turn_started` becomes a
-user message, `agent_message` and `turn_complete` become assistant messages,
-and prior `tool_call`/`tool_result` pairs are restored with stable synthetic
-call ids.
+Saved sessions replay prior turns into model context from the SQLite context
+projection before each new prompt. Runtime events are converted back into
+provider-facing conversation items: `turn_started` becomes a user message,
+`agent_message` and `turn_complete` become assistant messages, and retained
+`tool_call`/`tool_result` pairs are restored with stable synthetic call ids.
+`/compact` first replaces prior turns with a `context_compact` summary record.
+`/lite on` then omits completed prior tool call/result rows from the
+post-compact projection only. SQLite still stores the full event log and all
+tool rows.
 
 Session ownership is tracked in SQLite. A socket server claims ownership before
 processing a prompt. If another server has taken
@@ -223,7 +229,7 @@ Canonical shape:
 
 ```json
 {
-  "version": "0.1.13",
+  "version": "0.1.14",
   "model": {
     "session": ["local-main-a", "local-main-b"],
     "worker": ["local-worker-a", "local-worker-b"],

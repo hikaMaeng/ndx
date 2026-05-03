@@ -62,6 +62,10 @@ const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
     "compact",
     "summarize conversation to prevent hitting the context limit",
   ),
+  implementedBuiltin(
+    "lite",
+    "toggle lite context mode: /lite <on|off>",
+  ),
   builtin("plan", "switch to Plan mode"),
   builtin("goal", "set or view the goal for a long-running task"),
   builtin("collab", "change collaboration mode (experimental)"),
@@ -146,7 +150,7 @@ export const BUILT_IN_SLASH_COMMANDS: SlashCommandDefinition[] = [
   ...NDX_SESSION_COMMANDS,
   ...ORIGIN_COMMANDS.map(
     (command): SlashCommandDefinition =>
-      ["init", "status", "quit"].includes(command.name)
+      ["compact", "init", "status", "quit"].includes(command.name)
         ? { ...command, placement: "session-builtin", implemented: true }
         : command,
   ),

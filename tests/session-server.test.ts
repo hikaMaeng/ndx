@@ -820,6 +820,168 @@ test("session server restores a saved workspace session by id or number", async 
   }
 });
 
+test("session lite mode filters completed tool logs only from model context", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-lite-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  const model = new ScriptedToolModelClient(["first answer", "second answer"]);
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        activeModel: { ...baseConfig.activeModel, maxContext: 1 },
+        models: [{ name: "mock", provider: "mock", maxContext: 1 }],
+        paths: { globalDir },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => model,
+      persistenceDir,
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await initializeAndLoginClient(client);
+    const start = await client.request<{ session: { id: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const sessionId = start.session.id;
+
+    const firstCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "first turn" });
+    await firstCompleted;
+    await server.flushPersistence();
+
+    const enabled = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "lite", args: "on", sessionId },
+    );
+    assert.equal(enabled.output, "lite: on");
+    const rejected = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "lite", args: "off", sessionId },
+    );
+    assert.equal(rejected.output.includes("lite: still on"), true);
+
+    const secondCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "second turn" });
+    await secondCompleted;
+    await server.flushPersistence();
+
+    const secondInput = model.inputs[2];
+    assert.ok(Array.isArray(secondInput));
+    assert.deepEqual(
+      secondInput.map((item) => (item as { type?: string }).type),
+      ["message", "message", "message"],
+    );
+    assert.deepEqual(
+      (secondInput as Array<{ content?: string }>)
+        .map((item) => item.content)
+        .filter((content): content is string => content !== undefined),
+      ["first turn", "first answer", "second turn"],
+    );
+
+    const contextEvents = readSqliteContextEvents(persistenceDir, sessionId);
+    assert.equal(
+      contextEvents.some((event) => event.type === "tool_call"),
+      true,
+    );
+    assert.equal(
+      contextEvents.some((event) => event.type === "tool_result"),
+      true,
+    );
+    const segments = readSqliteContextSegments(persistenceDir, sessionId);
+    assert.equal(segments.length, 1);
+    assert.equal(
+      readSqlitePartitionContextEvents(
+        persistenceDir,
+        segments[0]?.tableName ?? "",
+        sessionId,
+      ).length >= contextEvents.length,
+      true,
+    );
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session compact stores a summary record and restarts model context there", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-compact-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  const model = new ScriptedToolModelClient(["first answer", "second answer"]);
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
+    server = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => model,
+      persistenceDir,
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await initializeAndLoginClient(client);
+    const start = await client.request<{ session: { id: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const sessionId = start.session.id;
+
+    const firstCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "first turn" });
+    await firstCompleted;
+    await server.flushPersistence();
+
+    const compacted = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "compact", sessionId },
+    );
+    assert.equal(compacted.output.includes("compact: created"), true);
+
+    const secondCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "second turn" });
+    await secondCompleted;
+    await server.flushPersistence();
+
+    const secondInput = model.inputs[2];
+    assert.ok(Array.isArray(secondInput));
+    assert.deepEqual(
+      secondInput.map((item) => (item as { type?: string }).type),
+      ["message", "message"],
+    );
+    const contents = (secondInput as Array<{ content?: string }>)
+      .map((item) => item.content)
+      .filter((content): content is string => content !== undefined);
+    assert.equal(contents.length, 2);
+    assert.equal(contents[0]?.includes("Earlier conversation summary"), true);
+    assert.equal(contents[0]?.includes("first turn"), true);
+    assert.equal(contents[0]?.includes("first answer"), true);
+    assert.equal(contents[1], "second turn");
+
+    const records = readSqliteRecords(persistenceDir, sessionId);
+    assert.equal(
+      records.some((record) => record.type === "context_compact"),
+      true,
+    );
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("session server deletes non-current workspace sessions and ends stale owners", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-delete-"));
   const globalDir = join(root, "home", ".ndx");
@@ -1369,6 +1531,72 @@ function readSqliteContextEvents(
   }
 }
 
+function readSqliteContextSegments(
+  dataDir: string,
+  sessionId: string,
+): Array<{ tableName: string }> {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { all(...values: unknown[]): unknown[] };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return db
+      .prepare(
+        "select table_name as tableName from session_context_segments where session_id = ?",
+      )
+      .all(sessionId)
+      .filter(
+        (row): row is { tableName: string } =>
+          typeof (row as { tableName?: unknown }).tableName === "string",
+      );
+  } finally {
+    db.close();
+  }
+}
+
+function readSqlitePartitionContextEvents(
+  dataDir: string,
+  tableName: string,
+  sessionId: string,
+): Array<{ type: string }> {
+  assert.match(tableName, /^session_context_items_[0-9a-f]{2}$/);
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { all(...values: unknown[]): unknown[] };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return db
+      .prepare(
+        `select payload_json as payload from ${tableName} where session_id = ? order by item_seq asc`,
+      )
+      .all(sessionId)
+      .map((row) => JSON.parse((row as { payload: string }).payload))
+      .map((event) => ({
+        type: String((event as { msg?: { type?: unknown } }).msg?.type),
+      }));
+  } finally {
+    db.close();
+  }
+}
+
 function readSqliteOwner(
   dataDir: string,
   sessionId: string,
@@ -1566,6 +1794,38 @@ class CapturingModelClient implements ModelClient {
     return {
       id: `captured-${this.inputs.length}`,
       text: this.text,
+      toolCalls: [],
+      raw: { input },
+    };
+  }
+}
+
+class ScriptedToolModelClient implements ModelClient {
+  readonly inputs: Array<Array<unknown>> = [];
+  private step = 0;
+
+  constructor(private readonly texts: string[]) {}
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.inputs.push(Array.isArray(input) ? input : [input]);
+    this.step += 1;
+    if (this.step === 1) {
+      return {
+        id: "scripted-tool-call",
+        text: "",
+        toolCalls: [
+          {
+            callId: "scripted-call-1",
+            name: "shell",
+            arguments: JSON.stringify({ command: "printf scripted-tool" }),
+          },
+        ],
+        raw: { input },
+      };
+    }
+    return {
+      id: `scripted-text-${this.step}`,
+      text: this.texts.shift() ?? "done",
       toolCalls: [],
       raw: { input },
     };
