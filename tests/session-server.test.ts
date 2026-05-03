@@ -564,6 +564,130 @@ test("session server exposes account methods, client identity, and dashboard she
   }
 });
 
+test("dashboard session logs filter raw SQLite events and delete sessions", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-dashboard-session-logs-"));
+  const globalDir = join(root, "home", ".ndx");
+  const projectA = join(root, "project-a");
+  const projectB = join(root, "project-b");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    mkdirSync(projectA, { recursive: true });
+    mkdirSync(projectB, { recursive: true });
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        paths: { globalDir, dataDir: join(root, "data") },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    client = await SessionClient.connect(address.url);
+    await client.request("account/create", {
+      username: "alice",
+      password: "secret",
+    });
+    await client.request("account/create", {
+      username: "bob",
+      password: "secret",
+    });
+    await client.request("account/login", {
+      username: "alice",
+      password: "secret",
+      clientId: "dashboard-test-client",
+    });
+    const aliceA = await createPersistedSession(
+      client,
+      projectA,
+      "alice project a prompt",
+    );
+    const aliceB = await createPersistedSession(
+      client,
+      projectB,
+      "alice project b prompt",
+    );
+    await client.request("account/login", {
+      username: "bob",
+      password: "secret",
+      clientId: "dashboard-test-client",
+    });
+    const bobB = await createPersistedSession(
+      client,
+      projectB,
+      "bob project b prompt",
+    );
+    await server.flushPersistence();
+
+    const dashboard = await fetch(address.dashboardUrl ?? "");
+    const html = await dashboard.text();
+    assert.equal(html.includes(">Session Logs<"), true);
+    assert.equal(html.includes('data-testid="dashboard-session-logs"'), true);
+    assert.equal(html.includes('data-testid="session-log-table"'), true);
+
+    const facets = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/facets`,
+    )) as {
+      accounts: string[];
+      projects: string[];
+      sessions: Array<{ id: string }>;
+    };
+    assert.deepEqual(facets.accounts, ["alice", "bob"]);
+    assert.equal(facets.projects.includes(projectA), true);
+    assert.equal(facets.projects.includes(projectB), true);
+    assert.equal(facets.sessions.length, 3);
+
+    const aliceProjectLogs = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions?accounts=alice&projects=${encodeURIComponent(projectA)}&projects=${encodeURIComponent(projectB)}`,
+    )) as { sessions: Array<{ id: string; user: string; cwd: string }> };
+    assert.deepEqual(
+      aliceProjectLogs.sessions.map((session) => session.id),
+      [aliceA, aliceB],
+    );
+    assert.equal(
+      aliceProjectLogs.sessions.every((session) => session.user === "alice"),
+      true,
+    );
+
+    const selectedSessionLogs = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions?sessions=${encodeURIComponent(bobB)}`,
+    )) as { sessions: Array<{ id: string; user: string; cwd: string }> };
+    assert.deepEqual(
+      selectedSessionLogs.sessions.map((session) => session.id),
+      [bobB],
+    );
+
+    const firstPage = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions/${encodeURIComponent(aliceA)}/events?offset=0&limit=2`,
+    )) as {
+      total: number;
+      events: Array<{ id: number; type: string; payload: unknown }>;
+    };
+    assert.equal(firstPage.total >= 2, true);
+    assert.equal(firstPage.events.length, 2);
+    assert.equal(firstPage.events[0]?.type, "session_started");
+    assert.equal(typeof firstPage.events[0]?.payload, "object");
+
+    const deleteResponse = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions/${encodeURIComponent(bobB)}`,
+      { method: "DELETE" },
+    )) as { ok: boolean; session: { id: string } };
+    assert.equal(deleteResponse.ok, true);
+    assert.equal(deleteResponse.session.id, bobB);
+
+    const bobLogsAfterDelete = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions?accounts=bob`,
+    )) as { sessions: Array<{ id: string }> };
+    assert.deepEqual(bobLogsAfterDelete.sessions, []);
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("dashboard reload re-reads settings and AGENTS sources", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-dashboard-reload-"));
   const globalDir = join(root, "home", ".ndx");
@@ -1367,6 +1491,30 @@ function waitForMethod(
       }
     });
   });
+}
+
+async function createPersistedSession(
+  client: SessionClient,
+  cwd: string,
+  prompt: string,
+): Promise<string> {
+  const started = await client.request<{
+    session: { id: string };
+  }>("session/start", { cwd });
+  const completed = waitForMethod(client, "turn/completed");
+  await client.request("turn/start", {
+    sessionId: started.session.id,
+    prompt,
+  });
+  await completed;
+  return started.session.id;
+}
+
+async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
+  const response = await fetch(url, init);
+  const body = await response.json();
+  assert.equal(response.ok, true);
+  return body;
 }
 
 async function initializeAndLoginClient(client: SessionClient): Promise<void> {

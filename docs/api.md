@@ -169,10 +169,19 @@ service remains socket-first.
 
 Dashboard HTTP actions:
 
-| Method | Path          | Result                                                |
-| ------ | ------------- | ----------------------------------------------------- |
-| POST   | `/api/reload` | Re-run `.ndx` bootstrap and re-read settings sources. |
-| POST   | `/api/exit`   | Request shutdown of the local server instance.        |
+| Method | Path                                   | Result                                                |
+| ------ | -------------------------------------- | ----------------------------------------------------- |
+| GET    | `/api/session-log/facets`              | List account, project, and session filter facets.     |
+| GET    | `/api/session-log/sessions`            | List all non-deleted SQLite sessions.                 |
+| GET    | `/api/session-log/sessions/:id/events` | Page raw `session_events` rows for one session.       |
+| DELETE | `/api/session-log/sessions/:id`        | Soft-delete one session and close live subscribers.   |
+| POST   | `/api/reload`                          | Re-run `.ndx` bootstrap and re-read settings sources. |
+| POST   | `/api/exit`                            | Request shutdown of the local server instance.        |
+
+`/api/session-log/sessions` accepts repeated or comma-separated `accounts`,
+`projects`, and `sessions` query params. Values within the same category are
+ORed; different categories are ANDed. Project values are persisted `cwd`
+strings. Event paging accepts `offset` and `limit`; `limit` is clamped to 200.
 
 `initialize` returns `server`, `version`, `protocolVersion`, `methods`, and
 `bootstrap`. Protocol version `1` is the current ndx WebSocket JSON-RPC

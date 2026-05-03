@@ -94,6 +94,7 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         cursor: pointer;
       }
       button:hover { background: #e2ebdf; }
+      button.secondary { background: #ffffff; }
       button.danger {
         border-color: #e1b7ad;
         background: #fff0ec;
@@ -148,6 +149,118 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         margin: 0;
         padding-left: 18px;
       }
+      .session-log-panel {
+        border-top: 1px solid #d7ddd2;
+        padding-top: 22px;
+      }
+      .session-log-filters {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(160px, 1fr));
+        gap: 12px;
+        align-items: end;
+        margin-bottom: 12px;
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        color: #4d5a51;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      select {
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid #cbd4c6;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #1f2428;
+        font: inherit;
+        padding: 7px 9px;
+      }
+      .filter-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-height: 34px;
+        margin-bottom: 14px;
+      }
+      .filter-tag {
+        width: auto;
+        min-height: 30px;
+        border-color: #abc4b1;
+        background: #edf6ef;
+        padding: 5px 9px;
+        font-size: 13px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid #d7ddd2;
+        border-radius: 6px;
+        background: #ffffff;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 860px;
+      }
+      th, td {
+        border-bottom: 1px solid #e4e9e1;
+        padding: 9px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        color: #4d5a51;
+        font-size: 13px;
+      }
+      tr:last-child td { border-bottom: 0; }
+      td button {
+        width: auto;
+        min-height: 32px;
+        padding: 5px 9px;
+      }
+      .session-detail {
+        margin-top: 18px;
+      }
+      .event-list {
+        display: grid;
+        gap: 10px;
+      }
+      .event-record {
+        border: 1px solid #d7ddd2;
+        border-radius: 6px;
+        background: #ffffff;
+        padding: 10px;
+      }
+      .event-record header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 8px;
+        color: #4d5a51;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .event-record pre {
+        max-height: 360px;
+        font-size: 12px;
+      }
+      .pager {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 12px 0;
+      }
+      .pager button {
+        width: auto;
+        min-width: 92px;
+        text-align: center;
+      }
+      .muted {
+        color: #647067;
+        font-size: 13px;
+      }
+      .hidden { display: none; }
       .bootstrap-list {
         display: grid;
         gap: 8px;
@@ -185,6 +298,7 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         }
         .hero { grid-template-columns: 1fr; }
         dl { grid-template-columns: 1fr; }
+        .session-log-filters { grid-template-columns: 1fr; }
         .bootstrap-list li { grid-template-columns: 1fr; }
       }
     </style>
@@ -197,6 +311,7 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
           <small>Version ${escapeHtml(input.packageVersion)}</small>
         </div>
         <nav aria-label="Server actions">
+          <button type="button" id="session-logs-button" class="secondary">Session Logs</button>
           <button type="button" id="reload-button">Reload</button>
           <button type="button" id="exit-button" class="danger">Exit</button>
         </nav>
@@ -232,6 +347,55 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
           <h2 id="bootstrap-title">Bootstrap Elements</h2>
           <ul class="bootstrap-list" data-testid="dashboard-bootstrap">${bootstrapRows}</ul>
         </section>
+        <section class="session-log-panel" aria-labelledby="session-logs-title" data-testid="dashboard-session-logs">
+          <h2 id="session-logs-title">Session Logs</h2>
+          <form class="session-log-filters" aria-label="Session log filters">
+            <label for="account-filter">Account
+              <select id="account-filter" data-filter-category="accounts">
+                <option value="">All accounts</option>
+              </select>
+            </label>
+            <label for="project-filter">Project
+              <select id="project-filter" data-filter-category="projects">
+                <option value="">All projects</option>
+              </select>
+            </label>
+            <label for="session-filter">Session
+              <select id="session-filter" data-filter-category="sessions">
+                <option value="">All sessions</option>
+              </select>
+            </label>
+          </form>
+          <div id="session-log-tags" class="filter-tags" aria-label="Selected session log filters" data-testid="session-log-filter-tags"></div>
+          <p id="session-log-status" role="status" data-testid="session-log-status">Session log filters are ready.</p>
+          <div class="table-wrap" aria-labelledby="session-log-table-title">
+            <h2 id="session-log-table-title" class="hidden">Session Log Table</h2>
+            <table data-testid="session-log-table">
+              <thead>
+                <tr>
+                  <th scope="col">Account</th>
+                  <th scope="col">Project</th>
+                  <th scope="col">Session</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Events</th>
+                  <th scope="col">Updated</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="session-log-body"></tbody>
+            </table>
+          </div>
+          <section id="session-detail" class="session-detail hidden" aria-labelledby="session-detail-title" data-testid="session-log-detail">
+            <h2 id="session-detail-title">Session Detail</h2>
+            <dl id="session-detail-meta"></dl>
+            <div class="pager" aria-label="Session event pages">
+              <button type="button" id="event-prev">Previous</button>
+              <span id="event-page-status" class="muted"></span>
+              <button type="button" id="event-next">Next</button>
+            </div>
+            <div id="event-list" class="event-list" data-testid="session-log-events"></div>
+          </section>
+        </section>
       </main>
     </div>
     <script>
@@ -257,6 +421,240 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
       });
       document.getElementById("exit-button").addEventListener("click", () => {
         void postAction("/api/exit", "Requesting server exit.");
+      });
+      const selectedFilters = {
+        accounts: new Set(),
+        projects: new Set(),
+        sessions: new Set(),
+      };
+      const filterLabels = {
+        accounts: new Map(),
+        projects: new Map(),
+        sessions: new Map(),
+      };
+      let selectedSessionId = "";
+      let eventOffset = 0;
+      const eventLimit = 50;
+      const sessionLogStatus = document.getElementById("session-log-status");
+      const sessionLogBody = document.getElementById("session-log-body");
+      const sessionDetail = document.getElementById("session-detail");
+      const sessionDetailMeta = document.getElementById("session-detail-meta");
+      const eventList = document.getElementById("event-list");
+      const eventPageStatus = document.getElementById("event-page-status");
+      const eventPrev = document.getElementById("event-prev");
+      const eventNext = document.getElementById("event-next");
+
+      function setSessionLogStatus(message, failed = false) {
+        sessionLogStatus.setAttribute("role", failed ? "alert" : "status");
+        sessionLogStatus.textContent = message;
+      }
+      function option(select, value, label) {
+        const entry = document.createElement("option");
+        entry.value = value;
+        entry.textContent = label;
+        select.appendChild(entry);
+      }
+      function formatTime(value) {
+        return new Date(value).toISOString();
+      }
+      function sessionLabel(session) {
+        return "#" + session.sequence + " " + session.title + " (" + session.user + ")";
+      }
+      async function loadFacets() {
+        const response = await fetch("/api/session-log/facets");
+        const body = await response.json();
+        if (!response.ok) {
+          throw new Error(body.message || "Failed to load session log filters.");
+        }
+        const accountFilter = document.getElementById("account-filter");
+        const projectFilter = document.getElementById("project-filter");
+        const sessionFilter = document.getElementById("session-filter");
+        for (const account of body.accounts) {
+          filterLabels.accounts.set(account, account);
+          option(accountFilter, account, account);
+        }
+        for (const project of body.projects) {
+          filterLabels.projects.set(project, project);
+          option(projectFilter, project, project);
+        }
+        for (const session of body.sessions) {
+          const label = sessionLabel(session);
+          filterLabels.sessions.set(session.id, label);
+          option(sessionFilter, session.id, label);
+        }
+      }
+      function queryString() {
+        const params = new URLSearchParams();
+        for (const category of Object.keys(selectedFilters)) {
+          for (const value of selectedFilters[category]) {
+            params.append(category, value);
+          }
+        }
+        const encoded = params.toString();
+        return encoded.length === 0 ? "" : "?" + encoded;
+      }
+      function renderTags() {
+        const tags = document.getElementById("session-log-tags");
+        tags.replaceChildren();
+        for (const category of Object.keys(selectedFilters)) {
+          for (const value of selectedFilters[category]) {
+            const tag = document.createElement("button");
+            tag.type = "button";
+            tag.className = "filter-tag";
+            tag.textContent = category.slice(0, -1) + ": " + (filterLabels[category].get(value) || value) + " x";
+            tag.setAttribute("aria-label", "Remove " + category.slice(0, -1) + " filter " + (filterLabels[category].get(value) || value));
+            tag.addEventListener("click", () => {
+              selectedFilters[category].delete(value);
+              renderTags();
+              void loadSessions();
+            });
+            tags.appendChild(tag);
+          }
+        }
+      }
+      async function loadSessions() {
+        setSessionLogStatus("Loading session logs.");
+        const response = await fetch("/api/session-log/sessions" + queryString());
+        const body = await response.json();
+        if (!response.ok) {
+          setSessionLogStatus(body.message || "Failed to load session logs.", true);
+          return;
+        }
+        renderSessions(body.sessions);
+        setSessionLogStatus(body.sessions.length === 0 ? "No sessions match the filters." : "Loaded " + body.sessions.length + " sessions.");
+      }
+      function renderSessions(sessions) {
+        sessionLogBody.replaceChildren();
+        for (const session of sessions) {
+          const row = document.createElement("tr");
+          row.setAttribute("data-testid", "session-log-row");
+          const values = [
+            session.user,
+            session.cwd,
+            "#" + session.sequence + " " + session.title,
+            session.status,
+            String(session.eventCount),
+            formatTime(session.updatedAt),
+          ];
+          for (const value of values) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          const actions = document.createElement("td");
+          const open = document.createElement("button");
+          open.type = "button";
+          open.textContent = "Open";
+          open.setAttribute("aria-label", "Open session " + session.title);
+          open.addEventListener("click", () => {
+            selectedSessionId = session.id;
+            eventOffset = 0;
+            void loadEvents();
+          });
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "danger";
+          del.textContent = "Delete";
+          del.setAttribute("aria-label", "Delete session " + session.title);
+          del.addEventListener("click", async () => {
+            const response = await fetch("/api/session-log/sessions/" + encodeURIComponent(session.id), { method: "DELETE" });
+            const body = await response.json();
+            if (!response.ok || body.ok === false) {
+              setSessionLogStatus(body.message || "Failed to delete session.", true);
+              return;
+            }
+            if (selectedSessionId === session.id) {
+              selectedSessionId = "";
+              sessionDetail.classList.add("hidden");
+            }
+            await loadFacetsAndSessions();
+            setSessionLogStatus(body.message || "Session deleted.");
+          });
+          actions.append(open, " ", del);
+          row.appendChild(actions);
+          sessionLogBody.appendChild(row);
+        }
+      }
+      async function loadEvents() {
+        if (selectedSessionId.length === 0) {
+          return;
+        }
+        const response = await fetch("/api/session-log/sessions/" + encodeURIComponent(selectedSessionId) + "/events?offset=" + eventOffset + "&limit=" + eventLimit);
+        const body = await response.json();
+        if (!response.ok) {
+          setSessionLogStatus(body.message || "Failed to load session detail.", true);
+          return;
+        }
+        renderEventPage(body);
+      }
+      function renderEventPage(page) {
+        sessionDetail.classList.remove("hidden");
+        sessionDetailMeta.replaceChildren();
+        for (const entry of [
+          ["Account", page.session.user],
+          ["Project", page.session.cwd],
+          ["Session", "#" + page.session.sequence + " " + page.session.title],
+          ["Status", page.session.status],
+          ["Events", String(page.total)],
+        ]) {
+          const term = document.createElement("dt");
+          term.textContent = entry[0];
+          const detail = document.createElement("dd");
+          detail.textContent = entry[1];
+          sessionDetailMeta.append(term, detail);
+        }
+        eventList.replaceChildren();
+        for (const event of page.events) {
+          const record = document.createElement("article");
+          record.className = "event-record";
+          record.setAttribute("data-testid", "session-log-event");
+          const header = document.createElement("header");
+          header.textContent = "#" + event.id + " " + event.type + " " + (event.msgType || "") + " " + formatTime(event.createdAt);
+          const pre = document.createElement("pre");
+          pre.textContent = JSON.stringify(event.payload, null, 2);
+          record.append(header, pre);
+          eventList.appendChild(record);
+        }
+        eventPageStatus.textContent = (page.offset + 1) + "-" + Math.min(page.offset + page.events.length, page.total) + " of " + page.total;
+        eventPrev.disabled = page.offset <= 0;
+        eventNext.disabled = page.offset + page.limit >= page.total;
+      }
+      async function loadFacetsAndSessions() {
+        for (const select of document.querySelectorAll("[data-filter-category]")) {
+          const first = select.querySelector("option");
+          select.replaceChildren(first);
+        }
+        filterLabels.accounts.clear();
+        filterLabels.projects.clear();
+        filterLabels.sessions.clear();
+        await loadFacets();
+        renderTags();
+        await loadSessions();
+      }
+      for (const select of document.querySelectorAll("[data-filter-category]")) {
+        select.addEventListener("change", () => {
+          const category = select.getAttribute("data-filter-category");
+          if (category && select.value.length > 0) {
+            selectedFilters[category].add(select.value);
+            select.value = "";
+            renderTags();
+            void loadSessions();
+          }
+        });
+      }
+      eventPrev.addEventListener("click", () => {
+        eventOffset = Math.max(0, eventOffset - eventLimit);
+        void loadEvents();
+      });
+      eventNext.addEventListener("click", () => {
+        eventOffset += eventLimit;
+        void loadEvents();
+      });
+      document.getElementById("session-logs-button").addEventListener("click", () => {
+        document.getElementById("session-logs-title").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      void loadFacetsAndSessions().catch((error) => {
+        setSessionLogStatus(error instanceof Error ? error.message : String(error), true);
       });
     </script>
   </body>

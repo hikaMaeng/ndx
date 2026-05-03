@@ -137,8 +137,16 @@ Locator contract:
 
 - `main` landmark named by the `Server Dashboard` heading.
 - `aside` named `Dashboard menu`.
-- Buttons named `Reload` and `Exit` inside `nav aria-label="Server actions"`.
+- Buttons named `Session Logs`, `Reload`, and `Exit` inside
+  `nav aria-label="Server actions"`.
+- Labelled selects named `Account`, `Project`, and `Session` for Session Logs.
+- A native Session Log Table with row containers marked
+  `data-testid="session-log-row"` and row-scoped `Open` and `Delete` buttons.
+- A Session Detail section with `Previous` and `Next` pagination buttons and
+  raw event records under `data-testid="session-log-events"`.
 - `role="status"` for dashboard action status; `role="alert"` for failed
-  dashboard action status.
+  dashboard or session-log status.
 - `data-testid="ndx-dashboard"`, `dashboard-action-status`,
-  `dashboard-sources`, and `dashboard-bootstrap` for stable anchors.
+  `dashboard-sources`, `dashboard-bootstrap`, `dashboard-session-logs`,
+  `session-log-filter-tags`, `session-log-status`, `session-log-table`,
+  `session-log-detail`, and `session-log-events` for stable anchors.
