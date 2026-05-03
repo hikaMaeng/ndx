@@ -42,8 +42,9 @@ an already-running server.
   `NDX_DASHBOARD_PORT` is unset.
 - CLI managed fallback spawns server mode instead of embedding a
   `SessionServer` that closes during CLI cleanup.
-- Windows launcher uses PowerShell `Start-Process`; macOS launcher uses
-  `nohup`; Linux launcher uses `setsid` with `nohup` fallback.
+- Windows launcher uses an encoded hidden PowerShell host and writes
+  `managed-server.log`; macOS launcher uses `nohup`; Linux launcher uses
+  `setsid` with `nohup` fallback.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 
@@ -53,6 +54,8 @@ an already-running server.
 - `node --test dist/tests/cli-workspace.test.js` TAP output.
 - `yarn test` TAP output.
 - `npm run deploy` output.
+- Windows `%USERPROFILE%\.ndx\system\logs\managed-server.log` when startup
+  times out.
 
 ## Locator Contract
 

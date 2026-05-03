@@ -164,6 +164,39 @@ export function detachedManagedServerLaunch(
   const execPath = options.execPath ?? process.execPath;
   const platform = options.platform ?? process.platform;
   if (platform === "win32") {
+    const logPath = join(
+      NDX_DEFAULTS.globalDir,
+      NDX_DEFAULTS.systemDir,
+      "logs",
+      "managed-server.log",
+    );
+    const payload = Buffer.from(
+      JSON.stringify({
+        cwd: options.cwd,
+        exe: execPath,
+        args: serverArgs,
+        logPath,
+      }),
+      "utf8",
+    ).toString("base64");
+    const script = [
+      `$payload = '${payload}'`,
+      "$json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload))",
+      "$config = $json | ConvertFrom-Json",
+      "$ErrorActionPreference = 'Stop'",
+      "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $config.logPath) | Out-Null",
+      "Add-Content -LiteralPath $config.logPath -Value ('[' + (Get-Date).ToString('o') + '] starting managed ndx server')",
+      "try {",
+      "Set-Location -LiteralPath $config.cwd",
+      "& $config.exe @($config.args) *>> $config.logPath",
+      "$code = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }",
+      "Add-Content -LiteralPath $config.logPath -Value ('[' + (Get-Date).ToString('o') + '] managed ndx server exited: ' + $code)",
+      "exit $code",
+      "} catch {",
+      "Add-Content -LiteralPath $config.logPath -Value ('[' + (Get-Date).ToString('o') + '] managed ndx server failed: ' + $_.Exception.Message)",
+      "exit 1",
+      "}",
+    ].join("; ");
     return {
       command: process.env.SystemRoot
         ? join(
@@ -179,18 +212,8 @@ export function detachedManagedServerLaunch(
         "-NonInteractive",
         "-ExecutionPolicy",
         "Bypass",
-        "-Command",
-        [
-          "function Q($v) { '\"' + ($v -replace '\"', '\\\"') + '\"' }",
-          "$exe = $args[0]",
-          "$work = $args[1]",
-          "$rest = @($args[2..($args.Count - 1)])",
-          "$argLine = ($rest | ForEach-Object { Q $_ }) -join ' '",
-          "Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $work -WindowStyle Hidden",
-        ].join("; "),
-        execPath,
-        options.cwd,
-        ...serverArgs,
+        "-EncodedCommand",
+        Buffer.from(script, "utf16le").toString("base64"),
       ],
       cwd: options.cwd,
       detached: true,

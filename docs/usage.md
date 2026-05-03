@@ -29,7 +29,9 @@ for the current folder as a detached `ndxserver` process, waits for the
 WebSocket endpoint, prints server info, logs in, and offers session selection.
 Exiting the CLI does not stop that managed server; stop it with a process
 signal or the dashboard `Exit` action. Windows, macOS, and Linux use separate
-background launcher paths so CLI exit is not the server lifetime owner.
+background launcher paths so CLI exit is not the server lifetime owner. On
+Windows, startup diagnostics are appended to
+`%USERPROFILE%\.ndx\system\logs\managed-server.log`.
 
 Run the server explicitly when you want to own its terminal:
 
@@ -48,7 +50,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.16",
+  "version": "0.1.17",
   "model": "local-model",
   "providers": {
     "local": {

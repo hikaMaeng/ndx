@@ -131,7 +131,7 @@ test("managed server attaches to the requested socket before Docker fallback", a
   }
 });
 
-test("managed server launch uses PowerShell Start-Process on Windows", () => {
+test("managed server launch uses encoded PowerShell host on Windows", () => {
   const launch = detachedManagedServerLaunch({
     cwd: "F:\\dev\\test1",
     entrypoint:
@@ -146,17 +146,36 @@ test("managed server launch uses PowerShell Start-Process on Windows", () => {
   assert.equal(launch.detached, true);
   assert.equal(launch.windowsHide, true);
   assert.equal(launch.args.includes("-NoProfile"), true);
-  assert.equal(
-    launch.args.includes("C:\\Program Files\\nodejs\\node.exe"),
-    true,
-  );
-  assert.equal(launch.args.includes("F:\\dev\\test1"), true);
-  assert.equal(launch.args.includes("--listen"), true);
-  assert.equal(launch.args.includes("127.0.0.1:45123"), true);
-  assert.equal(launch.args.includes("--dashboard-listen"), true);
-  assert.equal(launch.args.includes("127.0.0.1:45124"), true);
-  assert.equal(launch.args.join(" ").includes("Start-Process"), true);
-  assert.equal(launch.args.join(" ").includes("-WindowStyle Hidden"), true);
+  assert.equal(launch.args.includes("-EncodedCommand"), true);
+
+  const encodedCommand =
+    launch.args[launch.args.indexOf("-EncodedCommand") + 1];
+  assert.equal(typeof encodedCommand, "string");
+  const script = Buffer.from(encodedCommand, "base64").toString("utf16le");
+
+  assert.equal(script.includes("ConvertFrom-Json"), true);
+  assert.equal(script.includes("& $config.exe @($config.args)"), true);
+  assert.equal(script.includes("*>> $config.logPath"), true);
+  assert.equal(script.includes("managed ndx server failed"), true);
+
+  const payloadMatch = /\$payload = '([^']+)'/.exec(script);
+  assert.notEqual(payloadMatch, null);
+  const payload = JSON.parse(
+    Buffer.from(payloadMatch?.[1] ?? "", "base64").toString("utf8"),
+  ) as { cwd: string; exe: string; args: string[]; logPath: string };
+  assert.equal(payload.exe, "C:\\Program Files\\nodejs\\node.exe");
+  assert.equal(payload.cwd, "F:\\dev\\test1");
+  assert.deepEqual(payload.args, [
+    "C:\\Users\\hika0\\AppData\\Roaming\\npm\\node_modules\\@neurondev\\ndx\\dist\\src\\cli\\main.js",
+    "serve",
+    "--cwd",
+    "F:\\dev\\test1",
+    "--listen",
+    "127.0.0.1:45123",
+    "--dashboard-listen",
+    "127.0.0.1:45124",
+  ]);
+  assert.equal(payload.logPath.endsWith("managed-server.log"), true);
 });
 
 test("managed server launch uses nohup user background mode on macOS", () => {
