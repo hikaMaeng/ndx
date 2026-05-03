@@ -21,6 +21,7 @@ The command registry is owned by the ndx TypeScript session server.
 | `/model`                 | choose the active session model by number or ID                        | session built-in |
 | `/effort`                | choose the active model effort by number or value                      | session built-in |
 | `/think`                 | choose active model thinking mode by number or value                   | session built-in |
+| `/lite`                  | toggle lite context mode                                               | session built-in |
 | `/fast`                  | toggle Fast mode to enable fastest inference with increased plan usage | session built-in |
 | `/approvals`             | choose what Codex is allowed to do                                     | session built-in |
 | `/permissions`           | choose what Codex is allowed to do                                     | session built-in |
@@ -99,11 +100,28 @@ total items, estimated tokens, configured max context, remaining tokens, and
 breakdown by `user_message`, `assistant_message`, `assistant_tool_calls`, and
 `tool_results`.
 
-`/compact` and `/lite` mutate runtime history and print the same summary before
-and after the change. `/compact` keeps a larger recent suffix; `/lite` keeps a
-smaller suffix. Both commands persist a `context_compacted` runtime event so
-restored sessions replay the compacted stack instead of rebuilding the older
-full event-derived context.
+`/lite` toggles lightweight model context for the current saved session.
+`/lite on` and `/lite off` set it explicitly. All events remain in SQLite, but
+completed prior turns omit `tool_call` and `tool_result` records when the next
+model request is built. The active turn's tool follow-up context is not
+filtered. `/lite off` attempts to restore full context after the last compact
+point; if the estimated context would exceed the active model's `maxContext`,
+the command leaves lite mode enabled. Every successful `/lite` change prints
+context usage before and after the change.
+
+```text
+/lite
+/lite on
+/lite off
+```
+
+`/compact` writes a `context_compact` record containing a pure user/assistant
+summary of prior turns. It excludes tool records and initialization/skill
+loading detail. Future model context starts with that compact summary, then
+continues with events recorded after the compact point. A later compact replaces
+the earlier compact point for future context calculation. Lite mode, when on,
+is applied only after the latest compact point. `/compact` prints context usage
+before and after the compact point is applied.
 
 ## Discovery Layers
 

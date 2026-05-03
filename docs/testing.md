@@ -26,6 +26,12 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
   effort, and thinking mode selection.
 - `/context`, `/compact`, and `/lite` command output includes context totals,
   kind breakdown, remaining context, and compaction before/after changes.
+- `/lite on` filters completed prior tool call/result records from model
+  context while leaving SQLite event and context rows intact.
+- `/lite off` refuses to expand context when the active model's `maxContext`
+  would be exceeded.
+- `/compact` writes a `context_compact` record and restarts future model
+  context from the compact summary plus later turns.
 - Session server keeps sessions on the base config while provider routing happens per request.
 - Missing global and project settings fail in the loader without falling back to a default model.
 - TTY setup wizard creates global `/home/.ndx/settings.json` from permission, provider, model, and context answers.
@@ -76,8 +82,9 @@ npm install -g @neurondev/ndx@<version> --registry https://verdaccio.neurondev.n
   non-current session deletion.
 - Restore rebuilds provider-facing model conversation history from saved
   context items rather than notification or server-control records.
-- Restore replays `context_compacted` events as the replacement model context
-  before applying later turn events.
+- Saved turns rebuild provider-facing history through DB context queries before
+  each prompt; tests should assert compact, lite, and partitioned context rows
+  when context policy changes.
 - SQLite list and ownership checks use indexed session projection rows; tests
   should assert `event_count`, `last_event_id`, and context replay rows when
   persistence behavior changes.
@@ -132,8 +139,16 @@ Locator contract:
 
 - `main` landmark named by the `Server Dashboard` heading.
 - `aside` named `Dashboard menu`.
-- Buttons named `Reload` and `Exit` inside `nav aria-label="Server actions"`.
+- Buttons named `Session Logs`, `Reload`, and `Exit` inside
+  `nav aria-label="Server actions"`.
+- Labelled selects named `Account`, `Project`, and `Session` for Session Logs.
+- A native Session Log Table with row containers marked
+  `data-testid="session-log-row"` and row-scoped `Open` and `Delete` buttons.
+- A Session Detail section with `Previous` and `Next` pagination buttons and
+  raw event records under `data-testid="session-log-events"`.
 - `role="status"` for dashboard action status; `role="alert"` for failed
-  dashboard action status.
+  dashboard or session-log status.
 - `data-testid="ndx-dashboard"`, `dashboard-action-status`,
-  `dashboard-sources`, and `dashboard-bootstrap` for stable anchors.
+  `dashboard-sources`, `dashboard-bootstrap`, `dashboard-session-logs`,
+  `session-log-filter-tags`, `session-log-status`, `session-log-table`,
+  `session-log-detail`, and `session-log-events` for stable anchors.

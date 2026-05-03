@@ -20,6 +20,7 @@ import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import {
   SqliteSessionStore,
+  type DashboardSessionLogFilters,
   type StoredSession,
   type StoredSessionContext,
 } from "./sqlite-store.js";
@@ -31,6 +32,7 @@ import {
   type SlashCommandResult,
 } from "./commands/registry.js";
 import type { RuntimeEvent } from "../shared/protocol.js";
+import type { ModelConversationItem } from "../model/types.js";
 import type {
   ModelClient,
   ModelSettings,
@@ -143,7 +145,7 @@ interface PersistedSessionState {
   createdAt: number;
   updatedAt: number;
   events: RuntimeEvent[];
-  contextEvents: RuntimeEvent[];
+  contextItems: ModelConversationItem[];
   sequence: number;
   title: string;
 }
@@ -217,6 +219,58 @@ export class SessionServer {
         "content-type": "text/html; charset=utf-8",
       });
       response.end(this.renderDashboardHtml());
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/session-log/facets"
+    ) {
+      writeJson(response, 200, this.store.dashboardSessionLogFacets());
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/session-log/sessions"
+    ) {
+      writeJson(response, 200, {
+        sessions: this.store.listDashboardSessionLogs(
+          dashboardSessionLogFilters(url),
+        ),
+      });
+      return;
+    }
+    const eventMatch = url.pathname.match(
+      /^\/api\/session-log\/sessions\/([^/]+)\/events$/,
+    );
+    if (request.method === "GET" && eventMatch !== null) {
+      const page = this.store.readDashboardSessionLogEvents(
+        decodeURIComponent(eventMatch[1] ?? ""),
+        dashboardIntegerParam(url, "offset", 0, 0, 100_000),
+        dashboardIntegerParam(url, "limit", 50, 1, 200),
+      );
+      if (page === undefined) {
+        writeJson(response, 404, { ok: false, message: "Session not found." });
+        return;
+      }
+      writeJson(response, 200, page);
+      return;
+    }
+    const deleteMatch = url.pathname.match(
+      /^\/api\/session-log\/sessions\/([^/]+)$/,
+    );
+    if (request.method === "DELETE" && deleteMatch !== null) {
+      const session = this.deleteDashboardSessionById(
+        decodeURIComponent(deleteMatch[1] ?? ""),
+      );
+      if (session === undefined) {
+        writeJson(response, 404, { ok: false, message: "Session not found." });
+        return;
+      }
+      writeJson(response, 200, {
+        ok: true,
+        session,
+        message: `Deleted session ${session.sequence}: ${session.title}`,
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/reload") {
@@ -695,7 +749,7 @@ export class SessionServer {
       config,
       client: this.options.createClient(config),
       sessionId: session.id,
-      history: conversationHistoryFromRuntimeEvents(session.events),
+      history: this.historyForSession(session),
       sources: this.sources,
       bootstrap: this.bootstrap,
     });
@@ -892,6 +946,18 @@ export class SessionServer {
           action: "print",
           output: this.configureThink(execution),
         };
+      case "lite":
+        return {
+          handled: true,
+          action: "print",
+          output: this.configureLite(execution),
+        };
+      case "compact":
+        return {
+          handled: true,
+          action: "print",
+          output: this.compactContext(execution),
+        };
       case "init":
         return {
           handled: true,
@@ -909,16 +975,6 @@ export class SessionServer {
           handled: true,
           action: "print",
           output: this.formatContextUsage(execution.sessionId),
-        };
-      case "compact":
-      case "lite":
-        return {
-          handled: true,
-          action: "print",
-          output: this.compactSessionContext(
-            execution.sessionId,
-            definition.name,
-          ),
         };
       case "session":
         return {
@@ -1016,6 +1072,7 @@ export class SessionServer {
     session.clientIds.add(context.clientId);
     session.subscribers.add(connection);
     this.ensureSessionPersisted(session, prompt);
+    this.refreshRuntimeHistory(session);
     session.status = "running";
     session.updatedAt = Date.now();
     this.appendSessionRecord(session, {
@@ -1232,7 +1289,7 @@ export class SessionServer {
       config,
       client: this.options.createClient(config),
       sessionId: persisted.id,
-      history: conversationHistoryFromRuntimeEvents(persisted.contextEvents),
+      history: persisted.contextItems,
       sources: this.sources,
       bootstrap: this.bootstrap,
     });
@@ -1309,6 +1366,53 @@ export class SessionServer {
     }
     this.sessions.delete(session.id);
     this.store.deleteSession(session.id);
+    return session;
+  }
+
+  private deleteDashboardSessionById(
+    sessionId: string,
+  ): SessionListEntry | undefined {
+    const stored = this.store.dashboardSessionById(sessionId);
+    const live = this.sessions.get(sessionId);
+    if (stored === undefined && live === undefined) {
+      return undefined;
+    }
+    const session: SessionListEntry =
+      stored === undefined
+        ? {
+            number: live?.sequence ?? 0,
+            sequence: live?.sequence ?? 0,
+            id: live?.id ?? sessionId,
+            user: live?.user ?? "unknown",
+            cwd: live?.cwd ?? "",
+            status: live?.status ?? "idle",
+            createdAt: live?.createdAt ?? Date.now(),
+            updatedAt: live?.updatedAt ?? Date.now(),
+            eventCount: live?.events.length ?? 0,
+            live: true,
+            title: live?.title ?? "unknown",
+          }
+        : {
+            number: stored.sequence,
+            sequence: stored.sequence,
+            id: stored.id,
+            user: stored.user,
+            cwd: stored.cwd,
+            status: stored.status,
+            createdAt: stored.createdAt,
+            updatedAt: stored.updatedAt,
+            eventCount: stored.eventCount,
+            live: live !== undefined,
+            title: stored.title,
+          };
+    if (live !== undefined && live.subscribers.size > 0) {
+      this.publishEphemeral(live, deletedSessionNotification(live.id));
+      for (const subscriber of live.subscribers) {
+        subscriber.close();
+      }
+    }
+    this.sessions.delete(sessionId);
+    this.store.deleteSession(sessionId);
     return session;
   }
 
@@ -1451,6 +1555,78 @@ export class SessionServer {
     this.setThink(active, this.resolveThinkSelection(args[0]));
     session.updatedAt = Date.now();
     return this.formatThinkSelection(active);
+  }
+
+  private configureLite(execution: SlashCommandExecution): string {
+    const session = this.sessionForCommand(execution.sessionId);
+    if (!session.persisted) {
+      return "lite: unchanged (no saved turns yet)";
+    }
+    const value = (execution.args ?? "").trim();
+    const state = this.store.readSessionContext(session.id);
+    const nextValue =
+      value.length === 0 ? (state?.liteEnabled === true ? "off" : "on") : value;
+    if (nextValue !== "on" && nextValue !== "off") {
+      return "usage: /lite <on|off>";
+    }
+    const before = session.runtime.contextSummary();
+    if (nextValue === "on") {
+      this.store.setLiteMode(session.id, true);
+      this.refreshRuntimeHistory(session);
+      return [
+        "lite: on",
+        formatContextUsageSummary("before", before),
+        formatContextUsageSummary("after", session.runtime.contextSummary()),
+      ].join("\n\n");
+    }
+    if (state?.liteEnabled !== true) {
+      return [
+        "lite: off",
+        formatContextUsageSummary("before", before),
+        formatContextUsageSummary("after", before),
+      ].join("\n\n");
+    }
+    const items = this.store.readModelContext(session.id, {
+      liteEnabled: false,
+    });
+    const estimatedTokens = estimateContextTokens(items);
+    const maxContext = session.config.activeModel.maxContext;
+    if (maxContext !== undefined && estimatedTokens > maxContext) {
+      return [
+        "lite: still on",
+        `off would restore about ${estimatedTokens}/${maxContext} context tokens`,
+        formatContextUsageSummary("before", before),
+        formatContextUsageSummary("after", before),
+      ].join("\n");
+    }
+    this.store.setLiteMode(session.id, false);
+    this.refreshRuntimeHistory(session);
+    const headline =
+      maxContext === undefined
+        ? `lite: off (${estimatedTokens} estimated context tokens)`
+        : `lite: off (${estimatedTokens}/${maxContext} estimated context tokens)`;
+    return [
+      headline,
+      formatContextUsageSummary("before", before),
+      formatContextUsageSummary("after", session.runtime.contextSummary()),
+    ].join("\n\n");
+  }
+
+  private compactContext(execution: SlashCommandExecution): string {
+    const session = this.sessionForCommand(execution.sessionId);
+    if (!session.persisted) {
+      return "compact: unchanged (no saved turns yet)";
+    }
+    const before = session.runtime.contextSummary();
+    const result = this.store.compactSession(session.id);
+    this.refreshRuntimeHistory(session);
+    return [
+      "compact: created",
+      `event: ${result.eventId}`,
+      `summary: ${estimateTextTokens(result.summary)} estimated tokens`,
+      formatContextUsageSummary("before", before),
+      formatContextUsageSummary("after", session.runtime.contextSummary()),
+    ].join("\n");
   }
 
   private sessionForCommand(sessionId: string | undefined): LiveSession {
@@ -1676,25 +1852,6 @@ export class SessionServer {
     );
   }
 
-  private compactSessionContext(
-    sessionId: string | undefined,
-    mode: "compact" | "lite",
-  ): string {
-    const session =
-      sessionId === undefined ? undefined : this.sessions.get(sessionId);
-    if (session === undefined) {
-      return `/${mode} requires an active session`;
-    }
-    const result = session.runtime.compactContext(mode, (event) =>
-      this.handleRuntimeEvent(session, event),
-    );
-    return [
-      `/${mode} context change`,
-      formatContextUsageSummary("before", result.before),
-      formatContextUsageSummary("after", result.after),
-    ].join("\n\n");
-  }
-
   private formatSessions(user: string, cwd: string): string {
     const sessions = this.numberedSessionsForCwd(user, cwd);
     if (sessions.length === 0) {
@@ -1764,7 +1921,24 @@ export class SessionServer {
   }
 
   private contextForSession(sessionId: string): StoredSessionContext {
-    return this.store.readSessionContext(sessionId) ?? { events: [] };
+    return (
+      this.store.readSessionContext(sessionId) ?? {
+        events: [],
+        items: [],
+        liteEnabled: false,
+      }
+    );
+  }
+
+  private refreshRuntimeHistory(session: LiveSession): void {
+    session.runtime.replaceHistory(this.historyForSession(session));
+  }
+
+  private historyForSession(session: LiveSession): ModelConversationItem[] {
+    if (session.persisted) {
+      return this.store.readModelContext(session.id);
+    }
+    return conversationHistoryFromRuntimeEvents(session.events);
   }
 
   private ensureSessionPersisted(session: LiveSession, prompt: string): void {
@@ -1846,7 +2020,7 @@ export class SessionServer {
         config,
         client: this.options.createClient(config),
         sessionId: persisted.id,
-        history: conversationHistoryFromRuntimeEvents(persisted.contextEvents),
+        history: persisted.contextItems,
         sources: this.sources,
         bootstrap: this.bootstrap,
       }),
@@ -2040,7 +2214,7 @@ function storedSessionToPersisted(
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     events: session.events,
-    contextEvents: context.events,
+    contextItems: context.items,
     sequence: session.sequence,
     title: session.title,
   };
@@ -2076,6 +2250,56 @@ function formatContextUsageSummary(
     "  by kind:",
     ...kinds,
   ].join("\n");
+}
+
+function estimateContextTokens(items: ModelConversationItem[]): number {
+  return estimateTextTokens(JSON.stringify(items));
+}
+
+function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function writeJson(
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+): void {
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+  });
+  response.end(JSON.stringify(body));
+}
+
+function dashboardSessionLogFilters(url: URL): DashboardSessionLogFilters {
+  return {
+    accounts: dashboardStringListParam(url, "accounts"),
+    projects: dashboardStringListParam(url, "projects"),
+    sessions: dashboardStringListParam(url, "sessions"),
+  };
+}
+
+function dashboardStringListParam(url: URL, name: string): string[] {
+  const values = url.searchParams
+    .getAll(name)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return [...new Set(values)];
+}
+
+function dashboardIntegerParam(
+  url: URL,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const value = Number.parseInt(url.searchParams.get(name) ?? "", 10);
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, value));
 }
 
 function readPackageVersion(): string {

@@ -62,10 +62,15 @@
 - Docker compose must not be treated as the server owner. The root compose file
   owns only the `ndx-sandbox` service used for tool execution.
 - The dashboard has no authentication or authorization.
+- Dashboard Session Logs exposes all non-deleted SQLite session metadata and
+  raw event payloads across accounts and project cwd values on the local
+  dashboard listener. Treat the dashboard port as local/private only.
 - The dashboard Reload action is unauthenticated and re-runs global `.ndx`
   bootstrap plus settings and `AGENTS.md` source loading for new sessions.
 - The dashboard Exit action is unauthenticated and requests shutdown of the
   local server instance that owns the dashboard listener.
+- Dashboard Session Logs delete is unauthenticated, soft-deletes the selected
+  session, clears ownership, and closes live subscribers when present.
 - WebSocket methods other than `server/info`, `account/create`,
   `account/login`, and `account/socialLogin` require successful account login
   on that connection. Unauthenticated non-login requests are ignored.
@@ -182,12 +187,19 @@ The rendered frontend view is the agent-service dashboard at `GET /` and
   heading.
 - The left menu is an `aside` named `Dashboard menu`; action controls are in
   `nav aria-label="Server actions"`.
-- `Reload` and `Exit` are native buttons with stable accessible names.
+- `Session Logs`, `Reload`, and `Exit` are native buttons with stable
+  accessible names.
+- Session Logs exposes labelled `Account`, `Project`, and `Session` selects,
+  removable filter-tag buttons, a native table, row-level `Open` and `Delete`
+  buttons, and a `Session Detail` section with paged raw event records.
 - The action result text uses `role="status"` and may switch to `role="alert"`
   on failure.
 - Stable machine-only locators are `data-testid="ndx-dashboard"`,
   `data-testid="dashboard-action-status"`, `data-testid="dashboard-sources"`,
-  and `data-testid="dashboard-bootstrap"`.
+  `data-testid="dashboard-bootstrap"`, `data-testid="dashboard-session-logs"`,
+  `data-testid="session-log-filter-tags"`, `data-testid="session-log-status"`,
+  `data-testid="session-log-table"`, `data-testid="session-log-row"`,
+  `data-testid="session-log-detail"`, and `data-testid="session-log-events"`.
 - TUI and dashboard user-facing copy must remain English-only.
 
-No other UI selectors are part of the contract yet.
+No CSS class, DOM-depth, or row-index selector is part of the contract.

@@ -552,6 +552,8 @@ export function interactiveHelp(): string {
     "  /lite       Aggressively compact older context and report the change",
     "  /init       Show latest session initialization details",
     "  /events     Show recent runtime event types",
+    "  /lite       Toggle lite context mode: /lite on|off",
+    "  /compact    Summarize prior turns and restart context from the summary",
     "  /login      Change Google, GitHub, current, or default user login",
     "  /session    List sessions for this workspace",
     "  /restoreSession Restore a session by id or list number",

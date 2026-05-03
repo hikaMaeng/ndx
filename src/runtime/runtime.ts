@@ -36,7 +36,7 @@ export class AgentRuntime {
   private readonly client: ModelClient;
   private readonly sources: string[];
   private readonly bootstrap: NdxBootstrapReport;
-  private readonly history: ModelConversationItem[];
+  private history: ModelConversationItem[];
   private readonly context: SessionContextSummary;
   private configured = false;
   private activeTurn: ActiveTurn | undefined;
@@ -172,28 +172,9 @@ export class AgentRuntime {
     return summarizeContext(this.history, this.config);
   }
 
-  compactContext(
-    mode: "compact" | "lite",
-    onEvent?: RuntimeEventHandler,
-  ): { before: SessionContextSummary; after: SessionContextSummary } {
-    this.ensureConfigured(onEvent);
-    const before = this.contextSummary();
-    const keep = mode === "lite" ? 4 : 8;
-    const replacement = compactHistory(this.history, keep, mode);
-    this.history.splice(0, this.history.length, ...replacement);
-    const after = this.contextSummary();
-    this.emit(
-      {
-        type: "context_compacted",
-        sessionId: this.sessionId,
-        mode,
-        before,
-        after,
-        replacement,
-      },
-      onEvent,
-    );
-    return { before, after };
+  replaceHistory(history: ModelConversationItem[]): void {
+    this.history = [...history];
+    Object.assign(this.context, this.contextSummary());
   }
 
   private ensureConfigured(onEvent?: RuntimeEventHandler): void {
@@ -370,32 +351,6 @@ function contextItemKind(item: ModelConversationItem): string {
     return "assistant_tool_calls";
   }
   return "tool_results";
-}
-
-function compactHistory(
-  history: ModelConversationItem[],
-  keep: number,
-  mode: "compact" | "lite",
-): ModelConversationItem[] {
-  if (history.length <= keep) {
-    return [...history];
-  }
-  const removed = history.slice(0, history.length - keep);
-  const kept = history.slice(-keep);
-  const removedKinds = summarizeByKind(removed)
-    .map(
-      (entry) =>
-        `${entry.kind}: ${entry.items} items, ${entry.estimatedTokens} estimated tokens`,
-    )
-    .join("; ");
-  return [
-    {
-      type: "message",
-      role: "assistant",
-      content: `[${mode} context summary] Removed ${removed.length} older context items. ${removedKinds}.`,
-    },
-    ...kept,
-  ];
 }
 
 function estimateTokens(text: string): number {

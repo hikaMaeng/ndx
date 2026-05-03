@@ -133,9 +133,16 @@ authenticated WebSocket JSON-RPC.
 Dashboard actions:
 
 ```text
+Session Logs  Browse all persisted SQLite sessions and raw event pages.
 Reload  Re-run global .ndx bootstrap and re-read settings plus AGENTS.md sources.
 Exit    Request the local server process to stop.
 ```
+
+Session Logs shows all non-deleted sessions across accounts and project cwd
+values. Selecting an account, project, or session adds a removable filter tag.
+Tags in the same category are ORed; tags across categories are ANDed. Opening a
+session shows raw `session_events` from first record to latest record with
+pagination. Delete soft-deletes the selected session; there is no edit action.
 
 Dashboard UI copy is English-only.
 
@@ -149,6 +156,9 @@ Dashboard UI copy is English-only.
 /lite       Aggressively compact older context and show usage before and after.
 /init       Show the latest session initialization detail received from server events.
 /events     Show recent runtime event types recorded on the current session.
+/lite on    Omit completed prior tool call/result records from future model context.
+/lite off   Restore full post-compact context if it fits the active model context.
+/compact    Save a user/assistant summary and restart future context from it.
 /login      Choose Google login, GitHub login, current account, or defaultUser.
 /session    List live and saved sessions for the current workspace.
 /restoreSession N  Switch to a session by UUID or by the number shown in /session.
@@ -160,6 +170,10 @@ Dashboard UI copy is English-only.
 Slash commands are sent to the session server with `command/execute`.
 Initialization detail is for operator visibility only. The CLI does not append
 slash command text or initialization detail to the model prompt.
+
+`/lite` and `/compact` change only provider-facing context construction. The
+session event log, tool records, notifications, and compact records all remain
+durable in SQLite. `/compact` has no effect on unsaved empty sessions.
 
 `/session` is scoped to the `cwd` passed when `ndx` started or connected. The
 number column is the session creation sequence for that workspace. Empty

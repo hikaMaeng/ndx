@@ -58,12 +58,6 @@ export function conversationHistoryFromRuntimeEvents(
       });
       continue;
     }
-    if (msg.type === "context_compacted") {
-      history = msg.replacement;
-      pendingToolCalls.clear();
-      turnToolCounts.clear();
-      continue;
-    }
     if (msg.type === "turn_complete" && msg.finalText.length > 0) {
       const last = history.at(-1);
       if (

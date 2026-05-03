@@ -31,6 +31,8 @@ context.
 | `/lite`           | Aggressively compact context and print before/after. |
 | `/init`           | Print the latest session initialization event.       |
 | `/events`         | Print recent runtime event types for the session.    |
+| `/lite on|off`    | Toggle lightweight provider-facing context.          |
+| `/compact`        | Save a compact summary and restart future context.   |
 | `/login`          | Choose Google, GitHub, current, or default user.     |
 | `/session`        | List saved and live sessions for the current `cwd`.  |
 | `/restoreSession` | Switch to a session by UUID or `/session` number.    |
@@ -121,11 +123,15 @@ same SQLite session. `/deleteSession` lists sessions for the same `cwd`, omits
 the current session, accepts Enter as cancel, and marks the selected session
 deleted.
 
-Restore also replays prior turns into model context. Runtime events are
-converted back into provider-facing conversation items: `turn_started` becomes a
-user message, `agent_message` and `turn_complete` become assistant messages,
-and prior `tool_call`/`tool_result` pairs are restored with stable synthetic
-call ids.
+Saved sessions replay prior turns into model context from the SQLite context
+projection before each new prompt. Runtime events are converted back into
+provider-facing conversation items: `turn_started` becomes a user message,
+`agent_message` and `turn_complete` become assistant messages, and retained
+`tool_call`/`tool_result` pairs are restored with stable synthetic call ids.
+`/compact` first replaces prior turns with a `context_compact` summary record.
+`/lite on` then omits completed prior tool call/result rows from the
+post-compact projection only. SQLite still stores the full event log and all
+tool rows.
 
 Session ownership is tracked in SQLite. A socket server claims ownership before
 processing a prompt. If another server has taken
@@ -166,10 +172,19 @@ service remains socket-first.
 
 Dashboard HTTP actions:
 
-| Method | Path          | Result                                                |
-| ------ | ------------- | ----------------------------------------------------- |
-| POST   | `/api/reload` | Re-run `.ndx` bootstrap and re-read settings sources. |
-| POST   | `/api/exit`   | Request shutdown of the local server instance.        |
+| Method | Path                                   | Result                                                |
+| ------ | -------------------------------------- | ----------------------------------------------------- |
+| GET    | `/api/session-log/facets`              | List account, project, and session filter facets.     |
+| GET    | `/api/session-log/sessions`            | List all non-deleted SQLite sessions.                 |
+| GET    | `/api/session-log/sessions/:id/events` | Page raw `session_events` rows for one session.       |
+| DELETE | `/api/session-log/sessions/:id`        | Soft-delete one session and close live subscribers.   |
+| POST   | `/api/reload`                          | Re-run `.ndx` bootstrap and re-read settings sources. |
+| POST   | `/api/exit`                            | Request shutdown of the local server instance.        |
+
+`/api/session-log/sessions` accepts repeated or comma-separated `accounts`,
+`projects`, and `sessions` query params. Values within the same category are
+ORed; different categories are ANDed. Project values are persisted `cwd`
+strings. Event paging accepts `offset` and `limit`; `limit` is clamped to 200.
 
 `initialize` returns `server`, `version`, `protocolVersion`, `methods`, and
 `bootstrap`. Protocol version `1` is the current ndx WebSocket JSON-RPC

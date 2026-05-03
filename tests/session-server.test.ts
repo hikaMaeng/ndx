@@ -585,6 +585,130 @@ test("session server exposes account methods, client identity, and dashboard she
   }
 });
 
+test("dashboard session logs filter raw SQLite events and delete sessions", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-dashboard-session-logs-"));
+  const globalDir = join(root, "home", ".ndx");
+  const projectA = join(root, "project-a");
+  const projectB = join(root, "project-b");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    mkdirSync(projectA, { recursive: true });
+    mkdirSync(projectB, { recursive: true });
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        paths: { globalDir, dataDir: join(root, "data") },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    client = await SessionClient.connect(address.url);
+    await client.request("account/create", {
+      username: "alice",
+      password: "secret",
+    });
+    await client.request("account/create", {
+      username: "bob",
+      password: "secret",
+    });
+    await client.request("account/login", {
+      username: "alice",
+      password: "secret",
+      clientId: "dashboard-test-client",
+    });
+    const aliceA = await createPersistedSession(
+      client,
+      projectA,
+      "alice project a prompt",
+    );
+    const aliceB = await createPersistedSession(
+      client,
+      projectB,
+      "alice project b prompt",
+    );
+    await client.request("account/login", {
+      username: "bob",
+      password: "secret",
+      clientId: "dashboard-test-client",
+    });
+    const bobB = await createPersistedSession(
+      client,
+      projectB,
+      "bob project b prompt",
+    );
+    await server.flushPersistence();
+
+    const dashboard = await fetch(address.dashboardUrl ?? "");
+    const html = await dashboard.text();
+    assert.equal(html.includes(">Session Logs<"), true);
+    assert.equal(html.includes('data-testid="dashboard-session-logs"'), true);
+    assert.equal(html.includes('data-testid="session-log-table"'), true);
+
+    const facets = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/facets`,
+    )) as {
+      accounts: string[];
+      projects: string[];
+      sessions: Array<{ id: string }>;
+    };
+    assert.deepEqual(facets.accounts, ["alice", "bob"]);
+    assert.equal(facets.projects.includes(projectA), true);
+    assert.equal(facets.projects.includes(projectB), true);
+    assert.equal(facets.sessions.length, 3);
+
+    const aliceProjectLogs = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions?accounts=alice&projects=${encodeURIComponent(projectA)}&projects=${encodeURIComponent(projectB)}`,
+    )) as { sessions: Array<{ id: string; user: string; cwd: string }> };
+    assert.deepEqual(
+      aliceProjectLogs.sessions.map((session) => session.id),
+      [aliceA, aliceB],
+    );
+    assert.equal(
+      aliceProjectLogs.sessions.every((session) => session.user === "alice"),
+      true,
+    );
+
+    const selectedSessionLogs = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions?sessions=${encodeURIComponent(bobB)}`,
+    )) as { sessions: Array<{ id: string; user: string; cwd: string }> };
+    assert.deepEqual(
+      selectedSessionLogs.sessions.map((session) => session.id),
+      [bobB],
+    );
+
+    const firstPage = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions/${encodeURIComponent(aliceA)}/events?offset=0&limit=2`,
+    )) as {
+      total: number;
+      events: Array<{ id: number; type: string; payload: unknown }>;
+    };
+    assert.equal(firstPage.total >= 2, true);
+    assert.equal(firstPage.events.length, 2);
+    assert.equal(firstPage.events[0]?.type, "session_started");
+    assert.equal(typeof firstPage.events[0]?.payload, "object");
+
+    const deleteResponse = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions/${encodeURIComponent(bobB)}`,
+      { method: "DELETE" },
+    )) as { ok: boolean; session: { id: string } };
+    assert.equal(deleteResponse.ok, true);
+    assert.equal(deleteResponse.session.id, bobB);
+
+    const bobLogsAfterDelete = (await fetchJson(
+      `${address.dashboardUrl}/api/session-log/sessions?accounts=bob`,
+    )) as { sessions: Array<{ id: string }> };
+    assert.deepEqual(bobLogsAfterDelete.sessions, []);
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("dashboard reload re-reads settings and AGENTS sources", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-dashboard-reload-"));
   const globalDir = join(root, "home", ".ndx");
@@ -837,6 +961,172 @@ test("session server restores a saved workspace session by id or number", async 
     secondClient?.close();
     await firstServer?.close().catch(() => undefined);
     await secondServer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session lite mode filters completed tool logs only from model context", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-lite-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  const model = new ScriptedToolModelClient(["first answer", "second answer"]);
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        activeModel: { ...baseConfig.activeModel, maxContext: 1 },
+        models: [{ name: "mock", provider: "mock", maxContext: 1 }],
+        paths: { globalDir },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => model,
+      persistenceDir,
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await initializeAndLoginClient(client);
+    const start = await client.request<{ session: { id: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const sessionId = start.session.id;
+
+    const firstCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "first turn" });
+    await firstCompleted;
+    await server.flushPersistence();
+
+    const enabled = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "lite", args: "on", sessionId },
+    );
+    assert.equal(enabled.output.includes("lite: on"), true);
+    assert.equal(enabled.output.includes("before"), true);
+    assert.equal(enabled.output.includes("after"), true);
+    const rejected = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "lite", args: "off", sessionId },
+    );
+    assert.equal(rejected.output.includes("lite: still on"), true);
+    assert.equal(rejected.output.includes("before"), true);
+    assert.equal(rejected.output.includes("after"), true);
+
+    const secondCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "second turn" });
+    await secondCompleted;
+    await server.flushPersistence();
+
+    const secondInput = model.inputs[2];
+    assert.ok(Array.isArray(secondInput));
+    assert.deepEqual(
+      secondInput.map((item) => (item as { type?: string }).type),
+      ["message", "message", "message"],
+    );
+    assert.deepEqual(
+      (secondInput as Array<{ content?: string }>)
+        .map((item) => item.content)
+        .filter((content): content is string => content !== undefined),
+      ["first turn", "first answer", "second turn"],
+    );
+
+    const contextEvents = readSqliteContextEvents(persistenceDir, sessionId);
+    assert.equal(
+      contextEvents.some((event) => event.type === "tool_call"),
+      true,
+    );
+    assert.equal(
+      contextEvents.some((event) => event.type === "tool_result"),
+      true,
+    );
+    const segments = readSqliteContextSegments(persistenceDir, sessionId);
+    assert.equal(segments.length, 1);
+    assert.equal(
+      readSqlitePartitionContextEvents(
+        persistenceDir,
+        segments[0]?.tableName ?? "",
+        sessionId,
+      ).length >= contextEvents.length,
+      true,
+    );
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session compact stores a summary record and restarts model context there", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-compact-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  const model = new ScriptedToolModelClient(["first answer", "second answer"]);
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
+    server = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => model,
+      persistenceDir,
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await initializeAndLoginClient(client);
+    const start = await client.request<{ session: { id: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const sessionId = start.session.id;
+
+    const firstCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "first turn" });
+    await firstCompleted;
+    await server.flushPersistence();
+
+    const compacted = await client.request<{ handled: true; output: string }>(
+      "command/execute",
+      { name: "compact", sessionId },
+    );
+    assert.equal(compacted.output.includes("compact: created"), true);
+
+    const secondCompleted = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "second turn" });
+    await secondCompleted;
+    await server.flushPersistence();
+
+    const secondInput = model.inputs[2];
+    assert.ok(Array.isArray(secondInput));
+    assert.deepEqual(
+      secondInput.map((item) => (item as { type?: string }).type),
+      ["message", "message"],
+    );
+    const contents = (secondInput as Array<{ content?: string }>)
+      .map((item) => item.content)
+      .filter((content): content is string => content !== undefined);
+    assert.equal(contents.length, 2);
+    assert.equal(contents[0]?.includes("Earlier conversation summary"), true);
+    assert.equal(contents[0]?.includes("first turn"), true);
+    assert.equal(contents[0]?.includes("first answer"), true);
+    assert.equal(contents[1], "second turn");
+
+    const records = readSqliteRecords(persistenceDir, sessionId);
+    assert.equal(
+      records.some((record) => record.type === "context_compact"),
+      true,
+    );
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -1228,6 +1518,30 @@ function waitForMethod(
   });
 }
 
+async function createPersistedSession(
+  client: SessionClient,
+  cwd: string,
+  prompt: string,
+): Promise<string> {
+  const started = await client.request<{
+    session: { id: string };
+  }>("session/start", { cwd });
+  const completed = waitForMethod(client, "turn/completed");
+  await client.request("turn/start", {
+    sessionId: started.session.id,
+    prompt,
+  });
+  await completed;
+  return started.session.id;
+}
+
+async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
+  const response = await fetch(url, init);
+  const body = await response.json();
+  assert.equal(response.ok, true);
+  return body;
+}
+
 async function initializeAndLoginClient(client: SessionClient): Promise<void> {
   await loginClient(client);
   await client.request("initialize");
@@ -1379,6 +1693,72 @@ function readSqliteContextEvents(
     return db
       .prepare(
         "select payload_json as payload from session_context_items where session_id = ? order by item_seq asc",
+      )
+      .all(sessionId)
+      .map((row) => JSON.parse((row as { payload: string }).payload))
+      .map((event) => ({
+        type: String((event as { msg?: { type?: unknown } }).msg?.type),
+      }));
+  } finally {
+    db.close();
+  }
+}
+
+function readSqliteContextSegments(
+  dataDir: string,
+  sessionId: string,
+): Array<{ tableName: string }> {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { all(...values: unknown[]): unknown[] };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return db
+      .prepare(
+        "select table_name as tableName from session_context_segments where session_id = ?",
+      )
+      .all(sessionId)
+      .filter(
+        (row): row is { tableName: string } =>
+          typeof (row as { tableName?: unknown }).tableName === "string",
+      );
+  } finally {
+    db.close();
+  }
+}
+
+function readSqlitePartitionContextEvents(
+  dataDir: string,
+  tableName: string,
+  sessionId: string,
+): Array<{ type: string }> {
+  assert.match(tableName, /^session_context_items_[0-9a-f]{2}$/);
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { all(...values: unknown[]): unknown[] };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return db
+      .prepare(
+        `select payload_json as payload from ${tableName} where session_id = ? order by item_seq asc`,
       )
       .all(sessionId)
       .map((row) => JSON.parse((row as { payload: string }).payload))
@@ -1587,6 +1967,38 @@ class CapturingModelClient implements ModelClient {
     return {
       id: `captured-${this.inputs.length}`,
       text: this.text,
+      toolCalls: [],
+      raw: { input },
+    };
+  }
+}
+
+class ScriptedToolModelClient implements ModelClient {
+  readonly inputs: Array<Array<unknown>> = [];
+  private step = 0;
+
+  constructor(private readonly texts: string[]) {}
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.inputs.push(Array.isArray(input) ? input : [input]);
+    this.step += 1;
+    if (this.step === 1) {
+      return {
+        id: "scripted-tool-call",
+        text: "",
+        toolCalls: [
+          {
+            callId: "scripted-call-1",
+            name: "shell",
+            arguments: JSON.stringify({ command: "printf scripted-tool" }),
+          },
+        ],
+        raw: { input },
+      };
+    }
+    return {
+      id: `scripted-text-${this.step}`,
+      text: this.texts.shift() ?? "done",
       toolCalls: [],
       raw: { input },
     };

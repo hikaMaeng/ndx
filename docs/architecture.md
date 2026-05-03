@@ -77,12 +77,17 @@ uses `model.custom.customKey`; tool follow-up requests keep the pool selected by
 that prompt. Explicit `/model` model, effort, or thinking changes are treated as
 new provider-client binding boundaries.
 
-The context source is local. During a live session `AgentRuntime` owns the
-in-memory history. For restore after process restart or ownership transfer, the
-session events stored in SQLite are replayed into provider conversation items.
-OpenAI Responses requests intentionally omit
-`previous_response_id`, so inference servers do not need stable server-side
-session state.
+The context source is local and DB-originated. Before each new turn in a saved
+session, the server queries SQLite and replaces the runtime's provider-facing
+history with the current context projection. Restore after process restart or
+ownership transfer uses the same query path. OpenAI Responses requests
+intentionally omit `previous_response_id`, so inference servers do not need
+stable server-side session state.
+
+`/compact` records a `context_compact` event and future context starts at the
+latest compact summary. `/lite on` then filters completed prior `tool_call` and
+`tool_result` rows from the post-compact context projection only. Runtime event
+storage is append-only; compact and lite never delete tool logs.
 
 ## Runtime Event Contract
 
@@ -138,16 +143,20 @@ The default data directory is `/home/.ndx/system`; settings may define
 `/home/.ndx/system` bootstrap state remains code-managed and is not stored in SQLite.
 
 SQLite tables own users, OAuth account links, projects, sessions, append-only
-session events, restore context items, and session owners. `defaultUser` with
-an empty password is created on first open so local CLI clients can
-authenticate without provisioning a separate account.
+session events, context mode state, context segment mapping, restore context
+items, and session owners. `defaultUser` with an empty password is created on
+first open so local CLI clients can authenticate without provisioning a
+separate account.
 
 `sessions` is the read projection for list and ownership checks. It stores the
 current status, event count, last event id, last turn id, and workspace
-sequence. `session_events` remains the durable event log. `session_context_items`
-stores only the runtime events needed to rebuild provider-facing conversation
-history, so restore does not depend on parsing notification and server-control
-records.
+sequence. `session_events` remains the durable event log. `session_context_state`
+stores lite mode and the latest compact event id. `session_context_segments`
+maps each session to a user/workspace-derived context partition table, so
+context replay can use small indexed tables instead of one write-hot table.
+`session_context_items` remains a compatibility projection; authoritative new
+context rows are also written to `session_context_items_00` through
+`session_context_items_0f`.
 
 When a WebSocket connection closes without an explicit session shutdown, the
 server removes that connection from session subscriber sets. If a persisted

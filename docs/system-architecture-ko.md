@@ -353,6 +353,8 @@ erDiagram
   accounts ||--o{ session_owners : claims
   projects ||--o{ sessions : groups
   sessions ||--o{ session_events : records
+  sessions ||--o| session_context_state : context_mode
+  sessions ||--o| session_context_segments : context_partition
   sessions ||--o| session_owners : current_owner
 
   accounts {
@@ -412,6 +414,33 @@ erDiagram
     number created_at
   }
 
+  session_context_state {
+    string session_id
+    number lite_enabled
+    number compact_event_id
+    number updated_at
+  }
+
+  session_context_segments {
+    string session_id
+    string user_id
+    string project_id
+    string segment_key
+    string table_name
+    number created_at
+  }
+
+  session_context_items_XX {
+    string id
+    string session_id
+    number event_id
+    number item_seq
+    string payload_json
+    string msg_type
+    string turn_id
+    number created_at
+  }
+
   session_owners {
     string session_id
     string owner_id
@@ -422,6 +451,13 @@ erDiagram
 저장소는 `<dataDir>/ndx.sqlite`에 있다. 기본 data directory는
 `/home/.ndx/system`이다. `dataPath`가 있으면 override하며, legacy
 `sessionPath`도 같은 override로 취급한다.
+
+저장된 prompt를 처리하기 전 컨텍스트는 매번 SQLite에서 구성한다. 최신
+`context_compact` 이벤트가 먼저 적용되고, 그 뒤 lite 모드가 완료된 이전
+tool row를 필터링한다. `session_context_segments`는 각 session을
+`session_context_items_00`부터 `session_context_items_0f` 중 하나의
+partition table에 매핑한다. `session_context_items`는 호환 projection으로
+남긴다.
 
 ## 설정과 부트스트랩
 

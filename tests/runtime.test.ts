@@ -214,8 +214,7 @@ test("runtime events rebuild model conversation history", () => {
   ]);
 });
 
-test("runtime context summary and compaction are replayable", () => {
-  const events: RuntimeEvent[] = [];
+test("runtime context summary updates when history is replaced", () => {
   const runtime = new AgentRuntime({
     cwd: process.cwd(),
     config: {
@@ -235,35 +234,16 @@ test("runtime context summary and compaction are replayable", () => {
   });
 
   const before = runtime.contextSummary();
-  const result = runtime.compactContext("lite", (event) => events.push(event));
+  runtime.replaceHistory([
+    { type: "message", role: "user", content: "replacement" },
+  ]);
   const after = runtime.contextSummary();
 
   assert.equal(before.items, 6);
-  assert.equal(result.before.items, 6);
-  assert.equal(after.items, 5);
-  assert.equal(result.after.remainingTokens !== undefined, true);
-  assert.deepEqual(
-    events.map((event) => event.msg.type),
-    ["session_configured", "context_compacted"],
-  );
-  assert.deepEqual(
-    conversationHistoryFromRuntimeEvents([
-      {
-        id: "event-1",
-        msg: {
-          type: "turn_started",
-          sessionId: "session-1",
-          turnId: "turn-1",
-          prompt: "old",
-          cwd: "/workspace",
-        },
-      },
-      events[1],
-    ]),
-    events[1]?.msg.type === "context_compacted"
-      ? events[1].msg.replacement
-      : [],
-  );
+  assert.equal(before.byKind?.length, 2);
+  assert.equal(after.items, 1);
+  assert.equal(after.byKind?.[0]?.kind, "user_message");
+  assert.equal(after.remainingTokens !== undefined, true);
 });
 
 function bootstrapReport(globalDir: string): NdxBootstrapReport {

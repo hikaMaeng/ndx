@@ -85,17 +85,14 @@ assembly layer, not from the current TypeScript loop.
 
 ## Context Management
 
-`AgentRuntime` owns the model-facing context stack and can summarize current
-usage by item kind. `/context` reports the live item count, estimated tokens,
-configured max context, remaining context, and kind breakdown. `/compact` and
-`/lite` replace older history with a synthetic summary plus a recent suffix and
-emit a `context_compacted` runtime event containing before/after summaries and
-the replacement stack.
-
-Restore replay honors `context_compacted`: once the event appears,
-`conversationHistoryFromRuntimeEvents` uses its replacement as the current stack
-and then applies later turn events. Provider-side continuation is intentionally
-unused.
+The inner loop receives the already-projected conversation stack from the
+session server. For saved sessions the server rebuilds that stack from SQLite
+before each new prompt, applying `/compact` first and `/lite` second.
+`AgentRuntime` can report the live stack by item kind for `/context` and for
+the before/after sections printed by `/compact` and `/lite`. During a single
+active turn, tool calls and tool results remain in the loop's local follow-up
+context so tool execution can complete normally. Provider-side continuation is
+intentionally unused.
 
 OpenAI-compatible providers first use Responses without `previous_response_id`.
 When `/responses` is unavailable, the client falls back to Chat Completions and

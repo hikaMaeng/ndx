@@ -58,6 +58,8 @@ const ORIGIN_COMMANDS: SlashCommandDefinition[] = [
   builtin("resume", "resume a saved chat"),
   builtin("fork", "fork the current chat"),
   candidate("init", "create an AGENTS.md file with instructions for Codex"),
+  builtin("compact", "compact saved context and report before/after usage"),
+  implementedBuiltin("lite", "toggle lite context mode and report usage"),
   builtin("plan", "switch to Plan mode"),
   builtin("goal", "set or view the goal for a long-running task"),
   builtin("collab", "change collaboration mode (experimental)"),
@@ -142,26 +144,13 @@ const NDX_SESSION_COMMANDS: SlashCommandDefinition[] = [
     placement: "session-builtin",
     implemented: true,
   },
-  {
-    name: "compact",
-    description: "compact older context and report before/after usage",
-    placement: "session-builtin",
-    implemented: true,
-  },
-  {
-    name: "lite",
-    description:
-      "aggressively compact older context and report before/after usage",
-    placement: "session-builtin",
-    implemented: true,
-  },
 ];
 
 export const BUILT_IN_SLASH_COMMANDS: SlashCommandDefinition[] = [
   ...NDX_SESSION_COMMANDS,
   ...ORIGIN_COMMANDS.map(
     (command): SlashCommandDefinition =>
-      ["init", "status", "quit"].includes(command.name)
+      ["compact", "init", "status", "quit"].includes(command.name)
         ? { ...command, placement: "session-builtin", implemented: true }
         : command,
   ),
