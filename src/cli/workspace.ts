@@ -37,6 +37,7 @@ export interface DetachedManagedServerLaunch {
   args: string[];
   cwd: string;
   detached: boolean;
+  env: Record<string, string>;
   windowsHide: boolean;
   diagnostic: DetachedManagedServerDiagnostic;
 }
@@ -229,6 +230,9 @@ export function detachedManagedServerLaunch(
   ];
   const execPath = options.execPath ?? process.execPath;
   const platform = options.platform ?? process.platform;
+  const env = {
+    NDX_MANAGED_SERVER: "1",
+  };
   const diagnosticBase = {
     platform,
     execPath,
@@ -244,6 +248,7 @@ export function detachedManagedServerLaunch(
       args: serverArgs,
       cwd: options.cwd,
       detached: true,
+      env,
       windowsHide: true,
       diagnostic: {
         ...diagnosticBase,
@@ -271,6 +276,7 @@ export function detachedManagedServerLaunch(
       ],
       cwd: options.cwd,
       detached: true,
+      env,
       windowsHide: true,
       diagnostic: {
         ...diagnosticBase,
@@ -301,6 +307,7 @@ export function detachedManagedServerLaunch(
       ],
       cwd: options.cwd,
       detached: true,
+      env,
       windowsHide: true,
       diagnostic: {
         ...diagnosticBase,
@@ -314,6 +321,7 @@ export function detachedManagedServerLaunch(
     args: serverArgs,
     cwd: options.cwd,
     detached: true,
+    env,
     windowsHide: true,
     diagnostic: {
       ...diagnosticBase,

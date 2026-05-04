@@ -35,10 +35,17 @@ only when you explicitly want a foreground server terminal. Windows starts the
 current Node entrypoint directly as a hidden detached process and captures
 stdout/stderr in `%TEMP%\ndx-managed-server-host.log` when possible. The
 published `ndxserver` bin uses a dedicated bootstrap so Windows npm shims do not
-have to preserve the original command name in `process.argv[1]`. The CLI also
-prints detached launcher selection, command metadata, server args, spawned pid,
-readiness probe attempts, failing stage, and last error. Inability to write logs
-does not block server startup.
+have to preserve the original command name in `process.argv[1]`. Managed
+servers ignore console `SIGINT` so leaving a client with Ctrl+C does not stop
+the background server. The CLI also prints detached launcher selection, command
+metadata, server args, spawned pid, readiness probe attempts, failing stage, and
+last error. Inability to write logs does not block server startup.
+
+Stop the managed server explicitly:
+
+```bash
+ndxserver stop
+```
 
 Run the server explicitly when you want to own its terminal:
 
@@ -57,7 +64,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.24",
+  "version": "0.1.25",
   "model": "local-model",
   "providers": {
     "local": {

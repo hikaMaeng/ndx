@@ -179,6 +179,7 @@ test("managed server launch uses direct detached Node trigger on Windows", () =>
     "127.0.0.1:45124",
   ]);
   assert.equal(launch.detached, true);
+  assert.deepEqual(launch.env, { NDX_MANAGED_SERVER: "1" });
   assert.equal(launch.windowsHide, true);
   assert.equal(launch.diagnostic.launcher, "windows-service-trigger-node");
   assert.equal(launch.diagnostic.logPaths.length, 0);

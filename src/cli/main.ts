@@ -40,7 +40,7 @@ import type { LoadedConfig, ModelClient, NdxConfig } from "../shared/types.js";
 interface CliArgs {
   cwd: string;
   mock: boolean;
-  mode: "run" | "serve" | "connect" | "manage-server";
+  mode: "run" | "serve" | "connect" | "manage-server" | "stop-server";
   listen: string;
   dashboardListen: string;
   connectUrl?: string;
@@ -77,6 +77,11 @@ async function main(): Promise<void> {
 
   if (args.mode === "manage-server") {
     await runManagedServerTrigger(args);
+    return;
+  }
+
+  if (args.mode === "stop-server") {
+    await stopManagedServer(args);
     return;
   }
 
@@ -128,6 +133,23 @@ async function runManagedServerTrigger(args: CliArgs): Promise<void> {
   const socketUrl = await startDetachedManagedServer(args, state.socketUrl);
   console.error(`[session-server] ${socketUrl}`);
   console.error(`[dashboard] ${state.dashboardUrl}`);
+}
+
+async function stopManagedServer(args: CliArgs): Promise<void> {
+  const dashboard = managedDashboardExitUrl(args.dashboardListen);
+  const response = await fetch(dashboard, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(
+      `failed to stop ndx server via ${dashboard}: HTTP ${response.status}`,
+    );
+  }
+  const body = (await response.json().catch(() => undefined)) as
+    | { message?: unknown }
+    | undefined;
+  console.error(
+    `[server] ${typeof body?.message === "string" ? body.message : "Server exit requested."}`,
+  );
+  await waitForServerStop(normalizeSocketUrl(args.serverUrl));
 }
 
 async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
@@ -428,6 +450,7 @@ async function startDetachedManagedServer(
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     detached: launch.detached,
+    env: { ...process.env, ...launch.env },
     stdio:
       hostLog === undefined ? "ignore" : ["ignore", hostLog.fd, hostLog.fd],
     windowsHide: launch.windowsHide,
@@ -519,6 +542,18 @@ async function waitForManagedServer(
       lastProbe?.error === undefined ? "" : `; lastError=${lastProbe.error}`
     }`,
   );
+}
+
+async function waitForServerStop(socketUrl: string): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 5_000) {
+    if (!(await canConnect(socketUrl))) {
+      console.error(`[server] stopped ${socketUrl}`);
+      return;
+    }
+    await delay(100);
+  }
+  console.error(`[server] stop requested; ${socketUrl} is still reachable`);
 }
 
 function processExists(pid: number): boolean {
@@ -659,6 +694,13 @@ async function listen(
 }
 
 async function waitForShutdown(): Promise<void> {
+  if (process.env.NDX_MANAGED_SERVER === "1") {
+    await new Promise<void>((resolve) => {
+      process.on("SIGINT", () => undefined);
+      process.once("SIGTERM", resolve);
+    });
+    return;
+  }
   await new Promise<void>((resolve) => {
     process.once("SIGINT", resolve);
     process.once("SIGTERM", resolve);
@@ -689,6 +731,8 @@ function parseArgs(argv: string[], invokedAsServer = false): CliArgs {
     const arg = argv[i];
     if (arg === "serve" && positional.length === 0) {
       mode = "serve";
+    } else if (arg === "stop" && positional.length === 0) {
+      mode = "stop-server";
     } else if (arg === "--cwd") {
       const next = argv[++i];
       if (!next) {
@@ -767,8 +811,14 @@ function printHelp(): void {
   const globalSettings = `${NDX_DEFAULTS.containerGlobalDir}/${NDX_DEFAULTS.settingsFile}`;
   const searchRules = `${NDX_DEFAULTS.containerGlobalDir}/${NDX_DEFAULTS.searchFile}`;
   console.log(
-    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to ${NDX_DEFAULTS.host}:${NDX_DEFAULTS.socketPort}. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, prints public server version/runtime/sandbox info, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, prints public server identity, logs in with account credentials, initializes the socket, starts or restores one session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  ${globalSettings}, then current project ${NDX_DEFAULTS.configDir}/${NDX_DEFAULTS.settingsFile}.\n  ${searchRules} contains web-search parsing rules.\n\nCommon fields:\n  { \"version\": \"${readPackageVersion()}\", \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
+    `ndx TypeScript agent\n\nUsage:\n  ndx [SERVER_ADDRESS]\n  ndx serve [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver [--mock] [--cwd PATH] [--listen HOST:PORT] [--dashboard-listen HOST:PORT]\n  ndxserver stop [--dashboard-listen HOST:PORT]\n  ndx --connect ws://HOST:PORT [--cwd PATH] [prompt]\n  ndx --mock [--cwd PATH] [prompt]\n\nInteractive:\n  Run \`ndx\` from a TTY to connect to SERVER_ADDRESS, defaulting to ${NDX_DEFAULTS.host}:${NDX_DEFAULTS.socketPort}. If no server is reachable, ndx reports the miss, starts a local default server for the current folder, prints public server version/runtime/sandbox info, logs in, then shows session choices. Docker is used only as the server-managed tool sandbox.\n\nSession client:\n  The CLI prints the ndx logo, opens or attaches to a WebSocket session server, prints public server identity, logs in with account credentials, initializes the socket, starts or restores one session for the current folder, and exposes server commands such as /status, /init, /events, /session, /restoreSession, /deleteSession, and /interrupt.\n\nSession server:\n  The session server owns live session state, event broadcast, initialization detail, Docker sandbox preparation, and SQLite persistence. CLI clients display initialization detail but do not add it to model context.\n\nInteractive commands:\n${interactiveHelp()}\n\nSettings:\n  ${globalSettings}, then current project ${NDX_DEFAULTS.configDir}/${NDX_DEFAULTS.settingsFile}.\n  ${searchRules} contains web-search parsing rules.\n\nCommon fields:\n  { \"version\": \"${readPackageVersion()}\", \"model\": \"local-model\", \"providers\": {}, \"models\": [], \"keys\": {} }`,
   );
+}
+
+function managedDashboardExitUrl(dashboardListen: string): string {
+  const parsed = parseListenAddress(dashboardListen, "--dashboard-listen");
+  const port = parsed.port === 0 ? NDX_DEFAULTS.dashboardPort : parsed.port;
+  return `http://${parsed.host}:${port}/api/exit`;
 }
 
 function parseListenAddress(
