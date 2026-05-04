@@ -35,14 +35,37 @@ Docker sandbox preparation, and dashboard HTTP. Helper modules under
 info, JSON-RPC helpers, params, notifications, social auth verification,
 runtime-event predicates, and WebSocket connection state.
 
-SQLite stores accounts, social links, sessions, request records, runtime events,
-context replay rows, notifications, and ownership rows. Empty sessions remain
-unnumbered and unpersisted until the first prompt.
+SQLite stores accounts and social links in auth tables. Session-domain data is
+reset to the clean `session` and `sessiondata` schema; the former
+`projects`, `sessions`, `session_events`, `session_context_*`, and
+`session_owners` tables are dropped by the schema reset path. Empty sessions
+remain unnumbered and unpersisted until the first prompt.
+
+The `session` table is the metadata projection used to inspect session identity
+and ownership:
+
+| Column | Contract |
+| ------ | -------- |
+| `rowid` | Monotonic SQLite primary key. |
+| `sessionid` | Runtime session UUID. |
+| `created` | Session metadata creation timestamp. |
+| `userid` | Account id that can see the session. |
+| `projectid` | UUID from `<project>/.ndx/.project`. |
+| `path` | Physical project path for display and sandbox preparation. |
+| `islite` | Persisted lite context mode flag. |
+| `ownerid` | Current client ownership UUID allowed to update the session. |
+| `lastlogin` | Last ownership claim timestamp. |
+
+The `sessiondata` table stores persisted session payload records with `type`,
+`sessionrowid`, `ownerid`, `created`, and `payload_json`; it also stores
+runtime replay metadata (`msgtype`, `turnid`, `iscontext`) as implementation
+columns. Runtime replay, dashboard event pages, compact summaries, and lite
+pruning all read from `sessiondata`.
 
 Lite context mode keeps persisted tool call and tool result rows for audit, but
 omits prior tool rows from model context when a new user turn starts. The active
 turn keeps its local tool stack until the model finishes or exhausts the turn
-limit.
+limit. Toggling lite mode updates `session.islite`.
 
 ## Managed CLI Server
 

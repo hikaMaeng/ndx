@@ -23,6 +23,14 @@
 
 - The ndx server is a host process, not a Docker service.
 - Docker is only the external tool and MCP stdio sandbox.
+- Session visibility is scoped by `userid` plus `projectid`, not by path alone.
+- Project ids come from `<project>/.ndx/.project`; path reuse after deleting
+  that file is a new project scope.
+- Session ownership is a client UUID contract. A client that sees a different
+  persisted `ownerid` must claim ownership and reload persisted context before
+  updating the session.
+- Session persistence must use only `session` and `sessiondata`; legacy
+  session-domain tables are reset out of the schema.
 - Sandbox Dockerfile or runtime contract changes require a new Docker Hub tag
   under `hika00`, a pushed image, and server verification against that tag.
 - External tool audit records are written under

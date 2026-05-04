@@ -291,6 +291,18 @@ test("session server owns session events, subscribers, and SQLite persistence", 
     const projection = readSqliteSessionProjection(persistenceDir, sessionId);
     assert.equal(projection?.eventCount, readResponse.events.length);
     assert.equal(projection?.lastEventId !== undefined, true);
+    const meta = readSqliteSessionMeta(persistenceDir, sessionId);
+    assert.equal(meta?.sessionid, sessionId);
+    assert.equal(meta?.userid, "defaultUser");
+    assert.equal(meta?.projectid, readProjectId(root));
+    assert.equal(meta?.path, root);
+    assert.equal(meta?.islite, 0);
+    assert.equal(meta?.ownerid, "test-client");
+    assert.equal(typeof meta?.lastlogin, "number");
+    const sessionData = readSqliteSessionData(persistenceDir, sessionId);
+    assert.equal(sessionData.length, records.length);
+    assert.equal(sessionData[0]?.type, "session_started");
+    assert.equal(sessionData[0]?.sessionrowid, meta?.rowid);
     const contextEvents = readSqliteContextEvents(persistenceDir, sessionId);
     assert.deepEqual(
       contextEvents.map((event) => event.type),
@@ -302,6 +314,19 @@ test("session server owns session events, subscribers, and SQLite persistence", 
         "turn_complete",
       ],
     );
+    const tables = readSqliteTableNames(persistenceDir);
+    assert.deepEqual(
+      [
+        "projects",
+        "sessions",
+        "session_events",
+        "session_context_items",
+        "session_context_state",
+        "session_context_segments",
+        "session_owners",
+      ].filter((table) => tables.includes(table)),
+      [],
+    );
 
     client.close();
     subscriber.close();
@@ -310,6 +335,8 @@ test("session server owns session events, subscribers, and SQLite persistence", 
       sessionId,
       (record) => record.type === "session_detached",
     );
+    const detachedMeta = readSqliteSessionMeta(persistenceDir, sessionId);
+    assert.equal(detachedMeta?.ownerid, "test-client");
     assert.equal(
       records.some((record) => record.type === "session_detached"),
       true,
@@ -317,6 +344,66 @@ test("session server owns session events, subscribers, and SQLite persistence", 
   } finally {
     client?.close();
     subscriber?.close();
+    await server?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("project identity is stored in .ndx/.project and scopes sessions by account and project id", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-project-id-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
+    server = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+      persistenceDir,
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await initializeAndLoginClient(client);
+
+    const first = await createPersistedSession(
+      client,
+      root,
+      "first project identity prompt",
+    );
+    await server.flushPersistence();
+    const firstProjectId = readProjectId(root);
+    assert.equal(readSqliteSessionMeta(persistenceDir, first)?.projectid, firstProjectId);
+
+    rmSync(join(root, ".ndx"), { recursive: true, force: true });
+    const second = await createPersistedSession(
+      client,
+      root,
+      "second project identity prompt",
+    );
+    await server.flushPersistence();
+    const secondProjectId = readProjectId(root);
+
+    assert.notEqual(secondProjectId, firstProjectId);
+    assert.equal(readSqliteSessionMeta(persistenceDir, second)?.projectid, secondProjectId);
+
+    const listed = await client.request<{
+      sessions: Array<{ id: string; projectId: string }>;
+    }>("session/list", { cwd: root });
+    assert.deepEqual(
+      listed.sessions.map((session) => session.id),
+      [second],
+    );
+    assert.deepEqual(
+      listed.sessions.map((session) => session.projectId),
+      [secondProjectId],
+    );
+  } finally {
+    client?.close();
     await server?.close();
     rmSync(root, { recursive: true, force: true });
   }
@@ -656,12 +743,15 @@ test("dashboard session logs filter raw SQLite events and delete sessions", asyn
       sessions: Array<{ id: string }>;
     };
     assert.deepEqual(facets.accounts, ["alice", "bob"]);
-    assert.equal(facets.projects.includes(projectA), true);
-    assert.equal(facets.projects.includes(projectB), true);
+    const projectAId = readProjectId(projectA);
+    const projectBId = readProjectId(projectB);
+    assert.equal(facets.projects.includes(projectAId), true);
+    assert.equal(facets.projects.includes(projectBId), true);
+    assert.equal(facets.projects.includes(projectA), false);
     assert.equal(facets.sessions.length, 3);
 
     const aliceProjectLogs = (await fetchJson(
-      `${address.dashboardUrl}/api/session-log/sessions?accounts=alice&projects=${encodeURIComponent(projectA)}&projects=${encodeURIComponent(projectB)}`,
+      `${address.dashboardUrl}/api/session-log/sessions?accounts=alice&projects=${encodeURIComponent(projectAId)}&projects=${encodeURIComponent(projectBId)}`,
     )) as { sessions: Array<{ id: string; user: string; cwd: string }> };
     assert.deepEqual(
       aliceProjectLogs.sessions.map((session) => session.id),
@@ -1050,16 +1140,12 @@ test("session lite mode prunes previous tool logs when a new user turn starts", 
       contextEvents.some((event) => event.type === "tool_result"),
       true,
     );
-    const segments = readSqliteContextSegments(persistenceDir, sessionId);
-    assert.equal(segments.length, 1);
+    const tables = readSqliteTableNames(persistenceDir);
     assert.equal(
-      readSqlitePartitionContextEvents(
-        persistenceDir,
-        segments[0]?.tableName ?? "",
-        sessionId,
-      ).length >= contextEvents.length,
-      true,
+      tables.some((table) => table.startsWith("session_context")),
+      false,
     );
+    assert.equal(readSqliteContextEvents(persistenceDir, sessionId).length, contextEvents.length);
   } finally {
     client?.close();
     await server?.close().catch(() => undefined);
@@ -1237,8 +1323,8 @@ test("session server deletes non-current workspace sessions and ends stale owner
     secondClient = await SessionClient.connect(
       (await secondServer.listen(0, "127.0.0.1")).url,
     );
-    await initializeAndLoginClient(firstClient);
-    await initializeAndLoginClient(secondClient);
+    await initializeAndLoginClientAs(firstClient, "first-owner-client");
+    await initializeAndLoginClientAs(secondClient, "second-owner-client");
 
     const startResponse = await firstClient.request<{
       session: { id: string };
@@ -1320,8 +1406,8 @@ test("session ownership uses last prompt attempt across socket servers", async (
     secondClient = await SessionClient.connect(
       (await secondServer.listen(0, "127.0.0.1")).url,
     );
-    await initializeAndLoginClient(firstClient);
-    await initializeAndLoginClient(secondClient);
+    await initializeAndLoginClientAs(firstClient, "first-owner-client");
+    await initializeAndLoginClientAs(secondClient, "second-owner-client");
 
     const startResponse = await firstClient.request<{
       session: { id: string };
@@ -1400,11 +1486,11 @@ test("session ownership discards in-flight output from a previous socket server"
       "connecting second race client",
     );
     await withTimeout(
-      initializeAndLoginClient(firstClient),
+      initializeAndLoginClientAs(firstClient, "first-owner-client"),
       "initializing first race client",
     );
     await withTimeout(
-      initializeAndLoginClient(secondClient),
+      initializeAndLoginClientAs(secondClient, "second-owner-client"),
       "initializing second race client",
     );
 
@@ -1542,8 +1628,8 @@ test("session ownership is tracked in SQLite across socket servers", async () =>
     secondClient = await SessionClient.connect(
       (await secondServer.listen(0, "127.0.0.1")).url,
     );
-    await initializeAndLoginClient(firstClient);
-    await initializeAndLoginClient(secondClient);
+    await initializeAndLoginClientAs(firstClient, "first-owner-client");
+    await initializeAndLoginClientAs(secondClient, "second-owner-client");
 
     const startResponse = await firstClient.request<{
       session: { id: string };
@@ -1618,15 +1704,29 @@ async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
 }
 
 async function initializeAndLoginClient(client: SessionClient): Promise<void> {
-  await loginClient(client);
+  await initializeAndLoginClientAs(client, "test-client");
+}
+
+async function initializeAndLoginClientAs(
+  client: SessionClient,
+  clientId: string,
+): Promise<void> {
+  await loginClientAs(client, clientId);
   await client.request("initialize");
 }
 
 async function loginClient(client: SessionClient): Promise<void> {
+  await loginClientAs(client, "test-client");
+}
+
+async function loginClientAs(
+  client: SessionClient,
+  clientId: string,
+): Promise<void> {
   await client.request("account/login", {
     username: "defaultUser",
     password: "",
-    clientId: "test-client",
+    clientId,
   });
 }
 
@@ -1700,7 +1800,12 @@ function readSqliteRecords(
   try {
     return db
       .prepare(
-        "select payload_json as payload from session_events where session_id = ? order by id asc",
+        [
+          "select d.payload_json as payload",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ?",
+          "order by d.rowid asc",
+        ].join(" "),
       )
       .all(sessionId)
       .map((row) => JSON.parse((row as { payload: string }).payload));
@@ -1729,7 +1834,7 @@ function readSqliteSessionProjection(
   try {
     const row = db
       .prepare(
-        "select event_count as eventCount, last_event_id as lastEventId from sessions where id = ?",
+        "select eventcount as eventCount, lastdatarowid as lastEventId from session where sessionid = ?",
       )
       .get(sessionId) as
       | { eventCount?: unknown; lastEventId?: unknown }
@@ -1745,6 +1850,139 @@ function readSqliteSessionProjection(
   } finally {
     db.close();
   }
+}
+
+function readSqliteSessionMeta(
+  dataDir: string,
+  sessionId: string,
+):
+  | {
+      rowid: number;
+      sessionid: string;
+      created: number;
+      userid: string;
+      projectid: string;
+      path: string;
+      islite: number;
+      ownerid?: string;
+      lastlogin: number;
+    }
+  | undefined {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { get(...values: unknown[]): unknown };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    const row = db
+      .prepare(
+        [
+          "select rowid, sessionid, created, userid, projectid, path, islite, ownerid, lastlogin",
+          "from session where sessionid = ?",
+        ].join(" "),
+      )
+      .get(sessionId) as
+      | {
+          rowid?: unknown;
+          sessionid?: unknown;
+          created?: unknown;
+          userid?: unknown;
+          projectid?: unknown;
+          path?: unknown;
+          islite?: unknown;
+          ownerid?: unknown;
+          lastlogin?: unknown;
+        }
+      | undefined;
+    if (
+      typeof row?.rowid !== "number" ||
+      typeof row.sessionid !== "string" ||
+      typeof row.created !== "number" ||
+      typeof row.userid !== "string" ||
+      typeof row.projectid !== "string" ||
+      typeof row.path !== "string" ||
+      typeof row.islite !== "number" ||
+      typeof row.lastlogin !== "number"
+    ) {
+      return undefined;
+    }
+    return {
+      rowid: row.rowid,
+      sessionid: row.sessionid,
+      created: row.created,
+      userid: row.userid,
+      projectid: row.projectid,
+      path: row.path,
+      islite: row.islite,
+      ownerid: typeof row.ownerid === "string" ? row.ownerid : undefined,
+      lastlogin: row.lastlogin,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function readSqliteSessionData(
+  dataDir: string,
+  sessionId: string,
+): Array<{ type: string; sessionrowid: number; ownerid?: string }> {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (
+      path: string,
+      options?: { readOnly?: boolean },
+    ) => {
+      prepare(sql: string): { all(...values: unknown[]): unknown[] };
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return db
+      .prepare(
+        [
+          "select d.type, d.sessionrowid, d.ownerid",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ?",
+          "order by d.rowid asc",
+        ].join(" "),
+      )
+      .all(sessionId)
+      .map((row) => {
+        const typed = row as {
+          type?: unknown;
+          sessionrowid?: unknown;
+          ownerid?: unknown;
+        };
+        return {
+          type: String(typed.type),
+          sessionrowid:
+            typeof typed.sessionrowid === "number" ? typed.sessionrowid : 0,
+          ownerid:
+            typeof typed.ownerid === "string" ? typed.ownerid : undefined,
+        };
+      });
+  } finally {
+    db.close();
+  }
+}
+
+function readProjectId(cwd: string): string {
+  const parsed = JSON.parse(readFileSync(join(cwd, ".ndx", ".project"), "utf8")) as {
+    projectid?: unknown;
+  };
+  assert.equal(typeof parsed.projectid, "string");
+  return String(parsed.projectid);
 }
 
 function readSqliteContextEvents(
@@ -1767,22 +2005,27 @@ function readSqliteContextEvents(
   try {
     return db
       .prepare(
-        "select payload_json as payload from session_context_items where session_id = ? order by item_seq asc",
+        [
+          "select d.payload_json as payload",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ? and d.iscontext = 1",
+          "order by d.rowid asc",
+        ].join(" "),
       )
       .all(sessionId)
       .map((row) => JSON.parse((row as { payload: string }).payload))
-      .map((event) => ({
-        type: String((event as { msg?: { type?: unknown } }).msg?.type),
+      .map((record) => ({
+        type: String(
+          (record as { event?: { msg?: { type?: unknown } } }).event?.msg
+            ?.type,
+        ),
       }));
   } finally {
     db.close();
   }
 }
 
-function readSqliteContextSegments(
-  dataDir: string,
-  sessionId: string,
-): Array<{ tableName: string }> {
+function readSqliteTableNames(dataDir: string): string[] {
   const require = createRequire(import.meta.url);
   const sqlite = require("node:sqlite") as {
     DatabaseSync: new (
@@ -1799,47 +2042,13 @@ function readSqliteContextSegments(
   try {
     return db
       .prepare(
-        "select table_name as tableName from session_context_segments where session_id = ?",
+        "select name from sqlite_master where type = 'table' order by name asc",
       )
-      .all(sessionId)
+      .all()
+      .map((row) => (row as { name?: unknown }).name)
       .filter(
-        (row): row is { tableName: string } =>
-          typeof (row as { tableName?: unknown }).tableName === "string",
+        (name): name is string => typeof name === "string",
       );
-  } finally {
-    db.close();
-  }
-}
-
-function readSqlitePartitionContextEvents(
-  dataDir: string,
-  tableName: string,
-  sessionId: string,
-): Array<{ type: string }> {
-  assert.match(tableName, /^session_context_items_[0-9a-f]{2}$/);
-  const require = createRequire(import.meta.url);
-  const sqlite = require("node:sqlite") as {
-    DatabaseSync: new (
-      path: string,
-      options?: { readOnly?: boolean },
-    ) => {
-      prepare(sql: string): { all(...values: unknown[]): unknown[] };
-      close(): void;
-    };
-  };
-  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"), {
-    readOnly: true,
-  });
-  try {
-    return db
-      .prepare(
-        `select payload_json as payload from ${tableName} where session_id = ? order by item_seq asc`,
-      )
-      .all(sessionId)
-      .map((row) => JSON.parse((row as { payload: string }).payload))
-      .map((event) => ({
-        type: String((event as { msg?: { type?: unknown } }).msg?.type),
-      }));
   } finally {
     db.close();
   }
@@ -1865,10 +2074,10 @@ function readSqliteOwner(
   try {
     const row = db
       .prepare(
-        "select server_id as serverId from session_owners where session_id = ?",
+        "select ownerid from session where sessionid = ?",
       )
-      .get(sessionId) as { serverId?: unknown } | undefined;
-    return typeof row?.serverId === "string" ? row.serverId : undefined;
+      .get(sessionId) as { ownerid?: unknown } | undefined;
+    return typeof row?.ownerid === "string" ? row.ownerid : undefined;
   } finally {
     db.close();
   }

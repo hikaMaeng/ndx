@@ -30,8 +30,24 @@
    Each tool call runs in a worker Node process.
 7. External tools and MCP stdio commands run through `docker exec` when
    `NDX_SANDBOX_CONTAINER` is present.
-8. Runtime events, context records, session ownership, accounts, and social
-   links persist in SQLite under the configured data directory.
+8. Runtime events, context records, session metadata, session ownership,
+   accounts, and social links persist in SQLite under the configured data
+   directory.
+
+## Session Identity
+
+Sessions are scoped by account plus project id. The project id is not the
+folder path. When a project folder first participates in a session, the server
+creates `<cwd>/.ndx/.project` when missing and stores
+`{"projectid":"<uuid>"}`. Removing that project identity file and reusing the
+same physical path creates a different project scope.
+
+SQLite keeps the durable metadata contract in `session`: `rowid`, `sessionid`,
+`created`, `userid`, `projectid`, `path`, `islite`, `ownerid`, and
+`lastlogin`, with runtime projection columns for status, title, sequence,
+compact row, and dashboard ordering. Runtime payload rows are stored in
+`sessiondata` and reference `session.rowid`. The old session-domain tables are
+not part of the active schema.
 
 ## Process Lifetime
 
