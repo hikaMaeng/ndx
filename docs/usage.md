@@ -33,10 +33,12 @@ background launcher paths so CLI exit is not the server lifetime owner. On
 Windows, plain `ndxserver` is a background server trigger; use `ndxserver serve`
 only when you explicitly want a foreground server terminal. Windows starts the
 current Node entrypoint directly as a hidden detached process and captures
-stdout/stderr in `%TEMP%\ndx-managed-server-host.log` when possible. The CLI
-also prints detached launcher selection, command metadata, server args, spawned
-pid, readiness probe attempts, failing stage, and last error. Inability to write
-logs does not block server startup.
+stdout/stderr in `%TEMP%\ndx-managed-server-host.log` when possible. The
+published `ndxserver` bin uses a dedicated bootstrap so Windows npm shims do not
+have to preserve the original command name in `process.argv[1]`. The CLI also
+prints detached launcher selection, command metadata, server args, spawned pid,
+readiness probe attempts, failing stage, and last error. Inability to write logs
+does not block server startup.
 
 Run the server explicitly when you want to own its terminal:
 
@@ -55,7 +57,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.23",
+  "version": "0.1.24",
   "model": "local-model",
   "providers": {
     "local": {

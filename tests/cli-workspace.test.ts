@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MockModelClient } from "../src/model/mock-client.js";
@@ -186,6 +186,15 @@ test("managed server launch uses direct detached Node trigger on Windows", () =>
     launch.diagnostic.hostLogPath?.endsWith("ndx-managed-server-host.log"),
     true,
   );
+});
+
+test("package exposes a dedicated ndxserver bootstrap binary", () => {
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+    bin?: Record<string, string>;
+  };
+
+  assert.equal(packageJson.bin?.ndx, "dist/src/cli/main.js");
+  assert.equal(packageJson.bin?.ndxserver, "dist/src/cli/ndxserver.js");
 });
 
 test("managed server launch uses nohup user background mode on macOS", () => {

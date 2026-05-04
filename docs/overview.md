@@ -6,7 +6,8 @@ flow.
 
 ## Runtime Shape
 
-- The CLI binary is `ndx`; `ndxserver` is the same entrypoint in server mode.
+- The CLI binary is `ndx`; `ndxserver` uses a bootstrap entrypoint to enter
+  server mode without relying on npm shim command-name propagation.
 - Normal `ndx` startup accepts only an optional server address. The default is
   `ws://127.0.0.1:45123`.
 - If the requested server is not reachable, the CLI starts a local

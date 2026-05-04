@@ -57,9 +57,9 @@ interface CliPrompt {
 }
 
 async function main(): Promise<void> {
-  const invokedAsServer = /(^|[/\\])ndxserver(?:\.[cm]?js)?$/.test(
-    process.argv[1] ?? "",
-  );
+  const invokedAsServer =
+    process.env.NDX_INVOKED_AS_SERVER === "1" ||
+    /(^|[/\\])ndxserver(?:\.[cm]?js)?$/.test(process.argv[1] ?? "");
   const args = parseArgs(process.argv.slice(2), invokedAsServer);
   if (args.help) {
     printHelp();

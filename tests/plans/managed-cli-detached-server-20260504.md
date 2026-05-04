@@ -45,6 +45,8 @@ an already-running server.
 - Windows launcher uses a direct hidden detached Node process and writes
   stdout/stderr to `%TEMP%\ndx-managed-server-host.log` when possible; macOS
   launcher uses `nohup`; Linux launcher uses `setsid` with `nohup` fallback.
+- The package maps `ndxserver` to a dedicated bootstrap entrypoint so Windows
+  npm shims do not have to preserve the original binary name.
 - CLI startup logs include launcher type, detached command metadata, server
   args, spawned pid, readiness attempt count, failed probe stage, and last probe
   error.

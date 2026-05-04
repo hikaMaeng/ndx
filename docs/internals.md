@@ -60,9 +60,11 @@ as a hidden detached process and redirects stdout/stderr to
 `ndx-managed-server-host.log` when it can open that temp file. Plain
 `ndxserver` on Windows is a background server trigger; `ndxserver serve` keeps
 the foreground server mode for explicit diagnostics and for the managed launcher
-body. macOS launches the current Node entrypoint through `nohup` as a user
-background process. Linux launches through `setsid` when available, falling back
-to `nohup`. Unknown platforms use direct detached Node spawn.
+body. The package maps `ndxserver` to a dedicated bootstrap entrypoint that sets
+`NDX_INVOKED_AS_SERVER=1` before loading the shared CLI main module. macOS
+launches the current Node entrypoint through `nohup` as a user background
+process. Linux launches through `setsid` when available, falling back to
+`nohup`. Unknown platforms use direct detached Node spawn.
 
 ## Tools
 

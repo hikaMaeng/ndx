@@ -1,6 +1,6 @@
 {
   "name": "@neurondev/ndx",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "type": "module",
   "description": "TypeScript-first local coding agent.",
   "files": [
@@ -11,7 +11,7 @@
   ],
   "bin": {
     "ndx": "dist/src/cli/main.js",
-    "ndxserver": "dist/src/cli/main.js"
+    "ndxserver": "dist/src/cli/ndxserver.js"
   },
   "scripts": {
     "build": "yarn exec tsc -p tsconfig.json",
