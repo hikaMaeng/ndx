@@ -46,6 +46,12 @@ host client state. SQLite also stores sessions, request records, runtime events,
 context replay rows, notifications, and ownership rows. Empty sessions remain
 unnumbered and unpersisted until the first prompt.
 
+The dashboard reads account and session projections directly from SQLite.
+Overview counts combine `users`, `projects`, active non-deleted `sessions`, and
+`session_events`; the Users view includes each account's `lastlogin`, block and
+protected flags, session count, project count, event count, and latest session
+timestamp.
+
 Lite context mode keeps persisted tool call and tool result rows for audit, but
 omits prior tool rows from model context when a new user turn starts. The active
 turn keeps its local tool stack until the model finishes or exhausts the turn

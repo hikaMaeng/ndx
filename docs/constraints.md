@@ -47,10 +47,18 @@ The browser surface is the dashboard at `GET /` and `GET /dashboard`.
 
 - One `main` landmark: `main[aria-labelledby="dashboard-title"]`.
 - Stable root hook: `data-testid="ndx-dashboard"`.
+- View navigation: `nav aria-label="Dashboard views"` with buttons named
+  `Overview`, `Session Logs`, and `Users`.
 - Action navigation: `nav aria-label="Server actions"`.
 - Buttons named `Reload` and `Exit`.
 - Action result uses `role="status"` and may switch to `role="alert"`.
 - Stable hooks: `dashboard-action-status`, `dashboard-sources`,
-  `dashboard-bootstrap`.
+  `dashboard-bootstrap`, `dashboard-server-stats`, `dashboard-session-logs`,
+  `session-log-table`, `session-log-row`, `session-log-detail`,
+  `session-log-events`, `dashboard-users`, `users-table`, and
+  `dashboard-user-row`.
+- Session logs and session detail are separate right-main views. Opening a
+  session replaces the session table body with the session detail view instead
+  of appending details below the main overview.
 - Browser tests must prefer role, label, text, and documented test ids over CSS
   class or DOM-depth selectors.

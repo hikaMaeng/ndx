@@ -21,6 +21,7 @@ import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import {
   SqliteSessionStore,
   normalizeAccountId,
+  type DashboardOverview,
   type DashboardSessionLogFilters,
   type StoredSession,
   type StoredSessionContext,
@@ -225,6 +226,17 @@ export class SessionServer {
     }
     if (
       request.method === "GET" &&
+      url.pathname === "/api/dashboard/summary"
+    ) {
+      writeJson(response, 200, this.dashboardOverview());
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/dashboard/users") {
+      writeJson(response, 200, { users: this.store.dashboardUsers() });
+      return;
+    }
+    if (
+      request.method === "GET" &&
       url.pathname === "/api/session-log/sessions"
     ) {
       writeJson(response, 200, {
@@ -322,9 +334,21 @@ export class SessionServer {
       bootstrap: this.bootstrap,
       config: this.config,
       cwd: this.options.cwd,
+      overview: this.dashboardOverview(),
       packageVersion: this.options.packageVersion ?? readPackageVersion(),
       sources: this.sources,
     });
+  }
+
+  private dashboardOverview(): DashboardOverview & {
+    liveSessionCount: number;
+    clientCount: number;
+  } {
+    return {
+      ...this.store.dashboardOverview(),
+      liveSessionCount: this.sessions.size,
+      clientCount: this.clients.size,
+    };
   }
 
   private clientContext(

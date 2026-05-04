@@ -85,3 +85,10 @@ Notifications include `session/started`, `session/restored`,
 
 `GET /` and `GET /dashboard` render the dashboard. `POST /api/reload` reloads
 settings and bootstrap state. `POST /api/exit` requests server shutdown.
+`GET /api/dashboard/summary` returns account, project, session, event, live
+session, and connected-client counts for the overview view.
+`GET /api/dashboard/users` returns local SQLite users with created time,
+`lastlogin`, block/protected state, session count, project count, event count,
+and latest session activity. Session log APIs remain under
+`/api/session-log/*`: facets, filtered sessions, per-session event pages, and
+session deletion by id.

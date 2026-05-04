@@ -122,6 +122,27 @@ export interface DashboardSessionLogEventPage {
   total: number;
 }
 
+export interface DashboardOverview {
+  accountCount: number;
+  activeAccountCount: number;
+  blockedAccountCount: number;
+  protectedAccountCount: number;
+  projectCount: number;
+  sessionCount: number;
+  deletedSessionCount: number;
+  eventCount: number;
+  latestLogin?: number;
+  latestSessionUpdate?: number;
+}
+
+export interface DashboardUserSummary extends AccountRecord {
+  sessionCount: number;
+  projectCount: number;
+  eventCount: number;
+  lastSessionCreatedAt?: number;
+  lastSessionUpdatedAt?: number;
+}
+
 export interface AccountRecord {
   userid: string;
   created: number;
@@ -452,6 +473,84 @@ export class SqliteSessionStore {
       )
       .all() as DashboardSessionLogFacets["sessions"];
     return { accounts, projects, sessions };
+  }
+
+  dashboardOverview(): DashboardOverview {
+    const accountRow = this.db
+      .prepare(
+        [
+          "select count(1) as accountCount,",
+          "sum(case when isblock = 0 then 1 else 0 end) as activeAccountCount,",
+          "sum(case when isblock = 1 then 1 else 0 end) as blockedAccountCount,",
+          "sum(case when isprotected = 1 then 1 else 0 end) as protectedAccountCount,",
+          "max(lastlogin) as latestLogin",
+          "from users",
+        ].join(" "),
+      )
+      .get() as
+      | {
+          accountCount?: unknown;
+          activeAccountCount?: unknown;
+          blockedAccountCount?: unknown;
+          protectedAccountCount?: unknown;
+          latestLogin?: unknown;
+        }
+      | undefined;
+    const sessionRow = this.db
+      .prepare(
+        [
+          "select count(case when deleted_at is null then 1 end) as sessionCount,",
+          "count(case when deleted_at is not null then 1 end) as deletedSessionCount,",
+          "coalesce(sum(case when deleted_at is null then event_count else 0 end), 0) as eventCount,",
+          "max(case when deleted_at is null then updated_at end) as latestSessionUpdate",
+          "from sessions",
+        ].join(" "),
+      )
+      .get() as
+      | {
+          sessionCount?: unknown;
+          deletedSessionCount?: unknown;
+          eventCount?: unknown;
+          latestSessionUpdate?: unknown;
+        }
+      | undefined;
+    const projectRow = this.db
+      .prepare("select count(1) as projectCount from projects")
+      .get() as { projectCount?: unknown } | undefined;
+    return {
+      accountCount: numericRowValue(accountRow?.accountCount),
+      activeAccountCount: numericRowValue(accountRow?.activeAccountCount),
+      blockedAccountCount: numericRowValue(accountRow?.blockedAccountCount),
+      protectedAccountCount: numericRowValue(accountRow?.protectedAccountCount),
+      projectCount: numericRowValue(projectRow?.projectCount),
+      sessionCount: numericRowValue(sessionRow?.sessionCount),
+      deletedSessionCount: numericRowValue(sessionRow?.deletedSessionCount),
+      eventCount: numericRowValue(sessionRow?.eventCount),
+      latestLogin: optionalNumericRowValue(accountRow?.latestLogin),
+      latestSessionUpdate: optionalNumericRowValue(
+        sessionRow?.latestSessionUpdate,
+      ),
+    };
+  }
+
+  dashboardUsers(): DashboardUserSummary[] {
+    return this.db
+      .prepare(
+        [
+          "select u.userid, u.created, u.lastlogin, u.isblock, u.isprotected,",
+          "count(s.id) as sessionCount,",
+          "count(distinct s.project_id) as projectCount,",
+          "coalesce(sum(s.event_count), 0) as eventCount,",
+          "max(s.created_at) as lastSessionCreatedAt,",
+          "max(s.updated_at) as lastSessionUpdatedAt",
+          "from users u",
+          "left join sessions s on s.user_id = u.id and s.deleted_at is null",
+          "group by u.userid, u.created, u.lastlogin, u.isblock, u.isprotected",
+          "order by u.lastlogin desc, u.userid asc",
+        ].join(" "),
+      )
+      .all()
+      .map((row) => dashboardUserSummary(row));
   }
 
   listDashboardSessionLogs(
@@ -1522,6 +1621,41 @@ function addInFilter(
   }
   where.push(`${column} in (${normalized.map(() => "?").join(", ")})`);
   values.push(...normalized);
+}
+
+function numericRowValue(value: unknown): number {
+  return typeof value === "number" ? value : 0;
+}
+
+function optionalNumericRowValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function dashboardUserSummary(row: unknown): DashboardUserSummary {
+  const value = row as {
+    userid?: unknown;
+    created?: unknown;
+    lastlogin?: unknown;
+    isblock?: unknown;
+    isprotected?: unknown;
+    sessionCount?: unknown;
+    projectCount?: unknown;
+    eventCount?: unknown;
+    lastSessionCreatedAt?: unknown;
+    lastSessionUpdatedAt?: unknown;
+  };
+  return {
+    userid: typeof value.userid === "string" ? value.userid : "",
+    created: numericRowValue(value.created),
+    lastlogin: numericRowValue(value.lastlogin),
+    isblock: value.isblock === 1,
+    isprotected: value.isprotected === 1,
+    sessionCount: numericRowValue(value.sessionCount),
+    projectCount: numericRowValue(value.projectCount),
+    eventCount: numericRowValue(value.eventCount),
+    lastSessionCreatedAt: optionalNumericRowValue(value.lastSessionCreatedAt),
+    lastSessionUpdatedAt: optionalNumericRowValue(value.lastSessionUpdatedAt),
+  };
 }
 
 function recordTimestamp(record: Record<string, unknown>): number {
