@@ -9,7 +9,7 @@ import {
 } from "../src/cli/session-client.js";
 import type { SessionNotification } from "../src/session/client.js";
 
-const cliIdentity = { user: "defaultUser", clientId: "client-test" };
+const cliIdentity = { user: "defaultuser", clientId: "client-test" };
 const clientIdentity = { clientId: "client-test" };
 
 test("CLI session controller initializes socket, starts session, and renders status", async () => {
@@ -177,11 +177,11 @@ test("interactive help advertises session client commands", () => {
   assert.equal(interactiveHelp().includes("/deleteSession"), true);
 });
 
-test("CLI login command switches to default user and updates login store", async () => {
+test("CLI login command switches local users", async () => {
   const transport = new FakeTransport();
   const stdout: string[] = [];
   const saved: unknown[] = [];
-  const answers = ["2", "4"];
+  const answers = ["1", "1", "alice"];
   const controller = new CliSessionController({
     client: transport,
     cwd: "/workspace",
@@ -189,11 +189,7 @@ test("CLI login command switches to default user and updates login store", async
     print: (message) => stdout.push(message),
     question: async () => answers.shift() ?? "4",
     loginStore: {
-      load: () => ({
-        kind: "password",
-        username: "alice",
-        password: "secret",
-      }),
+      load: () => undefined,
       save: (login) => saved.push(login),
       path: () => "/tmp/auth.json",
     },
@@ -208,12 +204,12 @@ test("CLI login command switches to default user and updates login store", async
       .filter((request) => request.method === "account/login")
       .map((request) => request.params),
     [
-      { username: "alice", password: "secret", clientId: "client-test" },
-      { username: "defaultUser", password: "", clientId: "client-test" },
+      { username: "defaultuser", clientId: "client-test" },
+      { username: "alice", clientId: "client-test" },
     ],
   );
-  assert.deepEqual(saved, [{ kind: "default", username: "defaultUser" }]);
-  assert.equal(stdout.at(-1), "logged in as defaultUser");
+  assert.deepEqual(saved, []);
+  assert.equal(stdout.at(-1), "logged in as alice");
 });
 
 test("welcome logo emits the configured robot art", () => {
@@ -378,10 +374,13 @@ class FakeTransport implements CliSessionTransport {
     }
     if (method === "account/login") {
       return {
-        username: "defaultUser",
+        username: "defaultuser",
         clientId: cliIdentity.clientId,
         sessionRoot: "/home/.ndx/system",
       } as T;
+    }
+    if (method === "account/create") {
+      return { username: (params as { username: string }).username } as T;
     }
     if (method === "session/start") {
       return {

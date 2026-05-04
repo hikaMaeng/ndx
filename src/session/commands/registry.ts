@@ -110,7 +110,19 @@ const NDX_SESSION_COMMANDS: SlashCommandDefinition[] = [
   },
   {
     name: "login",
-    description: "change Google, GitHub, current, or default user login",
+    description: "create or switch local user login",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "blockuser",
+    description: "block a local user account: /blockuser <id>",
+    placement: "session-builtin",
+    implemented: true,
+  },
+  {
+    name: "unblockuser",
+    description: "unblock a local user account: /unblockuser <id>",
     placement: "session-builtin",
     implemented: true,
   },

@@ -32,10 +32,17 @@ runtime events, history, and provider error classification.
 `SessionServer` owns live sessions, WebSocket clients, auth, SQLite persistence,
 Docker sandbox preparation, and dashboard HTTP. Helper modules under
 `src/session/server/` own dashboard rendering, bootstrap formatting, server
-info, JSON-RPC helpers, params, notifications, social auth verification,
-runtime-event predicates, and WebSocket connection state.
+info, JSON-RPC helpers, params, notifications, runtime-event predicates, and
+WebSocket connection state.
 
-SQLite stores accounts, social links, sessions, request records, runtime events,
+SQLite `users` is the local account authority. The canonical account fields are
+`userid`, `created`, `lastlogin`, `isblock`, and `isprotected`; legacy `id` and
+`username` remain as compatibility keys for existing session foreign keys.
+User ids are lowercased ASCII letters and digits. Accounts have no passwords,
+cannot be deleted, and the protected `defaultuser` row is bootstrapped with
+matching `created` and `lastlogin` timestamps. `account/previous` reads the
+non-blocked row with the greatest `lastlogin`, so CLI startup does not depend on
+host client state. SQLite also stores sessions, request records, runtime events,
 context replay rows, notifications, and ownership rows. Empty sessions remain
 unnumbered and unpersisted until the first prompt.
 
