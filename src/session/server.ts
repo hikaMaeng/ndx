@@ -100,6 +100,7 @@ export interface SessionServerAddress {
 interface LiveSession {
   id: string;
   user: string;
+  projectId: string;
   clientIds: Set<string>;
   logKey?: string;
   cwd: string;
@@ -109,6 +110,7 @@ interface LiveSession {
   pendingEvents: RuntimeEvent[];
   discardedTurnIds: Set<string>;
   subscribers: Set<WebSocketConnection>;
+  ownerId?: string;
   status: "idle" | "running" | "aborted" | "failed";
   createdAt: number;
   updatedAt: number;
@@ -122,6 +124,7 @@ interface SessionListEntry {
   sequence: number;
   id: string;
   user: string;
+  projectId: string;
   cwd: string;
   status: LiveSession["status"];
   createdAt: number;
@@ -134,6 +137,7 @@ interface SessionListEntry {
 interface PersistedSessionState {
   id: string;
   user: string;
+  projectId: string;
   logKey: string;
   cwd: string;
   status: LiveSession["status"];
@@ -543,6 +547,7 @@ export class SessionServer {
   ): Promise<unknown> {
     const context = this.clientContext(connection, params);
     const cwd = stringParam(params, "cwd") ?? this.options.cwd;
+    const projectId = this.store.projectIdForCwd(cwd);
     const sandbox = await this.ensureWorkspaceSandbox(cwd);
     const config = this.configWithSandbox(
       this.nextSessionConfig(),
@@ -560,6 +565,7 @@ export class SessionServer {
     const session: LiveSession = {
       id: runtime.sessionId,
       user: context.user,
+      projectId,
       clientIds: new Set([context.clientId]),
       cwd,
       config,
@@ -568,6 +574,7 @@ export class SessionServer {
       pendingEvents: [],
       discardedTurnIds: new Set(),
       subscribers: new Set([connection]),
+      ownerId: context.clientId,
       status: "idle",
       createdAt: now,
       updatedAt: now,
@@ -1096,12 +1103,16 @@ export class SessionServer {
     ) {
       return;
     }
-    if (session.persisted && this.currentOwner(session.id) !== this.serverId) {
+    if (
+      session.persisted &&
+      session.ownerId !== undefined &&
+      this.currentOwner(session.id) !== session.ownerId
+    ) {
       session.pendingEvents = [];
       if (turnId !== undefined) {
         session.discardedTurnIds.add(turnId);
       }
-      const reloaded = this.reloadAndAcquire(session);
+      const reloaded = this.reloadAndAcquire(session, session.ownerId);
       this.publishEphemeral(reloaded, {
         method: "session/ownershipChanged",
         params: {
@@ -1236,7 +1247,7 @@ export class SessionServer {
         live.subscribers.add(connection);
       }
       live.clientIds.add(clientId);
-      this.acquireOwnership(live);
+      this.acquireOwnership(live, clientId);
       return live;
     }
     const persisted = this.readPersistedSession(session.id);
@@ -1256,6 +1267,7 @@ export class SessionServer {
     const liveSession: LiveSession = {
       id: persisted.id,
       user: persisted.user,
+      projectId: persisted.projectId,
       clientIds: new Set([clientId]),
       logKey: persisted.logKey,
       cwd: persisted.cwd,
@@ -1265,6 +1277,7 @@ export class SessionServer {
       pendingEvents: [],
       discardedTurnIds: new Set(),
       subscribers: new Set(connection === undefined ? [] : [connection]),
+      ownerId: clientId,
       status: persisted.status,
       createdAt: persisted.createdAt,
       updatedAt: Date.now(),
@@ -1273,7 +1286,7 @@ export class SessionServer {
       persisted: true,
     };
     this.sessions.set(liveSession.id, liveSession);
-    this.acquireOwnership(liveSession);
+    this.acquireOwnership(liveSession, clientId);
     this.appendSessionRecord(liveSession, {
       type: "session_restored",
       sessionId: liveSession.id,
@@ -1344,6 +1357,7 @@ export class SessionServer {
             sequence: live?.sequence ?? 0,
             id: live?.id ?? sessionId,
             user: live?.user ?? "unknown",
+            projectId: live?.projectId ?? "",
             cwd: live?.cwd ?? "",
             status: live?.status ?? "idle",
             createdAt: live?.createdAt ?? Date.now(),
@@ -1357,6 +1371,7 @@ export class SessionServer {
             sequence: stored.sequence,
             id: stored.id,
             user: stored.user,
+            projectId: stored.projectId,
             cwd: stored.cwd,
             status: stored.status,
             createdAt: stored.createdAt,
@@ -1396,6 +1411,7 @@ export class SessionServer {
       byId.set(persisted.id, {
         id: persisted.id,
         user: persisted.user,
+        projectId: persisted.projectId,
         sequence: persisted.sequence,
         cwd: persisted.cwd,
         status: persisted.status,
@@ -1410,13 +1426,14 @@ export class SessionServer {
       if (
         !session.persisted ||
         session.user !== user ||
-        resolve(session.cwd) !== normalizedCwd
+        session.projectId !== this.store.projectIdForCwd(normalizedCwd)
       ) {
         continue;
       }
       byId.set(session.id, {
         id: session.id,
         user: session.user,
+        projectId: session.projectId,
         sequence:
           session.sequence ??
           this.nextSequenceForCwd(session.user, session.cwd),
@@ -1439,6 +1456,7 @@ export class SessionServer {
       id: session.id,
       sessionId: session.id,
       user: session.user,
+      projectId: session.projectId,
       clientIds: [...session.clientIds],
       cwd: session.cwd,
       status: session.status,
@@ -1955,7 +1973,7 @@ export class SessionServer {
     session.updatedAt = now;
     session.logKey = session.id;
     session.persisted = true;
-    this.acquireOwnership(session);
+    this.acquireOwnership(session, session.ownerId);
   }
 
   private nextSequenceForCwd(user: string, cwd: string): number {
@@ -1977,11 +1995,12 @@ export class SessionServer {
       return session;
     }
     const owner = this.currentOwner(session.id);
-    if (owner === undefined || owner === this.serverId) {
-      this.acquireOwnership(session);
+    const context = this.clientContext(connection, {});
+    if (owner === undefined || owner === context.clientId) {
+      this.acquireOwnership(session, context.clientId);
       return session;
     }
-    const reloaded = this.reloadAndAcquire(session);
+    const reloaded = this.reloadAndAcquire(session, context.clientId);
     reloaded.subscribers.add(connection);
     this.publishEphemeral(reloaded, {
       method: "session/ownershipChanged",
@@ -1994,16 +2013,17 @@ export class SessionServer {
     return reloaded;
   }
 
-  private reloadAndAcquire(session: LiveSession): LiveSession {
+  private reloadAndAcquire(session: LiveSession, ownerId?: string): LiveSession {
     const persisted = this.readPersistedSession(session.id);
     if (persisted === undefined) {
-      this.acquireOwnership(session);
+      this.acquireOwnership(session, ownerId ?? session.ownerId);
       return session;
     }
     const config = this.configForPersistedSession(persisted);
     const reloaded: LiveSession = {
       id: persisted.id,
       user: persisted.user,
+      projectId: persisted.projectId,
       clientIds: session.clientIds,
       logKey: persisted.logKey,
       cwd: persisted.cwd,
@@ -2021,6 +2041,7 @@ export class SessionServer {
       pendingEvents: [],
       discardedTurnIds: new Set(),
       subscribers: session.subscribers,
+      ownerId: ownerId ?? session.ownerId,
       status: persisted.status,
       createdAt: persisted.createdAt,
       updatedAt: Date.now(),
@@ -2029,15 +2050,17 @@ export class SessionServer {
       persisted: true,
     };
     this.sessions.set(reloaded.id, reloaded);
-    this.acquireOwnership(reloaded);
+    this.acquireOwnership(reloaded, ownerId ?? session.ownerId);
     return reloaded;
   }
 
-  private acquireOwnership(session: LiveSession): void {
+  private acquireOwnership(session: LiveSession, ownerId?: string): void {
     if (!session.persisted) {
       return;
     }
-    this.store.claimOwner(session.id, this.serverId);
+    const nextOwner = ownerId ?? session.ownerId ?? this.serverId;
+    session.ownerId = nextOwner;
+    this.store.claimOwner(session.id, nextOwner);
   }
 
   private currentOwner(sessionId: string): string | undefined {
@@ -2126,6 +2149,7 @@ function storedSessionToPersisted(
   return {
     id: session.id,
     user: session.user,
+    projectId: session.projectId,
     logKey: session.id,
     cwd: session.cwd,
     status: session.status,

@@ -1,6 +1,7 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { ModelConversationItem } from "../model/types.js";
 import type { RuntimeEvent } from "../shared/protocol.js";
 
@@ -21,6 +22,7 @@ export type StoredSessionStatus = "idle" | "running" | "aborted" | "failed";
 export interface StoredSession {
   id: string;
   user: string;
+  projectId: string;
   cwd: string;
   status: StoredSessionStatus;
   createdAt: number;
@@ -40,6 +42,7 @@ export interface StoredSessionContext {
 export interface StoredSessionListEntry {
   id: string;
   user: string;
+  projectId: string;
   cwd: string;
   status: StoredSessionStatus;
   createdAt: number;
@@ -71,15 +74,6 @@ interface ContextEventRow {
   itemSeq: number;
   payload: string;
 }
-
-interface RuntimeEventRow {
-  id: number;
-  payload: string;
-  msgType?: string;
-  turnId?: string;
-}
-
-const CONTEXT_PARTITION_COUNT = 16;
 
 export interface DashboardSessionLogFilters {
   accounts: string[];
@@ -157,6 +151,10 @@ export class SqliteSessionStore {
 
   close(): void {
     this.db.close();
+  }
+
+  projectIdForCwd(cwd: string): string {
+    return this.projectIdForPath(cwd);
   }
 
   createAccount(username: string): AccountRecord {
@@ -282,9 +280,7 @@ export class SqliteSessionStore {
     if (account.isprotected) {
       throw new Error(`${userid} cannot be blocked`);
     }
-    this.db
-      .prepare("update users set isblock = 1 where userid = ?")
-      .run(userid);
+    this.db.prepare("update users set isblock = 1 where userid = ?").run(userid);
     return { ...account, isblock: true };
   }
 
@@ -297,9 +293,7 @@ export class SqliteSessionStore {
     if (account.isprotected) {
       throw new Error(`${userid} cannot be unblocked`);
     }
-    this.db
-      .prepare("update users set isblock = 0 where userid = ?")
-      .run(userid);
+    this.db.prepare("update users set isblock = 0 where userid = ?").run(userid);
     return { ...account, isblock: false };
   }
 
@@ -313,32 +307,39 @@ export class SqliteSessionStore {
     createdAt: number;
   }): number {
     return this.transaction(() => {
-      this.ensureProject(input.user, input.cwd, input.createdAt);
-      const project = projectId(input.user, input.cwd);
-      const sequence = this.claimNextSequence(project);
+      const userid = normalizeAccountId(input.user);
+      if (!this.accountExists(userid)) {
+        this.createAccount(userid);
+      }
+      const project = this.projectIdForPath(input.cwd);
+      const sequence = this.claimNextSequence(userid, project);
       this.db
         .prepare(
           [
-            "insert into sessions",
-            "(id, user_id, project_id, sequence, title, status, model, created_at, updated_at)",
-            "values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "insert into session",
+            "(sessionid, created, userid, projectid, path, islite, ownerid, lastlogin, status, model, sequence, title, updated)",
+            "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           ].join(" "),
         )
         .run(
           input.id,
-          input.user,
+          input.createdAt,
+          userid,
           project,
-          sequence,
-          input.title,
+          resolve(input.cwd),
+          0,
+          null,
+          input.createdAt,
           input.status,
           input.model,
-          input.createdAt,
+          sequence,
+          input.title,
           input.createdAt,
         );
       this.insertEvent(input.id, "session_started", undefined, {
         type: "session_started",
         sessionId: input.id,
-        user: input.user,
+        user: userid,
         cwd: input.cwd,
         sequence,
         title: input.title,
@@ -360,7 +361,6 @@ export class SqliteSessionStore {
         runtimeEvent(record),
         record,
       );
-      this.insertContextItem(sessionId, eventId, record);
       this.applySessionMutation(sessionId, type, eventId, record);
     });
   }
@@ -369,14 +369,14 @@ export class SqliteSessionStore {
     const rows = this.db
       .prepare(
         [
-          "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
-          "s.updated_at as updatedAt, s.sequence, s.title, s.event_count as eventCount",
-          "from sessions s join projects p on p.id = s.project_id",
-          "where s.user_id = ? and p.cwd = ? and s.deleted_at is null",
-          "order by s.sequence asc",
+          "select sessionid as id, userid as user, projectid as projectId, path as cwd, status, created as createdAt,",
+          "updated as updatedAt, sequence, title, eventcount as eventCount",
+          "from session",
+          "where userid = ? and projectid = ? and deleted is null",
+          "order by sequence asc",
         ].join(" "),
       )
-      .all(user, cwd) as StoredSessionListEntry[];
+      .all(user, this.projectIdForPath(cwd)) as StoredSessionListEntry[];
     return rows;
   }
 
@@ -384,10 +384,10 @@ export class SqliteSessionStore {
     const row = this.db
       .prepare(
         [
-          "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
-          "s.updated_at as updatedAt, s.sequence, s.title",
-          "from sessions s join projects p on p.id = s.project_id",
-          "where s.id = ? and s.deleted_at is null",
+          "select sessionid as id, userid as user, projectid as projectId, path as cwd, status, created as createdAt,",
+          "updated as updatedAt, sequence, title",
+          "from session",
+          "where sessionid = ? and deleted is null",
         ].join(" "),
       )
       .get(sessionId) as Omit<StoredSession, "events"> | undefined;
@@ -404,11 +404,11 @@ export class SqliteSessionStore {
     const rows = this.db
       .prepare(
         [
-          "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
-          "s.updated_at as updatedAt, s.sequence, s.title",
-          "from sessions s join projects p on p.id = s.project_id",
-          "where s.deleted_at is null",
-          "order by s.created_at asc",
+          "select sessionid as id, userid as user, projectid as projectId, path as cwd, status, created as createdAt,",
+          "updated as updatedAt, sequence, title",
+          "from session",
+          "where deleted is null",
+          "order by created asc",
         ].join(" "),
       )
       .all() as Array<Omit<StoredSession, "events">>;
@@ -422,10 +422,10 @@ export class SqliteSessionStore {
     const accounts = this.db
       .prepare(
         [
-          "select distinct s.user_id as user",
-          "from sessions s",
-          "where s.deleted_at is null",
-          "order by s.user_id asc",
+          "select distinct userid as user",
+          "from session",
+          "where deleted is null",
+          "order by userid asc",
         ].join(" "),
       )
       .all()
@@ -433,21 +433,21 @@ export class SqliteSessionStore {
     const projects = this.db
       .prepare(
         [
-          "select distinct p.cwd",
-          "from sessions s join projects p on p.id = s.project_id",
-          "where s.deleted_at is null",
-          "order by p.cwd asc",
+          "select distinct projectid as id",
+          "from session",
+          "where deleted is null",
+          "order by path asc",
         ].join(" "),
       )
       .all()
-      .map((row) => (row as { cwd: string }).cwd);
+      .map((row) => (row as { id: string }).id);
     const sessions = this.db
       .prepare(
         [
-          "select s.id, s.user_id as user, p.cwd, s.sequence, s.title",
-          "from sessions s join projects p on p.id = s.project_id",
-          "where s.deleted_at is null",
-          "order by s.created_at asc",
+          "select sessionid as id, userid as user, path as cwd, sequence, title",
+          "from session",
+          "where deleted is null",
+          "order by rowid asc",
         ].join(" "),
       )
       .all() as DashboardSessionLogFacets["sessions"];
@@ -457,20 +457,20 @@ export class SqliteSessionStore {
   listDashboardSessionLogs(
     filters: DashboardSessionLogFilters,
   ): DashboardSessionLogEntry[] {
-    const where = ["s.deleted_at is null"];
+    const where = ["deleted is null"];
     const values: unknown[] = [];
-    addInFilter(where, values, "s.user_id", filters.accounts);
-    addInFilter(where, values, "p.cwd", filters.projects);
-    addInFilter(where, values, "s.id", filters.sessions);
+    addInFilter(where, values, "userid", filters.accounts);
+    addInFilter(where, values, "projectid", filters.projects);
+    addInFilter(where, values, "sessionid", filters.sessions);
     return this.db
       .prepare(
         [
-          "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
-          "s.updated_at as updatedAt, s.sequence, s.title, s.event_count as eventCount,",
-          "s.last_event_id as lastEventId, s.last_turn_id as lastTurnId",
-          "from sessions s join projects p on p.id = s.project_id",
+          "select sessionid as id, userid as user, projectid as projectId, path as cwd, status, created as createdAt,",
+          "updated as updatedAt, sequence, title, eventcount as eventCount,",
+          "lastdatarowid as lastEventId, lastturnid as lastTurnId",
+          "from session",
           `where ${where.join(" and ")}`,
-          "order by s.created_at asc",
+          "order by rowid asc",
         ].join(" "),
       )
       .all(...values) as DashboardSessionLogEntry[];
@@ -487,18 +487,22 @@ export class SqliteSessionStore {
     }
     const totalRow = this.db
       .prepare(
-        "select count(1) as total from session_events where session_id = ?",
+        [
+          "select count(1) as total",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ?",
+        ].join(" "),
       )
       .get(sessionId) as { total?: unknown } | undefined;
     const total = typeof totalRow?.total === "number" ? totalRow.total : 0;
     const rows = this.db
       .prepare(
         [
-          "select id, session_id as sessionId, type, msg_type as msgType,",
-          "turn_id as turnId, payload_json as payloadJson, created_at as createdAt",
-          "from session_events",
-          "where session_id = ?",
-          "order by id asc",
+          "select d.rowid as id, s.sessionid as sessionId, d.type, d.msgtype as msgType,",
+          "d.turnid as turnId, d.payload_json as payloadJson, d.created as createdAt",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ?",
+          "order by d.rowid asc",
           "limit ? offset ?",
         ].join(" "),
       )
@@ -534,11 +538,11 @@ export class SqliteSessionStore {
     return this.db
       .prepare(
         [
-          "select s.id, s.user_id as user, p.cwd, s.status, s.created_at as createdAt,",
-          "s.updated_at as updatedAt, s.sequence, s.title, s.event_count as eventCount,",
-          "s.last_event_id as lastEventId, s.last_turn_id as lastTurnId",
-          "from sessions s join projects p on p.id = s.project_id",
-          "where s.id = ? and s.deleted_at is null",
+          "select sessionid as id, userid as user, projectid as projectId, path as cwd, status, created as createdAt,",
+          "updated as updatedAt, sequence, title, eventcount as eventCount,",
+          "lastdatarowid as lastEventId, lastturnid as lastTurnId",
+          "from session",
+          "where sessionid = ? and deleted is null",
         ].join(" "),
       )
       .get(sessionId) as DashboardSessionLogEntry | undefined;
@@ -564,16 +568,8 @@ export class SqliteSessionStore {
     }
     const now = Date.now();
     this.db
-      .prepare(
-        [
-          "insert into session_context_state",
-          "(session_id, lite_enabled, updated_at)",
-          "values (?, ?, ?)",
-          "on conflict(session_id) do update set",
-          "lite_enabled = excluded.lite_enabled, updated_at = excluded.updated_at",
-        ].join(" "),
-      )
-      .run(sessionId, enabled ? 1 : 0, now);
+      .prepare("update session set islite = ? where sessionid = ?")
+      .run(enabled ? 1 : 0, sessionId);
     return this.contextModeState(sessionId);
   }
 
@@ -614,16 +610,8 @@ export class SqliteSessionStore {
         },
       );
       this.db
-        .prepare(
-          [
-            "insert into session_context_state",
-            "(session_id, lite_enabled, compact_event_id, updated_at)",
-            "values (?, ?, ?, ?)",
-            "on conflict(session_id) do update set",
-            "compact_event_id = excluded.compact_event_id, updated_at = excluded.updated_at",
-          ].join(" "),
-        )
-        .run(sessionId, state.liteEnabled ? 1 : 0, eventId, compactedAt);
+        .prepare("update session set compactrowid = ?, updated = ? where sessionid = ?")
+        .run(eventId, compactedAt, sessionId);
       return { summary, eventId, compactedAt };
     });
   }
@@ -631,42 +619,35 @@ export class SqliteSessionStore {
   deleteSession(sessionId: string): void {
     this.db
       .prepare(
-        "update sessions set deleted_at = ?, updated_at = ? where id = ?",
+        "update session set deleted = ?, updated = ?, ownerid = null where sessionid = ?",
       )
       .run(Date.now(), Date.now(), sessionId);
-    this.db
-      .prepare("delete from session_owners where session_id = ?")
-      .run(sessionId);
   }
 
   sessionExists(sessionId: string): boolean {
     return (
       this.db
-        .prepare("select 1 from sessions where id = ? and deleted_at is null")
+        .prepare("select 1 from session where sessionid = ? and deleted is null")
         .get(sessionId) !== undefined
     );
   }
 
-  claimOwner(sessionId: string, serverId: string): void {
+  claimOwner(sessionId: string, ownerId: string): void {
     const now = Date.now();
     this.db
       .prepare(
-        [
-          "insert into session_owners (session_id, server_id, claimed_at)",
-          "values (?, ?, ?)",
-          "on conflict(session_id) do update set server_id = excluded.server_id, claimed_at = excluded.claimed_at",
-        ].join(" "),
+        "update session set ownerid = ?, lastlogin = ? where sessionid = ?",
       )
-      .run(sessionId, serverId, now);
+      .run(ownerId, now, sessionId);
   }
 
   currentOwner(sessionId: string): string | undefined {
     const row = this.db
       .prepare(
-        "select server_id as serverId from session_owners where session_id = ?",
+        "select ownerid from session where sessionid = ? and deleted is null",
       )
-      .get(sessionId) as { serverId?: unknown } | undefined;
-    return typeof row?.serverId === "string" ? row.serverId : undefined;
+      .get(sessionId) as { ownerid?: unknown } | undefined;
+    return typeof row?.ownerid === "string" ? row.ownerid : undefined;
   }
 
   private initialize(): void {
@@ -674,7 +655,31 @@ export class SqliteSessionStore {
     this.db.exec("pragma foreign_keys = on");
     this.db.exec("pragma busy_timeout = 5000");
     this.db.exec("pragma synchronous = normal");
+    this.resetSessionSchemaIfNeeded();
     this.db.exec(`
+      drop table if exists session_context_items_00;
+      drop table if exists session_context_items_01;
+      drop table if exists session_context_items_02;
+      drop table if exists session_context_items_03;
+      drop table if exists session_context_items_04;
+      drop table if exists session_context_items_05;
+      drop table if exists session_context_items_06;
+      drop table if exists session_context_items_07;
+      drop table if exists session_context_items_08;
+      drop table if exists session_context_items_09;
+      drop table if exists session_context_items_0a;
+      drop table if exists session_context_items_0b;
+      drop table if exists session_context_items_0c;
+      drop table if exists session_context_items_0d;
+      drop table if exists session_context_items_0e;
+      drop table if exists session_context_items_0f;
+      drop table if exists session_context_segments;
+      drop table if exists session_context_state;
+      drop table if exists session_context_items;
+      drop table if exists session_owners;
+      drop table if exists session_events;
+      drop table if exists sessions;
+      drop table if exists projects;
       create table if not exists users (
         id text primary key,
         username text not null unique,
@@ -687,120 +692,82 @@ export class SqliteSessionStore {
         isblock integer not null default 0,
         isprotected integer not null default 0
       );
-      create table if not exists projects (
-        id text primary key,
-        user_id text not null references users(id) on delete cascade,
-        cwd text not null,
-        created_at integer not null,
-        next_sequence integer not null default 1,
-        unique(user_id, cwd)
-      );
       create table if not exists clients (
         id text primary key,
         user_id text not null references users(id) on delete cascade,
         kind text,
         last_seen_at integer not null
       );
-      create table if not exists sessions (
-        id text primary key,
-        user_id text not null references users(id) on delete cascade,
-        project_id text not null references projects(id) on delete cascade,
+      create table if not exists session (
+        rowid integer primary key autoincrement,
+        sessionid text not null unique,
+        created integer not null,
+        userid text not null references users(id) on delete cascade,
+        projectid text not null,
+        path text not null,
+        islite integer not null default 0,
+        ownerid text,
+        lastlogin integer not null,
+        status text not null default 'idle',
+        model text,
         sequence integer not null,
         title text not null,
-        status text not null,
-        model text,
-        created_at integer not null,
-        updated_at integer not null,
-        deleted_at integer,
-        event_count integer not null default 0,
-        last_event_id integer,
-        last_turn_id text,
-        unique(user_id, project_id, sequence)
+        updated integer not null,
+        deleted integer,
+        eventcount integer not null default 0,
+        lastdatarowid integer,
+        lastturnid text,
+        compactrowid integer,
+        unique(userid, projectid, sequence)
       );
-      create table if not exists session_events (
-        id integer primary key autoincrement,
-        session_id text not null references sessions(id) on delete cascade,
+      create table if not exists sessiondata (
+        rowid integer primary key autoincrement,
         type text not null,
-        msg_type text,
-        turn_id text,
+        sessionrowid integer not null references session(rowid) on delete cascade,
+        ownerid text,
+        created integer not null,
         payload_json text not null,
-        created_at integer not null
-      );
-      create table if not exists session_context_items (
-        id integer primary key autoincrement,
-        session_id text not null references sessions(id) on delete cascade,
-        event_id integer not null references session_events(id) on delete cascade,
-        item_seq integer not null,
-        payload_json text not null,
-        created_at integer not null,
-        unique(session_id, item_seq)
-      );
-      create table if not exists session_context_state (
-        session_id text primary key references sessions(id) on delete cascade,
-        lite_enabled integer not null default 0,
-        compact_event_id integer references session_events(id) on delete set null,
-        updated_at integer not null
-      );
-      create table if not exists session_context_segments (
-        session_id text primary key references sessions(id) on delete cascade,
-        user_id text not null,
-        project_id text not null,
-        segment_key text not null,
-        table_name text not null,
-        created_at integer not null
-      );
-      create table if not exists session_owners (
-        session_id text primary key references sessions(id) on delete cascade,
-        server_id text not null,
-        claimed_at integer not null
+        msgtype text,
+        turnid text,
+        iscontext integer not null default 0
       );
     `);
-    this.initializeContextPartitions();
-    this.migrateProjectionSchema();
     this.migrateUserAccountSchema();
     this.db.exec(`
       create unique index if not exists idx_users_userid on users(userid);
       create index if not exists idx_users_lastlogin on users(lastlogin);
-      create index if not exists idx_projects_user_cwd on projects(user_id, cwd);
-      create index if not exists idx_sessions_project_sequence_live on sessions(project_id, sequence) where deleted_at is null;
-      create index if not exists idx_sessions_user_project_live on sessions(user_id, project_id) where deleted_at is null;
-      create index if not exists idx_session_events_session_id on session_events(session_id, id);
-      create index if not exists idx_session_events_type on session_events(session_id, type, id);
-      create index if not exists idx_session_events_turn on session_events(session_id, turn_id, id);
-      create index if not exists idx_session_context_items_session_seq on session_context_items(session_id, item_seq);
-      create index if not exists idx_session_context_state_compact on session_context_state(session_id, compact_event_id);
-      create index if not exists idx_session_context_segments_user_project on session_context_segments(user_id, project_id);
-      create index if not exists idx_session_context_segments_table on session_context_segments(table_name, segment_key);
+      create index if not exists idx_session_user_project on session(userid, projectid);
+      create index if not exists idx_session_sessionid on session(sessionid);
+      create index if not exists idx_session_project_sequence_live on session(projectid, sequence) where deleted is null;
+      create index if not exists idx_sessiondata_sessionrowid on sessiondata(sessionrowid, rowid);
+      create index if not exists idx_sessiondata_type on sessiondata(sessionrowid, type, rowid);
+      create index if not exists idx_sessiondata_turn on sessiondata(sessionrowid, turnid, rowid);
     `);
-    this.backfillProjectionRows();
     if (!this.accountExists(DEFAULT_USER_ID)) {
       this.createAccount(DEFAULT_USER_ID);
     }
   }
 
-  private ensureProject(user: string, cwd: string, now: number): void {
-    if (!this.accountExists(user)) {
-      this.createAccount(user);
+  private resetSessionSchemaIfNeeded(): void {
+    const row = this.db.prepare("pragma user_version").get() as
+      | { user_version?: unknown }
+      | undefined;
+    if (row?.user_version === 2) {
+      return;
     }
-    this.ensureUserRow(normalizeAccountId(user), now);
-    this.db
-      .prepare(
-        "insert or ignore into projects (id, user_id, cwd, created_at, next_sequence) values (?, ?, ?, ?, 1)",
-      )
-      .run(projectId(normalizeAccountId(user), cwd), normalizeAccountId(user), cwd, now);
+    this.db.exec(`
+      drop table if exists sessiondata;
+      drop table if exists session;
+      pragma user_version = 2;
+    `);
   }
 
-  private claimNextSequence(project: string): number {
-    this.db
-      .prepare(
-        "update projects set next_sequence = next_sequence + 1 where id = ?",
-      )
-      .run(project);
+  private claimNextSequence(user: string, project: string): number {
     const row = this.db
       .prepare(
-        "select next_sequence - 1 as sequence from projects where id = ?",
+        "select coalesce(max(sequence), 0) + 1 as sequence from session where userid = ? and projectid = ?",
       )
-      .get(project) as { sequence?: unknown } | undefined;
+      .get(user, project) as { sequence?: unknown } | undefined;
     if (typeof row?.sequence !== "number") {
       throw new Error(`missing project sequence row: ${project}`);
     }
@@ -814,55 +781,27 @@ export class SqliteSessionStore {
     payload: Record<string, unknown>,
   ): number {
     const msg = event?.msg;
+    const row = this.db
+      .prepare("select rowid, ownerid from session where sessionid = ?")
+      .get(sessionId) as { rowid?: unknown; ownerid?: unknown } | undefined;
+    if (typeof row?.rowid !== "number") {
+      throw new Error(`unknown session: ${sessionId}`);
+    }
     const result = this.db
       .prepare(
-        "insert into session_events (session_id, type, msg_type, turn_id, payload_json, created_at) values (?, ?, ?, ?, ?, ?)",
+        "insert into sessiondata (type, sessionrowid, ownerid, created, payload_json, msgtype, turnid, iscontext) values (?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
-        sessionId,
         type,
+        row.rowid,
+        typeof row.ownerid === "string" ? row.ownerid : null,
+        Date.now(),
+        JSON.stringify(payload),
         msg?.type ?? null,
         eventTurnId(event) ?? null,
-        JSON.stringify(payload),
-        Date.now(),
+        event !== undefined && isContextEvent(event) ? 1 : 0,
       );
     return result.lastInsertRowid;
-  }
-
-  private insertContextItem(
-    sessionId: string,
-    eventId: number,
-    record: Record<string, unknown>,
-  ): void {
-    const event = runtimeEvent(record);
-    if (event === undefined || !isContextEvent(event)) {
-      return;
-    }
-    const table = this.contextTableForSession(sessionId);
-    const row = this.db
-      .prepare(
-        "select coalesce(max(item_seq), 0) + 1 as next from session_context_items where session_id = ?",
-      )
-      .get(sessionId) as { next?: unknown } | undefined;
-    const next = typeof row?.next === "number" ? row.next : 1;
-    this.db
-      .prepare(
-        "insert into session_context_items (session_id, event_id, item_seq, payload_json, created_at) values (?, ?, ?, ?, ?)",
-      )
-      .run(sessionId, eventId, next, JSON.stringify(event), Date.now());
-    this.db
-      .prepare(
-        `insert or ignore into ${table} (session_id, event_id, item_seq, payload_json, msg_type, turn_id, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        sessionId,
-        eventId,
-        next,
-        JSON.stringify(event),
-        event.msg.type,
-        eventTurnId(event) ?? null,
-        Date.now(),
-      );
   }
 
   private applySessionMutation(
@@ -878,9 +817,9 @@ export class SqliteSessionStore {
         this.db
           .prepare(
             [
-              "update sessions set status = ?, updated_at = ?,",
-              "event_count = event_count + 1, last_event_id = ?, last_turn_id = ?",
-              "where id = ?",
+              "update session set status = ?, updated = ?,",
+              "eventcount = eventcount + 1, lastdatarowid = ?, lastturnid = ?",
+              "where sessionid = ?",
             ].join(" "),
           )
           .run(
@@ -899,7 +838,7 @@ export class SqliteSessionStore {
       if (status !== undefined) {
         this.db
           .prepare(
-            "update sessions set status = ?, updated_at = ?, last_event_id = ? where id = ?",
+            "update session set status = ?, updated = ?, lastdatarowid = ? where sessionid = ?",
           )
           .run(status, updatedAt, eventId, sessionId);
       }
@@ -909,7 +848,12 @@ export class SqliteSessionStore {
   private runtimeEvents(sessionId: string): RuntimeEvent[] {
     return this.db
       .prepare(
-        "select payload_json as payload from session_events where session_id = ? and type = 'runtime_event' order by id asc",
+        [
+          "select d.payload_json as payload",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ? and d.type = 'runtime_event'",
+          "order by d.rowid asc",
+        ].join(" "),
       )
       .all(sessionId)
       .map((row) => JSON.parse((row as { payload: string }).payload))
@@ -984,28 +928,32 @@ export class SqliteSessionStore {
   }
 
   private contextRows(sessionId: string): ContextEventRow[] {
-    const table = this.readContextTableForSession(sessionId);
-    if (table !== undefined) {
-      const rows = this.db
-        .prepare(
-          `select event_id as eventId, item_seq as itemSeq, payload_json as payload from ${table} where session_id = ? order by item_seq asc`,
-        )
-        .all(sessionId) as ContextEventRow[];
-      if (rows.length > 0) {
-        return rows;
-      }
-    }
-    return this.db
+    const rows = this.db
       .prepare(
-        "select event_id as eventId, item_seq as itemSeq, payload_json as payload from session_context_items where session_id = ? order by item_seq asc",
+        [
+          "select d.rowid as eventId, d.rowid as itemSeq, d.payload_json as payload",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ? and d.iscontext = 1",
+          "order by d.rowid asc",
+        ].join(" "),
       )
       .all(sessionId) as ContextEventRow[];
+    return rows
+      .map((row) => {
+        const event = runtimeEvent(
+          JSON.parse(row.payload) as Record<string, unknown>,
+        );
+        return event === undefined
+          ? undefined
+          : { ...row, payload: JSON.stringify(event) };
+      })
+      .filter((row): row is ContextEventRow => row !== undefined);
   }
 
   private contextModeState(sessionId: string): ContextModeState {
     const row = this.db
       .prepare(
-        "select lite_enabled as liteEnabled, compact_event_id as compactEventId, updated_at as updatedAt from session_context_state where session_id = ?",
+        "select islite as liteEnabled, compactrowid as compactEventId, updated as updatedAt from session where sessionid = ?",
       )
       .get(sessionId) as
       | { liteEnabled?: unknown; compactEventId?: unknown; updatedAt?: unknown }
@@ -1029,7 +977,11 @@ export class SqliteSessionStore {
     }
     const row = this.db
       .prepare(
-        "select payload_json as payload from session_events where session_id = ? and id = ? and type = 'context_compact'",
+        [
+          "select d.payload_json as payload",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ? and d.rowid = ? and d.type = 'context_compact'",
+        ].join(" "),
       )
       .get(sessionId, eventId) as { payload?: unknown } | undefined;
     if (typeof row?.payload !== "string") {
@@ -1053,13 +1005,18 @@ export class SqliteSessionStore {
     const rows = this.db
       .prepare(
         [
-          "select id, payload_json as payload, msg_type as msgType, turn_id as turnId",
-          "from session_events",
-          "where session_id = ? and type = 'runtime_event' and id > ?",
-          "order by id asc",
+          "select d.rowid as id, d.payload_json as payload, d.msgtype as msgType, d.turnid as turnId",
+          "from sessiondata d join session s on s.rowid = d.sessionrowid",
+          "where s.sessionid = ? and d.type = 'runtime_event' and d.rowid > ?",
+          "order by d.rowid asc",
         ].join(" "),
       )
-      .all(sessionId, previousCompactEventId ?? 0) as RuntimeEventRow[];
+      .all(sessionId, previousCompactEventId ?? 0) as Array<{
+      id: number;
+      payload: string;
+      msgType?: string;
+      turnId?: string;
+    }>;
     const turnPrompts = new Map<string, string>();
     const turnAnswers = new Map<string, string>();
     for (const row of rows) {
@@ -1102,44 +1059,23 @@ export class SqliteSessionStore {
       : parts.join("\n\n");
   }
 
-  private migrateProjectionSchema(): void {
-    for (const statement of [
-      [
-        "projects",
-        "next_sequence",
-        "alter table projects add column next_sequence integer not null default 1",
-      ],
-      [
-        "sessions",
-        "event_count",
-        "alter table sessions add column event_count integer not null default 0",
-      ],
-      [
-        "sessions",
-        "last_event_id",
-        "alter table sessions add column last_event_id integer",
-      ],
-      [
-        "sessions",
-        "last_turn_id",
-        "alter table sessions add column last_turn_id text",
-      ],
-      [
-        "session_events",
-        "msg_type",
-        "alter table session_events add column msg_type text",
-      ],
-      [
-        "session_events",
-        "turn_id",
-        "alter table session_events add column turn_id text",
-      ],
-    ] as const) {
-      const [table, column, sql] = statement;
-      if (!this.hasColumn(table, column)) {
-        this.db.exec(sql);
+  private projectIdForPath(cwd: string): string {
+    const projectDir = resolve(cwd);
+    const ndxDir = join(projectDir, ".ndx");
+    const projectFile = join(ndxDir, ".project");
+    if (existsSync(projectFile)) {
+      const parsed = JSON.parse(readFileSync(projectFile, "utf8")) as {
+        projectid?: unknown;
+      };
+      if (typeof parsed.projectid === "string" && parsed.projectid.length > 0) {
+        return parsed.projectid;
       }
+      throw new Error(`invalid ndx project identity: ${projectFile}`);
     }
+    mkdirSync(ndxDir, { recursive: true });
+    const projectid = randomUUID();
+    writeFileSync(projectFile, `${JSON.stringify({ projectid })}\n`, "utf8");
+    return projectid;
   }
 
   private migrateUserAccountSchema(): void {
@@ -1177,206 +1113,6 @@ export class SqliteSessionStore {
     `);
   }
 
-  private backfillProjectionRows(): void {
-    this.db.exec(`
-      update projects
-      set next_sequence = (
-        select coalesce(max(s.sequence), 0) + 1
-        from sessions s
-        where s.project_id = projects.id
-      )
-      where next_sequence <= 1;
-      update sessions
-      set event_count = (
-        select count(1)
-        from session_events e
-        where e.session_id = sessions.id and e.type = 'runtime_event'
-      )
-      where event_count = 0;
-      update sessions
-      set last_event_id = (
-        select max(e.id)
-        from session_events e
-        where e.session_id = sessions.id
-      )
-      where last_event_id is null;
-    `);
-    this.backfillEventMetadata();
-    this.backfillContextItems();
-    this.backfillContextPartitions();
-  }
-
-  private backfillEventMetadata(): void {
-    const rows = this.db
-      .prepare(
-        "select id, payload_json as payload from session_events where type = 'runtime_event' and (msg_type is null or turn_id is null)",
-      )
-      .all() as Array<{ id: number; payload: string }>;
-    for (const row of rows) {
-      const parsed = JSON.parse(row.payload) as Record<string, unknown>;
-      const event = runtimeEvent(parsed);
-      this.db
-        .prepare(
-          "update session_events set msg_type = ?, turn_id = ? where id = ?",
-        )
-        .run(event?.msg.type ?? null, eventTurnId(event) ?? null, row.id);
-    }
-  }
-
-  private backfillContextItems(): void {
-    const rows = this.db
-      .prepare(
-        [
-          "select e.id, e.session_id as sessionId, e.payload_json as payload",
-          "from session_events e",
-          "left join session_context_items c on c.event_id = e.id",
-          "where e.type = 'runtime_event' and c.id is null",
-          "order by e.session_id asc, e.id asc",
-        ].join(" "),
-      )
-      .all() as Array<{ id: number; sessionId: string; payload: string }>;
-    const nextBySession = new Map<string, number>();
-    for (const row of rows) {
-      const parsed = JSON.parse(row.payload) as Record<string, unknown>;
-      const event = runtimeEvent(parsed);
-      if (event === undefined || !isContextEvent(event)) {
-        continue;
-      }
-      let next = nextBySession.get(row.sessionId);
-      if (next === undefined) {
-        const nextRow = this.db
-          .prepare(
-            "select coalesce(max(item_seq), 0) + 1 as next from session_context_items where session_id = ?",
-          )
-          .get(row.sessionId) as { next?: unknown } | undefined;
-        next = typeof nextRow?.next === "number" ? nextRow.next : 1;
-      }
-      this.db
-        .prepare(
-          "insert or ignore into session_context_items (session_id, event_id, item_seq, payload_json, created_at) values (?, ?, ?, ?, ?)",
-        )
-        .run(row.sessionId, row.id, next, JSON.stringify(event), Date.now());
-      const table = this.contextTableForSession(row.sessionId);
-      this.db
-        .prepare(
-          `insert or ignore into ${table} (session_id, event_id, item_seq, payload_json, msg_type, turn_id, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          row.sessionId,
-          row.id,
-          next,
-          JSON.stringify(event),
-          event.msg.type,
-          eventTurnId(event) ?? null,
-          Date.now(),
-        );
-      nextBySession.set(row.sessionId, next + 1);
-    }
-  }
-
-  private backfillContextPartitions(): void {
-    const rows = this.db
-      .prepare(
-        [
-          "select session_id as sessionId, event_id as eventId, item_seq as itemSeq,",
-          "payload_json as payload, created_at as createdAt",
-          "from session_context_items",
-          "order by session_id asc, item_seq asc",
-        ].join(" "),
-      )
-      .all() as Array<{
-      sessionId: string;
-      eventId: number;
-      itemSeq: number;
-      payload: string;
-      createdAt: number;
-    }>;
-    for (const row of rows) {
-      const event = JSON.parse(row.payload);
-      if (!isRuntimeEvent(event)) {
-        continue;
-      }
-      const table = this.contextTableForSession(row.sessionId);
-      this.db
-        .prepare(
-          `insert or ignore into ${table} (session_id, event_id, item_seq, payload_json, msg_type, turn_id, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          row.sessionId,
-          row.eventId,
-          row.itemSeq,
-          row.payload,
-          event.msg.type,
-          eventTurnId(event) ?? null,
-          row.createdAt,
-        );
-    }
-  }
-
-  private initializeContextPartitions(): void {
-    for (let index = 0; index < CONTEXT_PARTITION_COUNT; index += 1) {
-      const table = contextPartitionTable(index);
-      this.db.exec(`
-        create table if not exists ${table} (
-          id integer primary key autoincrement,
-          session_id text not null references sessions(id) on delete cascade,
-          event_id integer not null references session_events(id) on delete cascade,
-          item_seq integer not null,
-          payload_json text not null,
-          msg_type text,
-          turn_id text,
-          created_at integer not null,
-          unique(session_id, item_seq),
-          unique(event_id)
-        );
-        create index if not exists idx_${table}_session_seq on ${table}(session_id, item_seq);
-        create index if not exists idx_${table}_session_event on ${table}(session_id, event_id);
-        create index if not exists idx_${table}_turn on ${table}(session_id, turn_id, item_seq);
-      `);
-    }
-  }
-
-  private contextTableForSession(sessionId: string): string {
-    const existing = this.readContextTableForSession(sessionId);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const row = this.db
-      .prepare(
-        [
-          "select s.user_id as userId, s.project_id as projectId",
-          "from sessions s where s.id = ?",
-        ].join(" "),
-      )
-      .get(sessionId) as { userId?: unknown; projectId?: unknown } | undefined;
-    const userId = typeof row?.userId === "string" ? row.userId : "";
-    const projectId = typeof row?.projectId === "string" ? row.projectId : "";
-    const segmentKey = `${userId}:${projectId}`;
-    const table = contextPartitionTable(hashToPartition(segmentKey));
-    this.db
-      .prepare(
-        [
-          "insert or ignore into session_context_segments",
-          "(session_id, user_id, project_id, segment_key, table_name, created_at)",
-          "values (?, ?, ?, ?, ?, ?)",
-        ].join(" "),
-      )
-      .run(sessionId, userId, projectId, segmentKey, table, Date.now());
-    return table;
-  }
-
-  private readContextTableForSession(sessionId: string): string | undefined {
-    const row = this.db
-      .prepare(
-        "select table_name as tableName from session_context_segments where session_id = ?",
-      )
-      .get(sessionId) as { tableName?: unknown } | undefined;
-    return typeof row?.tableName === "string" &&
-      /^session_context_items_[0-9a-f]{2}$/.test(row.tableName)
-      ? row.tableName
-      : undefined;
-  }
-
   private hasColumn(table: string, column: string): boolean {
     return this.db
       .prepare(`pragma table_info(${table})`)
@@ -1394,27 +1130,6 @@ export class SqliteSessionStore {
       this.db.exec("rollback");
       throw error;
     }
-  }
-
-  private ensureUserRow(userid: string, now: number): void {
-    this.db
-      .prepare(
-        [
-          "insert or ignore into users",
-          "(id, username, password, created_at, updated_at, userid, created, lastlogin, isblock, isprotected)",
-          "values (?, ?, '', ?, ?, ?, ?, ?, 0, ?)",
-        ].join(" "),
-      )
-      .run(
-        userid,
-        userid,
-        now,
-        now,
-        userid,
-        now,
-        now,
-        userid === DEFAULT_USER_ID ? 1 : 0,
-      );
   }
 }
 
@@ -1483,23 +1198,6 @@ function conversationItemsFromRuntimeEvents(
   }
 
   return history;
-}
-
-function contextPartitionTable(index: number): string {
-  return `session_context_items_${index.toString(16).padStart(2, "0")}`;
-}
-
-function hashToPartition(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return Math.abs(hash) % CONTEXT_PARTITION_COUNT;
-}
-
-function projectId(user: string, cwd: string): string {
-  return `${user}:${cwd}`;
 }
 
 export function normalizeAccountId(input: string): string {

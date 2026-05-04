@@ -27,7 +27,8 @@ ndxserver --version
   worker process isolation, abort propagation, and runtime event replay.
 - Session server local account create/login/previous/block/unblock flow,
   WebSocket request/notification flow, SQLite persistence,
-  session restore/delete, ownership reclaim, and dashboard reload.
+  `session`/`sessiondata` metadata, project-id scoping, legacy session-table
+  removal, session restore/delete, ownership reclaim, and dashboard reload.
 - Lite context mode at user-turn boundaries, including completed turns and
   failed `maxTurns` turns with persisted tool logs.
 - Managed CLI startup discovery, detached `ndxserver` process lifetime, default
