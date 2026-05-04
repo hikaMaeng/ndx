@@ -14,7 +14,7 @@ __metadata:
     typescript: "npm:^5.9.2"
   bin:
     ndx: dist/src/cli/main.js
-    ndxserver: dist/src/cli/main.js
+    ndxserver: dist/src/cli/ndxserver.js
   languageName: unknown
   linkType: soft
 

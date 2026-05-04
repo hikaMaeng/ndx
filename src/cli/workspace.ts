@@ -162,8 +162,7 @@ export async function probeManagedServer(
   try {
     try {
       await client.request("account/login", {
-        username: "defaultUser",
-        password: "",
+        username: "defaultuser",
       });
     } catch (error) {
       return { reachable: false, stage: "login", error: describeError(error) };

@@ -30,8 +30,8 @@
    Each tool call runs in a worker Node process.
 7. External tools and MCP stdio commands run through `docker exec` when
    `NDX_SANDBOX_CONTAINER` is present.
-8. Runtime events, context records, session ownership, accounts, and social
-   links persist in SQLite under the configured data directory.
+8. Runtime events, context records, session ownership, and local accounts
+   persist in SQLite under the configured data directory.
 
 ## Process Lifetime
 
@@ -54,7 +54,7 @@ timeout, the CLI prints launcher PID status and tails readable launcher logs.
 
 - Runtime defaults are owned by `src/config/defaults.ts`.
 - Settings schema and merge behavior are owned by `src/config/index.ts`.
-- Server JSON-RPC helpers, server info, social login verification, dashboard
-  rendering, params, notifications, runtime-event predicates, and websocket
-  connection state live under `src/session/server/`.
+- Server JSON-RPC helpers, server info, dashboard rendering, params,
+  notifications, runtime-event predicates, and websocket connection state live
+  under `src/session/server/`.
 - Tool execution subdomains live under `src/session/tools/`.

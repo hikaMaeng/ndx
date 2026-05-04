@@ -42,6 +42,13 @@ server. The CLI also prints detached launcher selection, command metadata,
 server args, spawned pid, readiness probe attempts, failing stage, and last
 error. Inability to write logs does not block server startup.
 
+Startup login is local-only. The server bootstraps `defaultuser`, selects the
+previous account from SQLite `users.lastlogin`, and offers local account
+creation in interactive mode. New user ids contain only letters and digits and
+are stored lowercase. `/login` creates or switches local ids. `/blockuser <id>`
+blocks a non-protected id; `/unblockuser <id>` restores it. Blocking the
+currently connected id ends that client session. Accounts are not deleted.
+
 Stop the managed server explicitly:
 
 ```bash

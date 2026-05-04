@@ -3,7 +3,7 @@ import type { Socket } from "node:net";
 
 export class WebSocketConnection {
   private buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-  user = "defaultUser";
+  user = "defaultuser";
   clientId: string = randomUUID();
   authenticated = false;
 
