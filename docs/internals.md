@@ -59,9 +59,10 @@ single `spawn` contract. Windows launches the current Node entrypoint directly
 as a hidden detached process and redirects stdout/stderr to
 `ndx-managed-server-host.log` when it can open that temp file. All managed
 launchers set `NDX_MANAGED_SERVER=1`; server mode treats that as a background
-lifetime contract and ignores `SIGINT`, leaving dashboard exit or process
-termination as shutdown paths. `ndxserver stop` calls the dashboard `/api/exit`
-endpoint and waits until the WebSocket endpoint is no longer reachable. Plain
+lifetime contract and ignores `SIGINT`, `SIGTERM`, `SIGHUP`, and `SIGBREAK`,
+leaving dashboard exit as the normal shutdown path. `ndxserver stop` calls the
+dashboard `/api/exit` endpoint and waits until the WebSocket endpoint is no
+longer reachable. Plain
 `ndxserver` on Windows is a background server trigger; `ndxserver serve` keeps
 the foreground server mode for explicit diagnostics and for the managed launcher
 body. The package maps `ndxserver` to a dedicated bootstrap entrypoint that sets

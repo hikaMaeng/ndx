@@ -23,6 +23,7 @@ import {
   interactiveHelp,
   printWelcomeLogo,
 } from "./session-client.js";
+import { waitForShutdown } from "./lifetime.js";
 import {
   canConnect,
   detachedManagedServerLaunch,
@@ -323,6 +324,9 @@ async function runServer(options: {
   console.error(`[session-server] ${address.url}`);
   if (address.dashboardUrl !== undefined) {
     console.error(`[dashboard] ${address.dashboardUrl}`);
+  }
+  if (process.env.NDX_MANAGED_SERVER === "1") {
+    console.error("[server] managed lifetime active; stop with ndxserver stop");
   }
   await Promise.race([waitForShutdown(), dashboardExit]);
   await server.close();
@@ -691,20 +695,6 @@ async function listen(
     dashboard.port,
     dashboard.host,
   );
-}
-
-async function waitForShutdown(): Promise<void> {
-  if (process.env.NDX_MANAGED_SERVER === "1") {
-    await new Promise<void>((resolve) => {
-      process.on("SIGINT", () => undefined);
-      process.once("SIGTERM", resolve);
-    });
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    process.once("SIGINT", resolve);
-    process.once("SIGTERM", resolve);
-  });
 }
 
 function createClient(mock: boolean, config: NdxConfig): ModelClient {

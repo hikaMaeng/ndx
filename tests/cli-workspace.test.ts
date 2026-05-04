@@ -19,6 +19,7 @@ import {
   normalizeSocketUrl,
   probeManagedServer,
 } from "../src/cli/workspace.js";
+import { managedServerSignalNames } from "../src/cli/lifetime.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
@@ -187,6 +188,15 @@ test("managed server launch uses direct detached Node trigger on Windows", () =>
     launch.diagnostic.hostLogPath?.endsWith("ndx-managed-server-host.log"),
     true,
   );
+});
+
+test("managed server lifetime ignores terminal shutdown signals", () => {
+  assert.deepEqual(managedServerSignalNames(), [
+    "SIGINT",
+    "SIGTERM",
+    "SIGHUP",
+    "SIGBREAK",
+  ]);
 });
 
 test("package exposes a dedicated ndxserver bootstrap binary", () => {

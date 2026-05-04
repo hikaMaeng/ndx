@@ -36,10 +36,11 @@ current Node entrypoint directly as a hidden detached process and captures
 stdout/stderr in `%TEMP%\ndx-managed-server-host.log` when possible. The
 published `ndxserver` bin uses a dedicated bootstrap so Windows npm shims do not
 have to preserve the original command name in `process.argv[1]`. Managed
-servers ignore console `SIGINT` so leaving a client with Ctrl+C does not stop
-the background server. The CLI also prints detached launcher selection, command
-metadata, server args, spawned pid, readiness probe attempts, failing stage, and
-last error. Inability to write logs does not block server startup.
+servers ignore terminal shutdown signals, including `SIGINT`, `SIGTERM`,
+`SIGHUP`, and `SIGBREAK`, so leaving a client does not stop the background
+server. The CLI also prints detached launcher selection, command metadata,
+server args, spawned pid, readiness probe attempts, failing stage, and last
+error. Inability to write logs does not block server startup.
 
 Stop the managed server explicitly:
 
@@ -64,7 +65,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.25",
+  "version": "0.1.26",
   "model": "local-model",
   "providers": {
     "local": {

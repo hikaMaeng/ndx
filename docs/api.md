@@ -17,8 +17,9 @@ ndx --mock [--cwd PATH] [prompt]
   unreachable, then connects to it.
 - On Windows, plain `ndxserver` starts or verifies a background managed server;
   `ndxserver serve` runs the foreground server body.
-- `ndxserver stop` calls the dashboard exit endpoint. It defaults to
-  `127.0.0.1:45124` unless `--dashboard-listen` is supplied.
+- `ndxserver stop` calls the dashboard exit endpoint and waits for the socket
+  endpoint to become unreachable. It defaults to `127.0.0.1:45124` unless
+  `--dashboard-listen` is supplied.
 - `--mock` uses the deterministic mock model and does not require provider
   credentials.
 - `--cwd` sets the server/session working directory.

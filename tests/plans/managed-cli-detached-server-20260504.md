@@ -48,7 +48,8 @@ an already-running server.
 - The package maps `ndxserver` to a dedicated bootstrap entrypoint so Windows
   npm shims do not have to preserve the original binary name.
 - Managed launchers set `NDX_MANAGED_SERVER=1`, and managed server mode ignores
-  `SIGINT` so client Ctrl+C does not stop the background server.
+  `SIGINT`, `SIGTERM`, `SIGHUP`, and `SIGBREAK` so client exit does not stop
+  the background server.
 - `ndxserver stop` requests dashboard `/api/exit` and waits for the WebSocket
   endpoint to become unreachable.
 - CLI startup logs include launcher type, detached command metadata, server

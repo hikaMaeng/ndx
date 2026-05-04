@@ -30,8 +30,9 @@ When no reachable server is supplied, the CLI starts a detached local
 server for the current folder, then connects to it. On Windows, plain
 `ndxserver` is also a background server trigger; use `ndxserver serve` for a
 foreground server terminal. The server continues running after the CLI exits
-until `ndxserver stop` is run or the dashboard exit action is used. Docker is
-used only for workspace-bound external tool and MCP execution.
+and ignores terminal shutdown signals until `ndxserver stop` is run or the
+dashboard exit action is used. Docker is used only for workspace-bound external
+tool and MCP execution.
 
 ## Verification
 
