@@ -191,7 +191,19 @@ export async function probeManagedServer(
 
 function describeError(error: unknown): string {
   if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
+    const parts = [`${error.name}: ${error.message}`];
+    const code = (error as { code?: unknown }).code;
+    if (code !== undefined) {
+      parts.push(`code=${String(code)}`);
+    }
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause !== undefined) {
+      parts.push(`cause=${String(cause)}`);
+    }
+    if (error.stack !== undefined) {
+      parts.push(error.stack.split(/\r?\n/).slice(1, 3).join(" | ").trim());
+    }
+    return parts.filter((part) => part.length > 0).join("; ");
   }
   return String(error);
 }
@@ -246,15 +258,23 @@ export function detachedManagedServerLaunch(
       "$json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload))",
       "$config = $json | ConvertFrom-Json",
       "$ErrorActionPreference = 'Stop'",
-      "function L($message) {",
-      "$line = '[' + (Get-Date).ToString('o') + '] ' + $message",
+      "function SelectLogPath {",
       "foreach ($path in @($config.logPaths)) {",
       "try {",
       "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null",
-      "Add-Content -LiteralPath $path -Value $line",
-      "return",
+      "Add-Content -LiteralPath $path -Value ('[' + (Get-Date).ToString('o') + '] selected managed ndx log path')",
+      "return $path",
       "} catch { }",
       "}",
+      "return $null",
+      "}",
+      "$logPath = SelectLogPath",
+      "function L($message) {",
+      "if ($null -eq $logPath) { return }",
+      "$line = '[' + (Get-Date).ToString('o') + '] ' + $message",
+      "try {",
+      "Add-Content -LiteralPath $logPath -Value $line",
+      "} catch { }",
       "}",
       "L 'starting managed ndx server'",
       "L ('cwd=' + $config.cwd)",
@@ -265,7 +285,11 @@ export function detachedManagedServerLaunch(
       "L ('set-location ok: ' + (Get-Location).Path)",
       "$argv = @($config.args | ForEach-Object { [string]$_ })",
       "L 'invoking managed ndx server process body'",
+      "if ($null -eq $logPath) {",
       "& $config.exe @argv",
+      "} else {",
+      "& $config.exe @argv *>> $logPath",
+      "}",
       "$code = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }",
       "L ('managed ndx server exited: ' + $code)",
       "exit $code",

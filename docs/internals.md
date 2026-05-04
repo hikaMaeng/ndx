@@ -60,10 +60,12 @@ current Node entrypoint directly. The launcher only appends lifecycle
 diagnostics to `~/.ndx/system/logs/managed-server.log` when that path is
 writable, falling back to the user temp directory as
 `ndx-managed-server.log`; diagnostic write failures and server stdout/stderr
-logging do not gate server execution. macOS launches the current Node entrypoint
-through `nohup` as a user background process. Linux launches through `setsid`
-when available, falling back to `nohup`. Unknown platforms use direct detached
-Node spawn.
+logging do not gate server execution. When a writable diagnostic path is
+selected, Windows server stdout/stderr is appended there and CLI timeout output
+prints the diagnostic tail. macOS launches the current Node entrypoint through
+`nohup` as a user background process. Linux launches through `setsid` when
+available, falling back to `nohup`. Unknown platforms use direct detached Node
+spawn.
 
 ## Tools
 

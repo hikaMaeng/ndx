@@ -50,6 +50,8 @@ an already-running server.
 - CLI startup logs include launcher type, detached command metadata, server
   args, spawned pid, readiness attempt count, failed probe stage, and last probe
   error.
+- Timeout diagnostics include launcher PID status and readable managed log
+  tails.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 

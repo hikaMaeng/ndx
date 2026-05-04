@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
@@ -402,11 +402,17 @@ async function startDetachedManagedServer(
     throw new Error("failed to start detached ndx server process");
   }
   console.error(`[server] detached process spawned: pid=${child.pid}`);
-  await waitForManagedServer(socketUrl);
+  await waitForManagedServer(socketUrl, {
+    launcherPid: child.pid,
+    logPaths: launch.diagnostic.logPaths,
+  });
   return socketUrl;
 }
 
-async function waitForManagedServer(socketUrl: string): Promise<void> {
+async function waitForManagedServer(
+  socketUrl: string,
+  diagnostics: { launcherPid: number; logPaths: string[] },
+): Promise<void> {
   const startedAt = Date.now();
   const timeoutMs = 10_000;
   let attempts = 0;
@@ -425,20 +431,58 @@ async function waitForManagedServer(socketUrl: string): Promise<void> {
     }
     const elapsed = Date.now() - startedAt;
     if (attempts === 1 || elapsed - lastLogAt >= 1_000) {
+      const launcherState = processExists(diagnostics.launcherPid)
+        ? "alive"
+        : "not-running";
       console.error(
         `[server] waiting for detached server: elapsed=${elapsed}ms attempt=${attempts} stage=${probe.stage}${
           probe.error === undefined ? "" : ` error=${probe.error}`
-        }`,
+        } launcherPid=${diagnostics.launcherPid} launcher=${launcherState}`,
       );
       lastLogAt = elapsed;
     }
     await delay(100);
   }
+  printManagedServerLogTails(diagnostics.logPaths);
   throw new Error(
     `timed out waiting for detached ndx server: ${socketUrl}; attempts=${attempts}; lastStage=${lastProbe?.stage ?? "none"}${
       lastProbe?.error === undefined ? "" : `; lastError=${lastProbe.error}`
     }`,
   );
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function printManagedServerLogTails(logPaths: string[]): void {
+  for (const logPath of logPaths) {
+    if (!existsSync(logPath)) {
+      console.error(`[server] diagnostic log not found: ${logPath}`);
+      continue;
+    }
+    try {
+      const content = readFileSync(logPath, "utf8");
+      const lines = content.trimEnd().split(/\r?\n/).slice(-80);
+      console.error(`[server] diagnostic log tail: ${logPath}`);
+      for (const line of lines) {
+        console.error(`[server-log] ${line}`);
+      }
+    } catch (error) {
+      console.error(
+        `[server] failed to read diagnostic log ${logPath}: ${
+          error instanceof Error
+            ? `${error.name}: ${error.message}`
+            : String(error)
+        }`,
+      );
+    }
+  }
 }
 
 function delay(ms: number): Promise<void> {

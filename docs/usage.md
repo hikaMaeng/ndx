@@ -35,8 +35,9 @@ Windows, launcher lifecycle diagnostics are appended on a best-effort basis to
 `%TEMP%\ndx-managed-server.log` if the primary path is not writable. The CLI
 also prints detached launcher selection, command metadata, server args, spawned
 pid, readiness probe attempts, failing stage, and last error. Inability to write
-logs does not block server startup, and the server process itself is not started
-behind log redirection.
+logs does not block server startup. When a writable diagnostic path exists, the
+server body stdout/stderr is appended to that path and the CLI prints its tail
+on startup timeout.
 
 Run the server explicitly when you want to own its terminal:
 
@@ -55,7 +56,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.20",
+  "version": "0.1.21",
   "model": "local-model",
   "providers": {
     "local": {
