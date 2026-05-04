@@ -141,7 +141,11 @@ test("managed server attaches to the requested socket before Docker fallback", a
   }
 });
 
-test("managed server launch uses encoded PowerShell host on Windows", () => {
+test("managed server launch uses direct detached Node trigger on Windows", () => {
+  const previousTemp = process.env.TEMP;
+  const previousTmp = process.env.TMP;
+  process.env.TEMP = "C:\\Users\\hika0\\AppData\\Local\\Temp";
+  delete process.env.TMP;
   const launch = detachedManagedServerLaunch({
     cwd: "F:\\dev\\test1",
     entrypoint:
@@ -152,48 +156,19 @@ test("managed server launch uses encoded PowerShell host on Windows", () => {
     platform: "win32",
   });
 
-  assert.equal(launch.command.endsWith("powershell.exe"), true);
-  assert.equal(launch.detached, true);
-  assert.equal(launch.windowsHide, true);
-  assert.equal(launch.args.includes("-NoProfile"), true);
-  assert.equal(launch.args.includes("-EncodedCommand"), true);
+  if (previousTemp === undefined) {
+    delete process.env.TEMP;
+  } else {
+    process.env.TEMP = previousTemp;
+  }
+  if (previousTmp === undefined) {
+    delete process.env.TMP;
+  } else {
+    process.env.TMP = previousTmp;
+  }
 
-  const encodedCommand =
-    launch.args[launch.args.indexOf("-EncodedCommand") + 1];
-  assert.equal(typeof encodedCommand, "string");
-  const script = Buffer.from(encodedCommand, "base64").toString("utf16le");
-
-  assert.equal(script.includes("ConvertFrom-Json"), true);
-  assert.equal(script.includes("function SelectLogPath"), true);
-  assert.equal(script.includes("selected managed ndx log path"), true);
-  assert.equal(script.includes("function L($message)"), true);
-  assert.equal(script.includes("} catch { }"), true);
-  assert.equal(script.includes("foreach ($path in @($config.logPaths))"), true);
-  assert.equal(script.includes("cwd="), true);
-  assert.equal(script.includes("exe="), true);
-  assert.equal(script.includes("args="), true);
-  assert.equal(script.includes("set-location ok"), true);
-  assert.equal(
-    script.includes("invoking managed ndx server process body"),
-    true,
-  );
-  assert.equal(
-    script.includes("$argv = @($config.args | ForEach-Object"),
-    true,
-  );
-  assert.equal(script.includes("& $config.exe @argv"), true);
-  assert.equal(script.includes("& $config.exe @argv *>> $logPath"), true);
-  assert.equal(script.includes("*>> $config.logPath"), false);
-  assert.equal(script.includes("managed ndx server failed"), true);
-
-  const payloadMatch = /\$payload = '([^']+)'/.exec(script);
-  assert.notEqual(payloadMatch, null);
-  const payload = JSON.parse(
-    Buffer.from(payloadMatch?.[1] ?? "", "base64").toString("utf8"),
-  ) as { cwd: string; exe: string; args: string[]; logPaths: string[] };
-  assert.equal(payload.exe, "C:\\Program Files\\nodejs\\node.exe");
-  assert.equal(payload.cwd, "F:\\dev\\test1");
-  assert.deepEqual(payload.args, [
+  assert.equal(launch.command, "C:\\Program Files\\nodejs\\node.exe");
+  assert.deepEqual(launch.args, [
     "C:\\Users\\hika0\\AppData\\Roaming\\npm\\node_modules\\@neurondev\\ndx\\dist\\src\\cli\\main.js",
     "serve",
     "--cwd",
@@ -203,10 +178,10 @@ test("managed server launch uses encoded PowerShell host on Windows", () => {
     "--dashboard-listen",
     "127.0.0.1:45124",
   ]);
-  assert.equal(payload.logPaths[0]?.endsWith("managed-server.log"), true);
-  assert.equal(payload.logPaths[1]?.endsWith("ndx-managed-server.log"), true);
-  assert.equal(launch.diagnostic.launcher, "windows-powershell-hidden");
-  assert.equal(launch.diagnostic.logPaths.length, 2);
+  assert.equal(launch.detached, true);
+  assert.equal(launch.windowsHide, true);
+  assert.equal(launch.diagnostic.launcher, "windows-service-trigger-node");
+  assert.equal(launch.diagnostic.logPaths.length, 0);
   assert.equal(
     launch.diagnostic.hostLogPath?.endsWith("ndx-managed-server-host.log"),
     true,

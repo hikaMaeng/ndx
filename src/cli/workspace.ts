@@ -235,100 +235,20 @@ export function detachedManagedServerLaunch(
     serverArgs,
   };
   if (platform === "win32") {
-    const logPath = join(
-      NDX_DEFAULTS.globalDir,
-      NDX_DEFAULTS.systemDir,
-      "logs",
-      "managed-server.log",
-    );
-    const fallbackLogPath = join(
-      process.env.TEMP ?? process.env.TMP ?? options.cwd,
-      "ndx-managed-server.log",
-    );
     const hostLogPath = join(
       process.env.TEMP ?? process.env.TMP ?? options.cwd,
       "ndx-managed-server-host.log",
     );
-    const payload = Buffer.from(
-      JSON.stringify({
-        cwd: options.cwd,
-        exe: execPath,
-        args: serverArgs,
-        logPaths: [logPath, fallbackLogPath],
-      }),
-      "utf8",
-    ).toString("base64");
-    const script = [
-      `$payload = '${payload}'`,
-      "$json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload))",
-      "$config = $json | ConvertFrom-Json",
-      "$ErrorActionPreference = 'Stop'",
-      "function SelectLogPath {",
-      "foreach ($path in @($config.logPaths)) {",
-      "try {",
-      "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null",
-      "Add-Content -LiteralPath $path -Value ('[' + (Get-Date).ToString('o') + '] selected managed ndx log path')",
-      "return $path",
-      "} catch { }",
-      "}",
-      "return $null",
-      "}",
-      "$logPath = SelectLogPath",
-      "function L($message) {",
-      "if ($null -eq $logPath) { return }",
-      "$line = '[' + (Get-Date).ToString('o') + '] ' + $message",
-      "try {",
-      "Add-Content -LiteralPath $logPath -Value $line",
-      "} catch { }",
-      "}",
-      "L 'starting managed ndx server'",
-      "L ('cwd=' + $config.cwd)",
-      "L ('exe=' + $config.exe)",
-      "L ('args=' + (($config.args | ForEach-Object { [string]$_ }) -join ' '))",
-      "try {",
-      "Set-Location -LiteralPath $config.cwd",
-      "L ('set-location ok: ' + (Get-Location).Path)",
-      "$argv = @($config.args | ForEach-Object { [string]$_ })",
-      "L 'invoking managed ndx server process body'",
-      "if ($null -eq $logPath) {",
-      "& $config.exe @argv",
-      "} else {",
-      "& $config.exe @argv *>> $logPath",
-      "}",
-      "$code = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }",
-      "L ('managed ndx server exited: ' + $code)",
-      "exit $code",
-      "} catch {",
-      "L ('managed ndx server failed: ' + $_.Exception.Message)",
-      "L ('managed ndx server failure detail: ' + $_.InvocationInfo.PositionMessage)",
-      "exit 1",
-      "}",
-    ].join("; ");
     return {
-      command: process.env.SystemRoot
-        ? join(
-            process.env.SystemRoot,
-            "System32",
-            "WindowsPowerShell",
-            "v1.0",
-            "powershell.exe",
-          )
-        : "powershell.exe",
-      args: [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-EncodedCommand",
-        Buffer.from(script, "utf16le").toString("base64"),
-      ],
+      command: execPath,
+      args: serverArgs,
       cwd: options.cwd,
       detached: true,
       windowsHide: true,
       diagnostic: {
         ...diagnosticBase,
-        launcher: "windows-powershell-hidden",
-        logPaths: [logPath, fallbackLogPath],
+        launcher: "windows-service-trigger-node",
+        logPaths: [],
         hostLogPath,
       },
     };

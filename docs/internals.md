@@ -55,18 +55,14 @@ managed server is not owned by the CLI object graph and is not closed by CLI
 cleanup.
 
 Managed startup chooses the background launcher by OS instead of relying on a
-single `spawn` contract. Windows launches a hidden PowerShell host that runs the
-current Node entrypoint directly. The launcher only appends lifecycle
-diagnostics to `~/.ndx/system/logs/managed-server.log` when that path is
-writable, falling back to the user temp directory as
-`ndx-managed-server.log`; diagnostic write failures and server stdout/stderr
-logging do not gate server execution. When a writable diagnostic path is
-selected, Windows server stdout/stderr is appended there and CLI timeout output
-prints the diagnostic tail. The parent CLI also redirects the hidden
-PowerShell host stdout/stderr to `ndx-managed-server-host.log` when it can open
-that temp file. macOS launches the current Node entrypoint through `nohup` as a
-user background process. Linux launches through `setsid` when available,
-falling back to `nohup`. Unknown platforms use direct detached Node spawn.
+single `spawn` contract. Windows launches the current Node entrypoint directly
+as a hidden detached process and redirects stdout/stderr to
+`ndx-managed-server-host.log` when it can open that temp file. Plain
+`ndxserver` on Windows is a background server trigger; `ndxserver serve` keeps
+the foreground server mode for explicit diagnostics and for the managed launcher
+body. macOS launches the current Node entrypoint through `nohup` as a user
+background process. Linux launches through `setsid` when available, falling back
+to `nohup`. Unknown platforms use direct detached Node spawn.
 
 ## Tools
 

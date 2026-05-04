@@ -30,21 +30,18 @@ WebSocket endpoint, prints server info, logs in, and offers session selection.
 Exiting the CLI does not stop that managed server; stop it with a process
 signal or the dashboard `Exit` action. Windows, macOS, and Linux use separate
 background launcher paths so CLI exit is not the server lifetime owner. On
-Windows, launcher lifecycle diagnostics are appended on a best-effort basis to
-`%USERPROFILE%\.ndx\system\logs\managed-server.log`, then to
-`%TEMP%\ndx-managed-server.log` if the primary path is not writable. The CLI
+Windows, plain `ndxserver` is a background server trigger; use `ndxserver serve`
+only when you explicitly want a foreground server terminal. Windows starts the
+current Node entrypoint directly as a hidden detached process and captures
+stdout/stderr in `%TEMP%\ndx-managed-server-host.log` when possible. The CLI
 also prints detached launcher selection, command metadata, server args, spawned
-pid, readiness probe attempts, failing stage, and last error. The parent CLI
-captures the PowerShell host stdout/stderr in
-`%TEMP%\ndx-managed-server-host.log` when possible. Inability to write logs does
-not block server startup. When a writable diagnostic path exists, the server
-body stdout/stderr is appended to that path and the CLI prints diagnostic tails
-on startup timeout.
+pid, readiness probe attempts, failing stage, and last error. Inability to write
+logs does not block server startup.
 
 Run the server explicitly when you want to own its terminal:
 
 ```bash
-ndxserver --cwd /path/to/project --listen 127.0.0.1:45123 --dashboard-listen 127.0.0.1:45124
+ndxserver serve --cwd /path/to/project --listen 127.0.0.1:45123 --dashboard-listen 127.0.0.1:45124
 ```
 
 ## Settings
@@ -58,7 +55,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.22",
+  "version": "0.1.23",
   "model": "local-model",
   "providers": {
     "local": {

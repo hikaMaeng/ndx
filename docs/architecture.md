@@ -35,17 +35,16 @@
 
 ## Process Lifetime
 
-Managed `ndx` startup uses the same server mode as `ndxserver`. The CLI process
-only performs settings repair, detached server spawn, readiness polling, login,
-and session interaction. CLI exit closes the client socket but does not close
-the server process. The launcher is OS-specific: Windows uses a hidden
-PowerShell host with best-effort managed-server diagnostics that never wrap the
-server stdout/stderr stream and falls back to a temp diagnostic log, macOS uses
-`nohup`, Linux uses `setsid` with `nohup` fallback, and unknown platforms use
-direct detached Node spawn. Readiness polling reports the failed stage and last
-error for connect, login, initialize, or server identity mismatch. On timeout,
-the CLI prints launcher PID status and tails any managed diagnostic logs and
-launcher host logs it can read.
+Managed `ndx` startup uses the same server body as `ndxserver serve`. The CLI
+process only performs settings repair, detached server spawn, readiness polling,
+login, and session interaction. CLI exit closes the client socket but does not
+close the server process. The launcher is OS-specific: Windows uses plain
+`ndxserver` as a background server trigger that directly detaches the current
+Node entrypoint with hidden-window stdio capture, macOS uses `nohup`, Linux uses
+`setsid` with `nohup` fallback, and unknown platforms use direct detached Node
+spawn. Readiness polling reports the failed stage and last error for connect,
+login, initialize, or server identity mismatch. On timeout, the CLI prints
+launcher PID status and tails readable launcher logs.
 
 ## Change Boundaries
 

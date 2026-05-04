@@ -40,7 +40,7 @@ import type { LoadedConfig, ModelClient, NdxConfig } from "../shared/types.js";
 interface CliArgs {
   cwd: string;
   mock: boolean;
-  mode: "run" | "serve" | "connect";
+  mode: "run" | "serve" | "connect" | "manage-server";
   listen: string;
   dashboardListen: string;
   connectUrl?: string;
@@ -75,6 +75,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (args.mode === "manage-server") {
+    await runManagedServerTrigger(args);
+    return;
+  }
+
   const { config, sources } = await loadConfigForCli(args);
   if (sources.length > 0) {
     console.error(`[config] ${sources.join(", ")}`);
@@ -106,6 +111,23 @@ async function main(): Promise<void> {
     await session.startSession();
     await session.runPrompt(prompt);
   });
+}
+
+async function runManagedServerTrigger(args: CliArgs): Promise<void> {
+  const state = await ensureManagedServer({
+    cwd: args.cwd,
+    serverUrl: args.serverUrl,
+    print: (message) => console.error(message),
+  });
+  if (state.reachable) {
+    console.error(`[session-server] ${state.socketUrl}`);
+    console.error(`[dashboard] ${state.dashboardUrl}`);
+    return;
+  }
+  await loadConfigForCli(args);
+  const socketUrl = await startDetachedManagedServer(args, state.socketUrl);
+  console.error(`[session-server] ${socketUrl}`);
+  console.error(`[dashboard] ${state.dashboardUrl}`);
 }
 
 async function loadConfigForCli(args: CliArgs): Promise<LoadedConfig> {
@@ -652,7 +674,12 @@ function parseArgs(argv: string[], invokedAsServer = false): CliArgs {
   let mock = false;
   let help = false;
   let version = false;
-  let mode: CliArgs["mode"] = invokedAsServer ? "serve" : "run";
+  let mode: CliArgs["mode"] =
+    invokedAsServer && process.platform === "win32"
+      ? "manage-server"
+      : invokedAsServer
+        ? "serve"
+        : "run";
   let listenAddress = `${NDX_DEFAULTS.host}:0`;
   let dashboardListenAddress = `${NDX_DEFAULTS.host}:0`;
   let connectUrl: string | undefined;

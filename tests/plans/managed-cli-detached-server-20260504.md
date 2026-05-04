@@ -42,18 +42,16 @@ an already-running server.
   `NDX_DASHBOARD_PORT` is unset.
 - CLI managed fallback spawns server mode instead of embedding a
   `SessionServer` that closes during CLI cleanup.
-- Windows launcher uses an encoded hidden PowerShell host, writes
-  `managed-server.log` on a best-effort basis with `%TEMP%` fallback, and
-  starts the server without redirecting server stdout/stderr to that diagnostic
-  path; macOS launcher uses `nohup`; Linux launcher uses `setsid` with `nohup`
-  fallback.
+- Windows launcher uses a direct hidden detached Node process and writes
+  stdout/stderr to `%TEMP%\ndx-managed-server-host.log` when possible; macOS
+  launcher uses `nohup`; Linux launcher uses `setsid` with `nohup` fallback.
 - CLI startup logs include launcher type, detached command metadata, server
   args, spawned pid, readiness attempt count, failed probe stage, and last probe
   error.
 - Timeout diagnostics include launcher PID status and readable managed log
   tails.
-- Windows timeout diagnostics also include the parent-captured PowerShell host
-  log at `%TEMP%\ndx-managed-server-host.log` when that file can be opened.
+- Windows timeout diagnostics also include the host log at
+  `%TEMP%\ndx-managed-server-host.log` when that file can be opened.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 
