@@ -52,6 +52,8 @@ an already-running server.
   error.
 - Timeout diagnostics include launcher PID status and readable managed log
   tails.
+- Windows timeout diagnostics also include the parent-captured PowerShell host
+  log at `%TEMP%\ndx-managed-server-host.log` when that file can be opened.
 - Deploy completes build, tests, compose cleanup, sandbox rebuild, sandbox
   write verification, and compose teardown.
 

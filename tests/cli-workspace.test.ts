@@ -207,6 +207,10 @@ test("managed server launch uses encoded PowerShell host on Windows", () => {
   assert.equal(payload.logPaths[1]?.endsWith("ndx-managed-server.log"), true);
   assert.equal(launch.diagnostic.launcher, "windows-powershell-hidden");
   assert.equal(launch.diagnostic.logPaths.length, 2);
+  assert.equal(
+    launch.diagnostic.hostLogPath?.endsWith("ndx-managed-server-host.log"),
+    true,
+  );
 });
 
 test("managed server launch uses nohup user background mode on macOS", () => {

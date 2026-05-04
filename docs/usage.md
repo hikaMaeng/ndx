@@ -34,9 +34,11 @@ Windows, launcher lifecycle diagnostics are appended on a best-effort basis to
 `%USERPROFILE%\.ndx\system\logs\managed-server.log`, then to
 `%TEMP%\ndx-managed-server.log` if the primary path is not writable. The CLI
 also prints detached launcher selection, command metadata, server args, spawned
-pid, readiness probe attempts, failing stage, and last error. Inability to write
-logs does not block server startup. When a writable diagnostic path exists, the
-server body stdout/stderr is appended to that path and the CLI prints its tail
+pid, readiness probe attempts, failing stage, and last error. The parent CLI
+captures the PowerShell host stdout/stderr in
+`%TEMP%\ndx-managed-server-host.log` when possible. Inability to write logs does
+not block server startup. When a writable diagnostic path exists, the server
+body stdout/stderr is appended to that path and the CLI prints diagnostic tails
 on startup timeout.
 
 Run the server explicitly when you want to own its terminal:
@@ -56,7 +58,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.21",
+  "version": "0.1.22",
   "model": "local-model",
   "providers": {
     "local": {

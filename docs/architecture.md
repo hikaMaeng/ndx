@@ -44,8 +44,8 @@ server stdout/stderr stream and falls back to a temp diagnostic log, macOS uses
 `nohup`, Linux uses `setsid` with `nohup` fallback, and unknown platforms use
 direct detached Node spawn. Readiness polling reports the failed stage and last
 error for connect, login, initialize, or server identity mismatch. On timeout,
-the CLI prints launcher PID status and tails any managed diagnostic logs it can
-read.
+the CLI prints launcher PID status and tails any managed diagnostic logs and
+launcher host logs it can read.
 
 ## Change Boundaries
 

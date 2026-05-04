@@ -62,10 +62,11 @@ writable, falling back to the user temp directory as
 `ndx-managed-server.log`; diagnostic write failures and server stdout/stderr
 logging do not gate server execution. When a writable diagnostic path is
 selected, Windows server stdout/stderr is appended there and CLI timeout output
-prints the diagnostic tail. macOS launches the current Node entrypoint through
-`nohup` as a user background process. Linux launches through `setsid` when
-available, falling back to `nohup`. Unknown platforms use direct detached Node
-spawn.
+prints the diagnostic tail. The parent CLI also redirects the hidden
+PowerShell host stdout/stderr to `ndx-managed-server-host.log` when it can open
+that temp file. macOS launches the current Node entrypoint through `nohup` as a
+user background process. Linux launches through `setsid` when available,
+falling back to `nohup`. Unknown platforms use direct detached Node spawn.
 
 ## Tools
 

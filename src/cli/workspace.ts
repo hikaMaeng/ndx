@@ -47,6 +47,7 @@ export interface DetachedManagedServerDiagnostic {
   execPath: string;
   serverArgs: string[];
   logPaths: string[];
+  hostLogPath?: string;
 }
 
 export interface ConnectionProbeResult {
@@ -244,6 +245,10 @@ export function detachedManagedServerLaunch(
       process.env.TEMP ?? process.env.TMP ?? options.cwd,
       "ndx-managed-server.log",
     );
+    const hostLogPath = join(
+      process.env.TEMP ?? process.env.TMP ?? options.cwd,
+      "ndx-managed-server-host.log",
+    );
     const payload = Buffer.from(
       JSON.stringify({
         cwd: options.cwd,
@@ -324,6 +329,7 @@ export function detachedManagedServerLaunch(
         ...diagnosticBase,
         launcher: "windows-powershell-hidden",
         logPaths: [logPath, fallbackLogPath],
+        hostLogPath,
       },
     };
   }

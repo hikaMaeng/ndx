@@ -1,9 +1,15 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+} from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { NDX_DEFAULTS } from "../config/defaults.js";
 import { readPackageVersion } from "../config/package-version.js";
@@ -391,12 +397,22 @@ async function startDetachedManagedServer(
       )}`,
     );
   }
+  if (launch.diagnostic.hostLogPath !== undefined) {
+    console.error(
+      `[server] detached host log: ${launch.diagnostic.hostLogPath}`,
+    );
+  }
+  const hostLog = openOptionalAppendLog(launch.diagnostic.hostLogPath);
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     detached: launch.detached,
-    stdio: "ignore",
+    stdio:
+      hostLog === undefined ? "ignore" : ["ignore", hostLog.fd, hostLog.fd],
     windowsHide: launch.windowsHide,
   });
+  if (hostLog !== undefined) {
+    closeSync(hostLog.fd);
+  }
   child.unref();
   if (child.pid === undefined) {
     throw new Error("failed to start detached ndx server process");
@@ -404,9 +420,41 @@ async function startDetachedManagedServer(
   console.error(`[server] detached process spawned: pid=${child.pid}`);
   await waitForManagedServer(socketUrl, {
     launcherPid: child.pid,
-    logPaths: launch.diagnostic.logPaths,
+    logPaths: diagnosticLogPaths(launch.diagnostic),
   });
   return socketUrl;
+}
+
+function diagnosticLogPaths(diagnostic: {
+  logPaths: string[];
+  hostLogPath?: string;
+}): string[] {
+  return [
+    ...(diagnostic.hostLogPath === undefined ? [] : [diagnostic.hostLogPath]),
+    ...diagnostic.logPaths,
+  ];
+}
+
+function openOptionalAppendLog(
+  logPath: string | undefined,
+): { fd: number } | undefined {
+  if (logPath === undefined) {
+    return undefined;
+  }
+  try {
+    mkdirSync(dirname(logPath), { recursive: true });
+    const fd = openSync(logPath, "a");
+    return { fd };
+  } catch (error) {
+    console.error(
+      `[server] failed to open detached host log ${logPath}: ${
+        error instanceof Error
+          ? `${error.name}: ${error.message}`
+          : String(error)
+      }`,
+    );
+    return undefined;
+  }
 }
 
 async function waitForManagedServer(
