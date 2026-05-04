@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  defaultLogin,
-  performSocialDeviceLogin,
-  type LoginStore,
-  type StoredLogin,
-} from "./auth.js";
+import { defaultLogin, type LoginStore, type StoredLogin } from "./auth.js";
 import type { SessionNotification } from "../session/client.js";
 import type {
   RuntimeEventMsg,
@@ -123,6 +118,7 @@ export class CliSessionController {
   private deletedSessionMessage: string | undefined;
   private printedBootstrapGlobalDir: string | undefined;
   private printedServerInfo = false;
+  private readonly explicitUser: string | undefined;
 
   constructor(options: CliSessionRuntime) {
     this.client = options.client;
@@ -132,13 +128,11 @@ export class CliSessionController {
     this.question = options.question;
     this.clientId = options.clientId ?? randomUUID();
     this.loginStore = options.loginStore;
+    this.explicitUser = options.user;
     this.login =
-      options.loginStore?.load() ??
-      (options.user === undefined
+      options.user === undefined
         ? defaultLogin()
-        : options.user === "defaultUser"
-          ? defaultLogin()
-          : { kind: "password", username: options.user, password: "" });
+        : { kind: "local", username: options.user };
     this.client.onNotification((notification) => {
       if (notification.method !== "session/deleted") {
         return;
@@ -162,6 +156,7 @@ export class CliSessionController {
 
   async initialize(): Promise<void> {
     await this.printPublicServerInfo();
+    await this.loadPreviousLogin();
     await this.selectStartupLogin();
     await this.loginWithStoredIdentity(this.login);
     this.initializeResult =
@@ -312,23 +307,26 @@ export class CliSessionController {
   }
 
   private async loginWithStoredIdentity(login: StoredLogin): Promise<void> {
-    if (login.kind === "social") {
-      await this.client.request("account/socialLogin", {
-        provider: login.provider,
-        subject: login.subject,
-        email: login.email,
-        displayName: login.displayName,
-        accessToken: login.accessToken,
-        refreshToken: login.refreshToken,
-        clientId: this.clientId,
-      });
-      return;
-    }
     await this.client.request("account/login", {
       username: login.username,
-      password: login.kind === "password" ? login.password : "",
       clientId: this.clientId,
     });
+  }
+
+  private async loadPreviousLogin(): Promise<void> {
+    if (this.explicitUser !== undefined) {
+      return;
+    }
+    try {
+      const previous = await this.client.request<{
+        username?: string;
+      } | null>("account/previous");
+      if (typeof previous?.username === "string") {
+        this.login = { kind: "local", username: previous.username };
+      }
+    } catch {
+      this.login = defaultLogin();
+    }
   }
 
   private async printPublicServerInfo(): Promise<void> {
@@ -359,26 +357,11 @@ export class CliSessionController {
       choices.find((choice) => choice.key === answer) ?? choices[0];
     if (selected.action === "previous" || selected.action === "default") {
       this.login = selected.login;
-      if (selected.action === "default") {
-        this.loginStore?.save(this.login);
-      }
       return;
     }
-    const social = await performSocialDeviceLogin("google", {
-      question: this.question,
-      print: this.print,
-    });
-    this.login = {
-      kind: "social",
-      provider: social.provider,
-      username: social.username,
-      subject: social.subject,
-      email: social.email,
-      displayName: social.displayName,
-      accessToken: social.accessToken,
-      refreshToken: social.refreshToken,
-    };
-    this.loginStore?.save(this.login);
+    const username = (await this.question("new user id> ")).trim();
+    await this.client.request("account/create", { username });
+    this.login = { kind: "local", username };
   }
 
   private printLoginStatus(login: StoredLogin): void {
@@ -393,32 +376,27 @@ export class CliSessionController {
     this.print(
       [
         "login",
-        "1. Google login",
-        "2. GitHub login",
+        "1. Create local user",
+        "2. Switch local user",
         "3. Keep current account",
-        "4. Switch to default user",
+        "4. Switch to defaultuser",
       ].join("\n"),
     );
     const answer = (await this.question("login> ")).trim();
-    if (answer === "1" || answer === "2") {
-      const provider = answer === "1" ? "google" : "github";
-      const social = await performSocialDeviceLogin(provider, {
-        question: this.question,
-        print: this.print,
-      });
-      const login: StoredLogin = {
-        kind: "social",
-        provider: social.provider,
-        username: social.username,
-        subject: social.subject,
-        email: social.email,
-        displayName: social.displayName,
-        accessToken: social.accessToken,
-        refreshToken: social.refreshToken,
-      };
+    if (answer === "1") {
+      const username = (await this.question("new user id> ")).trim();
+      await this.client.request("account/create", { username });
+      const login: StoredLogin = { kind: "local", username };
       await this.loginWithStoredIdentity(login);
       this.login = login;
-      this.loginStore?.save(login);
+      this.print(`logged in as ${login.username}`);
+      return;
+    }
+    if (answer === "2") {
+      const username = (await this.question("user id> ")).trim();
+      const login: StoredLogin = { kind: "local", username };
+      await this.loginWithStoredIdentity(login);
+      this.login = login;
       this.print(`logged in as ${login.username}`);
       return;
     }
@@ -426,8 +404,7 @@ export class CliSessionController {
       const login = defaultLogin();
       await this.loginWithStoredIdentity(login);
       this.login = login;
-      this.loginStore?.save(login);
-      this.print("logged in as defaultUser");
+      this.print("logged in as defaultuser");
       return;
     }
     this.print("kept current account");
@@ -555,7 +532,7 @@ export function interactiveHelp(): string {
     "  /events     Show recent runtime event types",
     "  /lite       Toggle lite context mode: /lite on|off",
     "  /compact    Summarize prior turns and restart context from the summary",
-    "  /login      Change Google, GitHub, current, or default user login",
+    "  /login      Create or switch local user login",
     "  /session    List sessions for this workspace",
     "  /restoreSession Restore a session by id or list number",
     "  /deleteSession  Delete a saved session for this workspace",
@@ -726,7 +703,7 @@ function formatBootstrap(bootstrap: NdxBootstrapReport | undefined): string {
 interface StartupLoginChoice {
   key: string;
   label: string;
-  action: "default" | "previous" | "google";
+  action: "default" | "previous" | "create";
   login: StoredLogin;
 }
 
@@ -735,12 +712,12 @@ function startupLoginChoices(login: StoredLogin): StartupLoginChoice[] {
   let key = 1;
   choices.push({
     key: String(key),
-    label: "Use default user (defaultUser)",
+    label: "Use default user (defaultuser)",
     action: "default",
     login: defaultLogin(),
   });
   key += 1;
-  if (login.kind !== "default") {
+  if (login.username !== "defaultuser") {
     choices.push({
       key: String(key),
       label: `Continue previous login (${describeLogin(login)})`,
@@ -751,8 +728,8 @@ function startupLoginChoices(login: StoredLogin): StartupLoginChoice[] {
   }
   choices.push({
     key: String(key),
-    label: "New Google login",
-    action: "google",
+    label: "Create local user",
+    action: "create",
     login,
   });
   return choices;
@@ -763,16 +740,6 @@ function formatStartupLoginChoice(choice: StartupLoginChoice): string {
 }
 
 function describeLogin(login: StoredLogin): string {
-  if (login.kind === "default") {
-    return "defaultUser";
-  }
-  if (login.kind === "social") {
-    const suffix =
-      login.displayName !== undefined || login.email !== undefined
-        ? ` ${[login.displayName, login.email].filter(Boolean).join(" ")}`
-        : "";
-    return `${login.username}${suffix}`;
-  }
   return login.username;
 }
 

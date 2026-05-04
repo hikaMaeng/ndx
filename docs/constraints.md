@@ -36,6 +36,19 @@
 - External tool audit records are written under
   `/home/.ndx/system/logs/tool-executions.jsonl` in the sandbox.
 
+## Local Accounts
+
+- Accounts are local SQLite rows in `users`; OAuth account creation is not a
+  supported login path.
+- Canonical account ids are lowercase ASCII letters and digits only.
+- Account creation takes only `username`; passwords, social tokens, deletion,
+  and password changes are outside the runtime contract.
+- `defaultuser` is protected and cannot be blocked or unblocked.
+- Blocked accounts cannot log in. Blocking the current account closes that
+  connected client session.
+- Previous-login selection is server-owned: the non-blocked account with the
+  greatest `lastlogin` wins.
+
 ## Dashboard Markup Contract
 
 The browser surface is the dashboard at `GET /` and `GET /dashboard`.

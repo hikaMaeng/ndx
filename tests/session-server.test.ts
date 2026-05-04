@@ -293,7 +293,7 @@ test("session server owns session events, subscribers, and SQLite persistence", 
     assert.equal(projection?.lastEventId !== undefined, true);
     const meta = readSqliteSessionMeta(persistenceDir, sessionId);
     assert.equal(meta?.sessionid, sessionId);
-    assert.equal(meta?.userid, "defaultUser");
+    assert.equal(meta?.userid, "defaultuser");
     assert.equal(meta?.projectid, readProjectId(root));
     assert.equal(meta?.path, root);
     assert.equal(meta?.islite, 0);
@@ -634,37 +634,75 @@ test("session server exposes account methods, client identity, and dashboard she
     const created = await client.request<{
       username: string;
     }>("account/create", {
-      username: "alice",
-      password: "secret",
+      username: "Alice1",
     });
-    assert.equal(created.username, "alice");
+    assert.equal(created.username, "alice1");
     const login = await client.request<{
       username: string;
       clientId: string;
       sessionRoot: string;
     }>("account/login", {
-      username: "alice",
-      password: "secret",
+      username: "ALICE1",
       clientId: "cli-run-1",
     });
     assert.deepEqual(login, {
-      username: "alice",
+      username: "alice1",
       clientId: "cli-run-1",
       sessionRoot: join(root, "data"),
     });
     const start = await client.request<{
       session: { user: string; clientIds: string[] };
     }>("session/start", { cwd: root });
-    assert.equal(start.session.user, "alice");
+    assert.equal(start.session.user, "alice1");
     assert.deepEqual(start.session.clientIds, ["cli-run-1"]);
-    const changed = await client.request<{
+    const previous = await client.request<{
       username: string;
-    }>("account/changePassword", {
-      username: "alice",
-      oldPassword: "secret",
-      newPassword: "changed",
+    }>("account/previous");
+    assert.equal(previous.username, "alice1");
+    await client.request("account/create", { username: "bob2" });
+    const blocked = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "blockuser",
+      args: "bob2",
     });
-    assert.equal(changed.username, "alice");
+    assert.equal(blocked.output, "blocked bob2");
+    await assert.rejects(
+      client.request("account/login", {
+        username: "bob2",
+        clientId: "cli-run-1",
+      }),
+      /account is blocked: bob2/,
+    );
+    const unblocked = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", {
+      name: "unblockuser",
+      args: "bob2",
+    });
+    assert.equal(unblocked.output, "unblocked bob2");
+    await assert.rejects(
+      client.request("command/execute", {
+        name: "blockuser",
+        args: "defaultuser",
+      }),
+      /defaultuser cannot be blocked/,
+    );
+    const currentBlocked = await client.request<{
+      handled: true;
+      action: string;
+      output: string;
+    }>("command/execute", {
+      name: "blockuser",
+      args: "alice1",
+    });
+    assert.equal(currentBlocked.action, "exit");
+    assert.equal(
+      currentBlocked.output,
+      "blocked alice1; current account session ended",
+    );
   } finally {
     client?.close();
     await server?.close();
@@ -696,15 +734,12 @@ test("dashboard session logs filter raw SQLite events and delete sessions", asyn
     client = await SessionClient.connect(address.url);
     await client.request("account/create", {
       username: "alice",
-      password: "secret",
     });
     await client.request("account/create", {
       username: "bob",
-      password: "secret",
     });
     await client.request("account/login", {
       username: "alice",
-      password: "secret",
       clientId: "dashboard-test-client",
     });
     const aliceA = await createPersistedSession(
@@ -719,7 +754,6 @@ test("dashboard session logs filter raw SQLite events and delete sessions", asyn
     );
     await client.request("account/login", {
       username: "bob",
-      password: "secret",
       clientId: "dashboard-test-client",
     });
     const bobB = await createPersistedSession(
@@ -882,70 +916,6 @@ test("dashboard reload re-reads settings and AGENTS sources", async () => {
   } finally {
     client?.close();
     await server?.close().catch(() => undefined);
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("session server creates social login accounts", async () => {
-  const root = mkdtempSync(join(tmpdir(), "ndx-session-social-"));
-  const globalDir = join(root, "home", ".ndx");
-  let server: SessionServer | undefined;
-  let client: SessionClient | undefined;
-  const previousFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(
-      JSON.stringify({
-        sub: "google-subject-1",
-        email: "user@example.test",
-        name: "Example User",
-      }),
-      {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      },
-    )) as typeof fetch;
-
-  try {
-    server = new SessionServer({
-      cwd: root,
-      config: {
-        ...baseConfig,
-        paths: { globalDir, dataDir: join(root, "data") },
-      },
-      sources: [join(globalDir, "settings.json")],
-      createClient: () => new MockModelClient(),
-    });
-    const address = await server.listen(0, "127.0.0.1");
-    client = await SessionClient.connect(address.url);
-    const login = await client.request<{
-      username: string;
-      clientId: string;
-      sessionRoot: string;
-      provider: string;
-      created: boolean;
-    }>("account/socialLogin", {
-      provider: "google",
-      subject: "google-subject-1",
-      accessToken: "token",
-      clientId: "social-client-1",
-    });
-
-    assert.deepEqual(login, {
-      username: "google:google-subject-1",
-      clientId: "social-client-1",
-      sessionRoot: join(root, "data"),
-      provider: "google",
-      created: true,
-    });
-    const start = await client.request<{
-      session: { user: string; clientIds: string[] };
-    }>("session/start", { cwd: root });
-    assert.equal(start.session.user, "google:google-subject-1");
-    assert.deepEqual(start.session.clientIds, ["social-client-1"]);
-  } finally {
-    globalThis.fetch = previousFetch;
-    client?.close();
-    await server?.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -1724,8 +1694,7 @@ async function loginClientAs(
   clientId: string,
 ): Promise<void> {
   await client.request("account/login", {
-    username: "defaultUser",
-    password: "",
+    username: "defaultuser",
     clientId,
   });
 }
@@ -2097,7 +2066,7 @@ function sessionLogFile(root: string, sessionId: string): string {
   );
   return (
     found ??
-    join(root, "defaultUser", "unknown", "unknown", `${sessionId}.jsonl`)
+    join(root, "defaultuser", "unknown", "unknown", `${sessionId}.jsonl`)
   );
 }
 

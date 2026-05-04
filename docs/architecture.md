@@ -30,9 +30,8 @@
    Each tool call runs in a worker Node process.
 7. External tools and MCP stdio commands run through `docker exec` when
    `NDX_SANDBOX_CONTAINER` is present.
-8. Runtime events, context records, session metadata, session ownership,
-   accounts, and social links persist in SQLite under the configured data
-   directory.
+8. Runtime events, context records, session metadata, session ownership, and
+   local accounts persist in SQLite under the configured data directory.
 
 ## Session Identity
 

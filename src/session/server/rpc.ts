@@ -16,9 +16,9 @@ export interface JsonRpcError {
 export function isPublicMethod(method: string | undefined): boolean {
   return (
     method === "server/info" ||
+    method === "account/previous" ||
     method === "account/create" ||
-    method === "account/login" ||
-    method === "account/socialLogin"
+    method === "account/login"
   );
 }
 

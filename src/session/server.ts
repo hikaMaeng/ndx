@@ -20,6 +20,7 @@ import { AgentRuntime } from "../runtime/runtime.js";
 import { conversationHistoryFromRuntimeEvents } from "../runtime/history.js";
 import {
   SqliteSessionStore,
+  normalizeAccountId,
   type DashboardSessionLogFilters,
   type StoredSession,
   type StoredSessionContext,
@@ -69,7 +70,6 @@ import {
   type JsonRpcError,
   type JsonRpcRequest,
 } from "./server/rpc.js";
-import { verifiedSocialProfile } from "./server/social-auth.js";
 import { WebSocketConnection } from "./server/websocket.js";
 import { filesystemToolRequirements } from "./tools/registry.js";
 
@@ -338,7 +338,9 @@ export class SessionServer {
     const user =
       connection?.authenticated === true
         ? connection.user
-        : (stringParam(params, "user") ?? connection?.user ?? "defaultUser");
+        : normalizeAccountId(
+            stringParam(params, "user") ?? connection?.user ?? "defaultuser",
+          );
     const clientId: string =
       stringParam(params, "clientId") ?? connection?.clientId ?? randomUUID();
     if (connection !== undefined) {
@@ -499,25 +501,19 @@ export class SessionServer {
             "session/read",
             "turn/start",
             "turn/interrupt",
+            "account/previous",
             "account/create",
             "account/login",
-            "account/socialLogin",
-            "account/delete",
-            "account/changePassword",
           ],
         };
       case "server/info":
         return this.serverInfo();
+      case "account/previous":
+        return this.previousAccount();
       case "account/create":
         return this.createAccount(request.params);
       case "account/login":
         return this.loginAccount(connection, request.params);
-      case "account/socialLogin":
-        return this.loginSocialAccount(connection, request.params);
-      case "account/delete":
-        return this.deleteAccount(request.params);
-      case "account/changePassword":
-        return this.changeAccountPassword(request.params);
       case "command/list":
         return { commands: BUILT_IN_SLASH_COMMANDS };
       case "command/execute":
@@ -596,14 +592,14 @@ export class SessionServer {
   }
 
   private createAccount(params: unknown): unknown {
-    const username = requiredStringParam(params, "username");
-    const password = stringParam(params, "password") ?? "";
+    const username = normalizeAccountId(requiredStringParam(params, "username"));
     if (this.store.accountExists(username)) {
       throw new Error(`account already exists: ${username}`);
     }
+    const account = this.store.createAccount(username);
     return {
-      username,
-      createdAt: this.store.createAccount(username, password),
+      username: account.userid,
+      createdAt: account.created,
     };
   }
 
@@ -611,20 +607,24 @@ export class SessionServer {
     connection: WebSocketConnection,
     params: unknown,
   ): unknown {
-    const username = stringParam(params, "username") ?? "defaultUser";
-    const password = stringParam(params, "password") ?? "";
+    const username = normalizeAccountId(
+      stringParam(params, "username") ?? "defaultuser",
+    );
     const clientId: string = stringParam(params, "clientId") ?? randomUUID();
-    if (!this.store.validateAccount(username, password)) {
-      throw new Error("invalid account credentials");
-    }
-    connection.user = username;
+    const account = this.store.loginAccount(username);
+    connection.user = account.userid;
     connection.clientId = clientId;
     connection.authenticated = true;
     return {
-      username,
+      username: account.userid,
       clientId,
       sessionRoot: this.dataDir(),
     };
+  }
+
+  private previousAccount(): unknown {
+    const account = this.store.previousLoginAccount();
+    return account === undefined ? null : { username: account.userid };
   }
 
   private serverInfo(): JsonObject {
@@ -635,61 +635,6 @@ export class SessionServer {
       packageVersion: this.options.packageVersion ?? readPackageVersion(),
       requireDockerSandbox: this.options.requireDockerSandbox,
     });
-  }
-
-  private async loginSocialAccount(
-    connection: WebSocketConnection,
-    params: unknown,
-  ): Promise<unknown> {
-    const provider = requiredStringParam(params, "provider");
-    const accessToken = requiredStringParam(params, "accessToken");
-    const suppliedSubject = stringParam(params, "subject");
-    const clientId: string = stringParam(params, "clientId") ?? randomUUID();
-    const profile = await verifiedSocialProfile(provider, accessToken);
-    if (
-      suppliedSubject !== undefined &&
-      suppliedSubject.length > 0 &&
-      suppliedSubject !== profile.subject
-    ) {
-      throw new Error("social login subject does not match access token");
-    }
-    const account = this.store.upsertSocialAccount({
-      provider,
-      subject: profile.subject,
-      email: profile.email ?? stringParam(params, "email"),
-      displayName: profile.displayName ?? stringParam(params, "displayName"),
-      accessToken,
-      refreshToken: stringParam(params, "refreshToken"),
-    });
-    connection.user = account.username;
-    connection.clientId = clientId;
-    connection.authenticated = true;
-    return {
-      username: account.username,
-      clientId,
-      sessionRoot: this.dataDir(),
-      provider,
-      created: account.created,
-    };
-  }
-
-  private deleteAccount(params: unknown): unknown {
-    const username = requiredStringParam(params, "username");
-    if (username === "defaultUser") {
-      throw new Error("defaultUser cannot be deleted");
-    }
-    const deleted = this.store.deleteAccount(username);
-    return { username, deleted };
-  }
-
-  private changeAccountPassword(params: unknown): unknown {
-    const username = requiredStringParam(params, "username");
-    const oldPassword = stringParam(params, "oldPassword") ?? "";
-    const newPassword = requiredStringParam(params, "newPassword");
-    return {
-      username,
-      updatedAt: this.store.changePassword(username, oldPassword, newPassword),
-    };
   }
 
   private async ensureWorkspaceSandbox(
@@ -958,6 +903,46 @@ export class SessionServer {
           action: "print",
           output: this.formatContextUsage(execution.sessionId),
         };
+      case "blockuser": {
+        if (execution.args === undefined) {
+          return {
+            handled: true,
+            action: "print",
+            output: "usage: /blockuser <id>",
+          };
+        }
+        const account = this.store.blockAccount(execution.args);
+        const closesCurrent = account.userid === context.user;
+        this.closeBlockedUserConnections(account.userid, connection);
+        if (closesCurrent) {
+          setImmediate(() => connection.close());
+          return {
+            handled: true,
+            action: "exit",
+            output: `blocked ${account.userid}; current account session ended`,
+          };
+        }
+        return {
+          handled: true,
+          action: "print",
+          output: `blocked ${account.userid}`,
+        };
+      }
+      case "unblockuser": {
+        if (execution.args === undefined) {
+          return {
+            handled: true,
+            action: "print",
+            output: "usage: /unblockuser <id>",
+          };
+        }
+        const account = this.store.unblockAccount(execution.args);
+        return {
+          handled: true,
+          action: "print",
+          output: `unblocked ${account.userid}`,
+        };
+      }
       case "session":
         return {
           handled: true,
@@ -1843,6 +1828,33 @@ export class SessionServer {
       "current context",
       session.runtime.contextSummary(),
     );
+  }
+
+  private closeBlockedUserConnections(
+    userid: string,
+    except?: WebSocketConnection,
+  ): void {
+    for (const client of this.clients) {
+      if (client === except || client.user !== userid) {
+        continue;
+      }
+      client.close();
+    }
+    for (const session of this.sessions.values()) {
+      if (session.user !== userid) {
+        continue;
+      }
+      this.publishEphemeral(
+        session,
+        deletedSessionNotification(session.id, "account was blocked"),
+      );
+      for (const subscriber of session.subscribers) {
+        if (subscriber !== except) {
+          subscriber.close();
+        }
+      }
+      session.subscribers.clear();
+    }
   }
 
   private formatSessions(user: string, cwd: string): string {

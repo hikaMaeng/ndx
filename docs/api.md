@@ -39,7 +39,9 @@ added to model context.
 | `/status`         | Print server and current session status.          |
 | `/init`           | Print latest initialization detail.               |
 | `/events`         | Print recent runtime event types.                 |
-| `/login`          | Switch login identity.                            |
+| `/login`          | Create or switch local user identity.             |
+| `/blockuser`      | Block a local user id.                            |
+| `/unblockuser`    | Unblock a local user id.                          |
 | `/session`        | List saved and live sessions for the current cwd. |
 | `/restoreSession` | Switch to a saved session by UUID or list number. |
 | `/deleteSession`  | Delete another session for the current cwd.       |
@@ -52,8 +54,8 @@ dashboard exit endpoint for server shutdown.
 ## WebSocket JSON-RPC
 
 The session server is a WebSocket JSON-RPC endpoint. `server/info`,
-`account/create`, `account/login`, and `account/socialLogin` are public.
-Other methods require login on that socket.
+`account/previous`, `account/create`, and `account/login` are public. Other
+methods require login on that socket.
 
 Requests:
 
@@ -63,11 +65,9 @@ Requests:
 | `initialize`               | none                                                            | server, methods, bootstrap, dashboard URL   |
 | `command/list`             | none                                                            | command definitions                         |
 | `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`                 | command result                              |
-| `account/create`           | `{ username, password? }`                                       | created account                             |
-| `account/login`            | `{ username?, password?, clientId? }`                           | socket identity                             |
-| `account/socialLogin`      | `{ provider, subject?, accessToken, refreshToken?, clientId? }` | social account identity                     |
-| `account/delete`           | `{ username }`                                                  | deletion result                             |
-| `account/changePassword`   | `{ username, oldPassword?, newPassword }`                       | update timestamp                            |
+| `account/previous`         | none                                                            | last non-blocked account                    |
+| `account/create`           | `{ username }`                                                  | created account                             |
+| `account/login`            | `{ username?, clientId? }`                                      | socket identity                             |
 | `session/start`            | `{ cwd?, user?, clientId? }`                                    | live session                                |
 | `session/list`             | `{ cwd?, user?, clientId? }`                                    | workspace sessions                          |
 | `session/restore`          | `{ cwd?, selector, user?, clientId? }`                          | session plus events                         |

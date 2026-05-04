@@ -116,6 +116,16 @@ export interface DashboardSessionLogEventPage {
   total: number;
 }
 
+export interface AccountRecord {
+  userid: string;
+  created: number;
+  lastlogin: number;
+  isblock: boolean;
+  isprotected: boolean;
+}
+
+export const DEFAULT_USER_ID = "defaultuser";
+
 /** SQLite-backed durable state for ndx server accounts and sessions. */
 export class SqliteSessionStore {
   private readonly db: DatabaseSync;
@@ -147,96 +157,144 @@ export class SqliteSessionStore {
     return this.projectIdForPath(cwd);
   }
 
-  createAccount(username: string, password: string): number {
+  createAccount(username: string): AccountRecord {
+    const userid = normalizeAccountId(username);
     const now = Date.now();
+    const isprotected = userid === DEFAULT_USER_ID;
     this.db
       .prepare(
-        "insert into users (id, username, password, created_at, updated_at) values (?, ?, ?, ?, ?)",
+        [
+          "insert into users",
+          "(id, username, password, created_at, updated_at, userid, created, lastlogin, isblock, isprotected)",
+          "values (?, ?, '', ?, ?, ?, ?, ?, 0, ?)",
+        ].join(" "),
       )
-      .run(username, username, password, now, now);
-    return now;
+      .run(userid, userid, now, now, userid, now, now, isprotected ? 1 : 0);
+    return {
+      userid,
+      created: now,
+      lastlogin: now,
+      isblock: false,
+      isprotected,
+    };
   }
 
   accountExists(username: string): boolean {
+    const userid = normalizeAccountId(username);
     return (
       this.db
-        .prepare("select 1 from users where username = ?")
-        .get(username) !== undefined
+        .prepare("select 1 from users where userid = ?")
+        .get(userid) !== undefined
     );
   }
 
-  validateAccount(username: string, password: string): boolean {
+  account(username: string): AccountRecord | undefined {
+    const userid = normalizeAccountId(username);
     const row = this.db
-      .prepare("select password from users where username = ?")
-      .get(username) as { password?: unknown } | undefined;
-    return typeof row?.password === "string" && row.password === password;
+      .prepare(
+        "select userid, created, lastlogin, isblock, isprotected from users where userid = ?",
+      )
+      .get(userid) as
+      | {
+          userid?: unknown;
+          created?: unknown;
+          lastlogin?: unknown;
+          isblock?: unknown;
+          isprotected?: unknown;
+        }
+      | undefined;
+    if (
+      typeof row?.userid !== "string" ||
+      typeof row.created !== "number" ||
+      typeof row.lastlogin !== "number"
+    ) {
+      return undefined;
+    }
+    return {
+      userid: row.userid,
+      created: row.created,
+      lastlogin: row.lastlogin,
+      isblock: row.isblock === 1,
+      isprotected: row.isprotected === 1,
+    };
   }
 
-  deleteAccount(username: string): boolean {
-    return (
-      this.db
-        .prepare("delete from users where username = ? and username <> ?")
-        .run(username, "defaultUser").changes > 0
-    );
-  }
-
-  changePassword(
-    username: string,
-    oldPassword: string,
-    newPassword: string,
-  ): number {
-    if (!this.validateAccount(username, oldPassword)) {
-      throw new Error("invalid account credentials");
+  loginAccount(username: string): AccountRecord {
+    const userid = normalizeAccountId(username);
+    const account = this.account(userid);
+    if (account === undefined) {
+      throw new Error("invalid account");
+    }
+    if (account.isblock) {
+      throw new Error(`account is blocked: ${userid}`);
     }
     const now = Date.now();
     this.db
-      .prepare(
-        "update users set password = ?, updated_at = ? where username = ?",
-      )
-      .run(newPassword, now, username);
-    return now;
+      .prepare("update users set lastlogin = ?, updated_at = ? where userid = ?")
+      .run(now, now, userid);
+    return { ...account, lastlogin: now };
   }
 
-  upsertSocialAccount(input: {
-    provider: string;
-    subject: string;
-    email?: string;
-    displayName?: string;
-    accessToken?: string;
-    refreshToken?: string;
-  }): { username: string; updatedAt: number; created: boolean } {
-    const username = `${input.provider}:${input.subject}`;
-    const now = Date.now();
-    let created = false;
-    this.transaction(() => {
-      if (!this.accountExists(username)) {
-        this.createAccount(username, "");
-        created = true;
-      }
-      this.db
-        .prepare(
-          [
-            "insert into oauth_accounts",
-            "(provider, subject, user_id, email, display_name, access_token, refresh_token, updated_at)",
-            "values (?, ?, ?, ?, ?, ?, ?, ?)",
-            "on conflict(provider, subject) do update set",
-            "email = excluded.email, display_name = excluded.display_name,",
-            "access_token = excluded.access_token, refresh_token = excluded.refresh_token,",
-            "updated_at = excluded.updated_at",
-          ].join(" "),
-        )
-        .run(
-          input.provider,
-          input.subject,
-          username,
-          input.email ?? null,
-          input.displayName ?? null,
-          input.accessToken ?? null,
-          input.refreshToken ?? null,
-          now,
-        );
-    });
-    return { username, updatedAt: now, created };
+  previousLoginAccount(): AccountRecord | undefined {
+    const row = this.db
+      .prepare(
+        [
+          "select userid, created, lastlogin, isblock, isprotected",
+          "from users",
+          "where isblock = 0",
+          "order by lastlogin desc, rowid desc",
+          "limit 1",
+        ].join(" "),
+      )
+      .get() as
+      | {
+          userid?: unknown;
+          created?: unknown;
+          lastlogin?: unknown;
+          isblock?: unknown;
+          isprotected?: unknown;
+        }
+      | undefined;
+    if (
+      typeof row?.userid !== "string" ||
+      typeof row.created !== "number" ||
+      typeof row.lastlogin !== "number"
+    ) {
+      return undefined;
+    }
+    return {
+      userid: row.userid,
+      created: row.created,
+      lastlogin: row.lastlogin,
+      isblock: row.isblock === 1,
+      isprotected: row.isprotected === 1,
+    };
+  }
+
+  blockAccount(username: string): AccountRecord {
+    const userid = normalizeAccountId(username);
+    const account = this.account(userid);
+    if (account === undefined) {
+      throw new Error(`unknown account: ${userid}`);
+    }
+    if (account.isprotected) {
+      throw new Error(`${userid} cannot be blocked`);
+    }
+    this.db.prepare("update users set isblock = 1 where userid = ?").run(userid);
+    return { ...account, isblock: true };
+  }
+
+  unblockAccount(username: string): AccountRecord {
+    const userid = normalizeAccountId(username);
+    const account = this.account(userid);
+    if (account === undefined) {
+      throw new Error(`unknown account: ${userid}`);
+    }
+    if (account.isprotected) {
+      throw new Error(`${userid} cannot be unblocked`);
+    }
+    this.db.prepare("update users set isblock = 0 where userid = ?").run(userid);
+    return { ...account, isblock: false };
   }
 
   createSession(input: {
@@ -249,11 +307,12 @@ export class SqliteSessionStore {
     createdAt: number;
   }): number {
     return this.transaction(() => {
-      if (!this.accountExists(input.user)) {
-        this.createAccount(input.user, "");
+      const userid = normalizeAccountId(input.user);
+      if (!this.accountExists(userid)) {
+        this.createAccount(userid);
       }
       const project = this.projectIdForPath(input.cwd);
-      const sequence = this.claimNextSequence(input.user, project);
+      const sequence = this.claimNextSequence(userid, project);
       this.db
         .prepare(
           [
@@ -265,7 +324,7 @@ export class SqliteSessionStore {
         .run(
           input.id,
           input.createdAt,
-          input.user,
+          userid,
           project,
           resolve(input.cwd),
           0,
@@ -280,7 +339,7 @@ export class SqliteSessionStore {
       this.insertEvent(input.id, "session_started", undefined, {
         type: "session_started",
         sessionId: input.id,
-        user: input.user,
+        user: userid,
         cwd: input.cwd,
         sequence,
         title: input.title,
@@ -626,24 +685,18 @@ export class SqliteSessionStore {
         username text not null unique,
         password text not null,
         created_at integer not null,
-        updated_at integer not null
+        updated_at integer not null,
+        userid text not null unique,
+        created integer not null,
+        lastlogin integer not null,
+        isblock integer not null default 0,
+        isprotected integer not null default 0
       );
       create table if not exists clients (
         id text primary key,
         user_id text not null references users(id) on delete cascade,
         kind text,
         last_seen_at integer not null
-      );
-      create table if not exists oauth_accounts (
-        provider text not null,
-        subject text not null,
-        user_id text not null references users(id) on delete cascade,
-        email text,
-        display_name text,
-        access_token text,
-        refresh_token text,
-        updated_at integer not null,
-        primary key(provider, subject)
       );
       create table if not exists session (
         rowid integer primary key autoincrement,
@@ -679,7 +732,10 @@ export class SqliteSessionStore {
         iscontext integer not null default 0
       );
     `);
+    this.migrateUserAccountSchema();
     this.db.exec(`
+      create unique index if not exists idx_users_userid on users(userid);
+      create index if not exists idx_users_lastlogin on users(lastlogin);
       create index if not exists idx_session_user_project on session(userid, projectid);
       create index if not exists idx_session_sessionid on session(sessionid);
       create index if not exists idx_session_project_sequence_live on session(projectid, sequence) where deleted is null;
@@ -687,8 +743,8 @@ export class SqliteSessionStore {
       create index if not exists idx_sessiondata_type on sessiondata(sessionrowid, type, rowid);
       create index if not exists idx_sessiondata_turn on sessiondata(sessionrowid, turnid, rowid);
     `);
-    if (!this.accountExists("defaultUser")) {
-      this.createAccount("defaultUser", "");
+    if (!this.accountExists(DEFAULT_USER_ID)) {
+      this.createAccount(DEFAULT_USER_ID);
     }
   }
 
@@ -1022,6 +1078,48 @@ export class SqliteSessionStore {
     return projectid;
   }
 
+  private migrateUserAccountSchema(): void {
+    for (const statement of [
+      ["users", "userid", "alter table users add column userid text"],
+      ["users", "created", "alter table users add column created integer"],
+      ["users", "lastlogin", "alter table users add column lastlogin integer"],
+      [
+        "users",
+        "isblock",
+        "alter table users add column isblock integer not null default 0",
+      ],
+      [
+        "users",
+        "isprotected",
+        "alter table users add column isprotected integer not null default 0",
+      ],
+    ] as const) {
+      const [table, column, sql] = statement;
+      if (!this.hasColumn(table, column)) {
+        this.db.exec(sql);
+      }
+    }
+    this.db.exec(`
+      update users
+      set
+        userid = lower(coalesce(userid, username, id)),
+        created = coalesce(created, created_at),
+        lastlogin = coalesce(lastlogin, updated_at),
+        isprotected = case
+          when username = 'defaultUser' or id = 'defaultUser' or lower(coalesce(userid, username, id)) = '${DEFAULT_USER_ID}' then 1
+          else isprotected
+        end
+      where userid is null or created is null or lastlogin is null;
+    `);
+  }
+
+  private hasColumn(table: string, column: string): boolean {
+    return this.db
+      .prepare(`pragma table_info(${table})`)
+      .all()
+      .some((row) => (row as { name?: unknown }).name === column);
+  }
+
   private transaction<T>(fn: () => T): T {
     this.db.exec("begin immediate");
     try {
@@ -1100,6 +1198,14 @@ function conversationItemsFromRuntimeEvents(
   }
 
   return history;
+}
+
+export function normalizeAccountId(input: string): string {
+  const userid = input.trim().toLowerCase();
+  if (!/^[a-z0-9]+$/.test(userid)) {
+    throw new Error("account id must contain only letters and numbers");
+  }
+  return userid;
 }
 
 function addInFilter(

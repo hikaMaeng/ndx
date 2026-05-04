@@ -32,12 +32,20 @@ runtime events, history, and provider error classification.
 `SessionServer` owns live sessions, WebSocket clients, auth, SQLite persistence,
 Docker sandbox preparation, and dashboard HTTP. Helper modules under
 `src/session/server/` own dashboard rendering, bootstrap formatting, server
-info, JSON-RPC helpers, params, notifications, social auth verification,
-runtime-event predicates, and WebSocket connection state.
+info, JSON-RPC helpers, params, notifications, runtime-event predicates, and
+WebSocket connection state.
 
-SQLite stores accounts and social links in auth tables. Session-domain data is
-reset to the clean `session` and `sessiondata` schema; the former
-`projects`, `sessions`, `session_events`, `session_context_*`, and
+SQLite `users` is the local account authority. The canonical account fields are
+`userid`, `created`, `lastlogin`, `isblock`, and `isprotected`; legacy `id` and
+`username` remain as compatibility keys for foreign keys. User ids are
+lowercased ASCII letters and digits. Accounts have no passwords, cannot be
+deleted, and the protected `defaultuser` row is bootstrapped with matching
+`created` and `lastlogin` timestamps. `account/previous` reads the non-blocked
+row with the greatest `lastlogin`, so CLI startup does not depend on host client
+state.
+
+Session-domain data is reset to the clean `session` and `sessiondata` schema;
+the former `projects`, `sessions`, `session_events`, `session_context_*`, and
 `session_owners` tables are dropped by the schema reset path. Empty sessions
 remain unnumbered and unpersisted until the first prompt.
 
