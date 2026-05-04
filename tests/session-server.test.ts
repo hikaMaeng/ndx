@@ -766,8 +766,42 @@ test("dashboard session logs filter raw SQLite events and delete sessions", asyn
     const dashboard = await fetch(address.dashboardUrl ?? "");
     const html = await dashboard.text();
     assert.equal(html.includes(">Session Logs<"), true);
+    assert.equal(html.includes(">Users<"), true);
+    assert.equal(html.includes('data-testid="dashboard-server-stats"'), true);
     assert.equal(html.includes('data-testid="dashboard-session-logs"'), true);
     assert.equal(html.includes('data-testid="session-log-table"'), true);
+    assert.equal(html.includes('data-testid="dashboard-users"'), true);
+
+    const summary = (await fetchJson(
+      `${address.dashboardUrl}/api/dashboard/summary`,
+    )) as {
+      accountCount: number;
+      sessionCount: number;
+      eventCount: number;
+      liveSessionCount: number;
+    };
+    assert.equal(summary.accountCount, 3);
+    assert.equal(summary.sessionCount, 3);
+    assert.equal(summary.eventCount >= 6, true);
+    assert.equal(summary.liveSessionCount, 3);
+
+    const users = (await fetchJson(
+      `${address.dashboardUrl}/api/dashboard/users`,
+    )) as {
+      users: Array<{
+        userid: string;
+        lastlogin: number;
+        sessionCount: number;
+        eventCount: number;
+        lastSessionUpdatedAt?: number;
+      }>;
+    };
+    const alice = users.users.find((user) => user.userid === "alice");
+    const bob = users.users.find((user) => user.userid === "bob");
+    assert.equal(alice?.sessionCount, 2);
+    assert.equal(bob?.sessionCount, 1);
+    assert.equal((alice?.eventCount ?? 0) >= 4, true);
+    assert.equal(typeof bob?.lastSessionUpdatedAt, "number");
 
     const facets = (await fetchJson(
       `${address.dashboardUrl}/api/session-log/facets`,

@@ -42,11 +42,17 @@ The dashboard is the only browser surface. Browser checks must target:
 
 - `main[aria-labelledby="dashboard-title"][data-testid="ndx-dashboard"]`
 - `aside aria-label="Dashboard menu"`
+- `nav aria-label="Dashboard views"`
 - `nav aria-label="Server actions"`
+- buttons named `Overview`, `Session Logs`, and `Users`
 - buttons named `Reload` and `Exit`
 - `role="status"` or `role="alert"` for action output
+- `data-testid="dashboard-server-stats"`
 - `data-testid="dashboard-sources"`
 - `data-testid="dashboard-bootstrap"`
+- `data-testid="dashboard-session-logs"` and `data-testid="session-log-table"`
+- `data-testid="session-log-detail"` and `data-testid="session-log-events"`
+- `data-testid="dashboard-users"` and `data-testid="users-table"`
 
 Prefer Playwright role/name locators where available. Use documented test ids
 only for stable non-user-facing anchors.

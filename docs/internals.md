@@ -70,6 +70,12 @@ runtime replay metadata (`msgtype`, `turnid`, `iscontext`) as implementation
 columns. Runtime replay, dashboard event pages, compact summaries, and lite
 pruning all read from `sessiondata`.
 
+The dashboard reads account and session projections directly from SQLite.
+Overview counts combine `users`, `projects`, active non-deleted `sessions`, and
+`session_events`; the Users view includes each account's `lastlogin`, block and
+protected flags, session count, project count, event count, and latest session
+timestamp.
+
 Lite context mode keeps persisted tool call and tool result rows for audit, but
 omits prior tool rows from model context when a new user turn starts. The active
 turn keeps its local tool stack until the model finishes or exhausts the turn

@@ -1,12 +1,17 @@
 import { resolve } from "node:path";
 import type { NdxBootstrapReport, NdxConfig } from "../../shared/types.js";
 import type { SessionServerAddress } from "../server.js";
+import type { DashboardOverview } from "../sqlite-store.js";
 
 export interface DashboardRenderInput {
   address: SessionServerAddress | undefined;
   bootstrap: NdxBootstrapReport;
   config: NdxConfig;
   cwd: string;
+  overview: DashboardOverview & {
+    liveSessionCount: number;
+    clientCount: number;
+  };
   packageVersion: string;
   sources: string[];
 }
@@ -22,6 +27,7 @@ const DASHBOARD_ASCII_ART = [
 export function renderDashboardHtml(input: DashboardRenderInput): string {
   const socketUrl = input.address?.url ?? "not listening";
   const dashboardUrl = input.address?.dashboardUrl ?? "not listening";
+  const overview = input.overview;
   const sources =
     input.sources.length === 0
       ? "<li>None</li>"
@@ -57,14 +63,14 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
       .shell {
         min-height: 100vh;
         display: grid;
-        grid-template-columns: 248px minmax(0, 1fr);
+        grid-template-columns: 260px minmax(0, 1fr);
       }
       aside {
         border-right: 1px solid #d7ddd2;
         background: #ffffff;
         padding: 24px 18px;
       }
-      .brand { margin-bottom: 28px; }
+      .brand { margin-bottom: 24px; }
       .brand strong {
         display: block;
         font-size: 30px;
@@ -94,6 +100,10 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         cursor: pointer;
       }
       button:hover { background: #e2ebdf; }
+      button[aria-current="page"] {
+        border-color: #7aa083;
+        background: #dcebdd;
+      }
       button.secondary { background: #ffffff; }
       button.danger {
         border-color: #e1b7ad;
@@ -101,12 +111,6 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
       }
       button.danger:hover { background: #ffe3dc; }
       main { padding: 28px; }
-      .hero {
-        display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-        gap: 24px;
-        align-items: start;
-      }
       h1 {
         margin: 0 0 14px;
         font-size: 28px;
@@ -129,7 +133,7 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
       section { margin-bottom: 22px; }
       dl {
         display: grid;
-        grid-template-columns: 128px minmax(0, 1fr);
+        grid-template-columns: 142px minmax(0, 1fr);
         gap: 8px 14px;
         margin: 0;
       }
@@ -149,17 +153,6 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         margin: 0;
         padding-left: 18px;
       }
-      .session-log-panel {
-        border-top: 1px solid #d7ddd2;
-        padding-top: 22px;
-      }
-      .session-log-filters {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(160px, 1fr));
-        gap: 12px;
-        align-items: end;
-        margin-bottom: 12px;
-      }
       label {
         display: grid;
         gap: 6px;
@@ -176,6 +169,53 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         color: #1f2428;
         font: inherit;
         padding: 7px 9px;
+      }
+      .view-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: start;
+        margin-bottom: 22px;
+      }
+      .view-header p {
+        margin: 0;
+        color: #647067;
+      }
+      .overview-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+        gap: 24px;
+        align-items: start;
+      }
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(120px, 1fr));
+        gap: 12px;
+        margin-bottom: 22px;
+      }
+      .metric {
+        border: 1px solid #d7ddd2;
+        border-radius: 6px;
+        background: #ffffff;
+        padding: 12px;
+      }
+      .metric span {
+        display: block;
+        color: #647067;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 24px;
+      }
+      .filters {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(160px, 1fr));
+        gap: 12px;
+        align-items: end;
+        margin-bottom: 12px;
       }
       .filter-tags {
         display: flex;
@@ -218,9 +258,6 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         width: auto;
         min-height: 32px;
         padding: 5px 9px;
-      }
-      .session-detail {
-        margin-top: 18px;
       }
       .event-list {
         display: grid;
@@ -289,6 +326,10 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         font-weight: 650;
       }
       [role="alert"] { color: #a33a27; }
+      @media (max-width: 900px) {
+        .metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+        .overview-grid { grid-template-columns: 1fr; }
+      }
       @media (max-width: 760px) {
         .shell { grid-template-columns: 1fr; }
         aside {
@@ -296,9 +337,8 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
           border-right: 0;
           border-bottom: 1px solid #d7ddd2;
         }
-        .hero { grid-template-columns: 1fr; }
         dl { grid-template-columns: 1fr; }
-        .session-log-filters { grid-template-columns: 1fr; }
+        .filters { grid-template-columns: 1fr; }
         .bootstrap-list li { grid-template-columns: 1fr; }
       }
     </style>
@@ -310,46 +350,85 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
           <strong>NDX</strong>
           <small>Version ${escapeHtml(input.packageVersion)}</small>
         </div>
+        <nav aria-label="Dashboard views">
+          <button type="button" id="overview-button" data-view-button="overview" aria-current="page">Overview</button>
+          <button type="button" id="session-logs-button" data-view-button="sessions" class="secondary">Session Logs</button>
+          <button type="button" id="users-button" data-view-button="users" class="secondary">Users</button>
+        </nav>
         <nav aria-label="Server actions">
-          <button type="button" id="session-logs-button" class="secondary">Session Logs</button>
           <button type="button" id="reload-button">Reload</button>
           <button type="button" id="exit-button" class="danger">Exit</button>
         </nav>
         <p id="action-status" role="status" data-testid="dashboard-action-status">Dashboard is running.</p>
       </aside>
       <main aria-labelledby="dashboard-title" data-testid="ndx-dashboard">
-        <div class="hero">
-          <section aria-labelledby="dashboard-title">
-            <h1 id="dashboard-title">Server Dashboard</h1>
-            <pre aria-label="NDX ASCII art">${DASHBOARD_ASCII_ART}</pre>
+        <section id="overview-view" data-dashboard-view="overview" aria-labelledby="dashboard-title">
+          <div class="view-header">
+            <div>
+              <h1 id="dashboard-title">Server Dashboard</h1>
+              <p>Local host process, accounts, sessions, and persistence state.</p>
+            </div>
+          </div>
+          <div class="metric-grid" data-testid="dashboard-server-stats">
+            <div class="metric"><span>Accounts</span><strong id="metric-accounts">${overview.accountCount}</strong></div>
+            <div class="metric"><span>Sessions</span><strong id="metric-sessions">${overview.sessionCount}</strong></div>
+            <div class="metric"><span>Events</span><strong id="metric-events">${overview.eventCount}</strong></div>
+            <div class="metric"><span>Live Sessions</span><strong id="metric-live-sessions">${overview.liveSessionCount}</strong></div>
+          </div>
+          <div class="overview-grid">
+            <section aria-labelledby="server-info-title">
+              <h2 id="server-info-title">Server Information</h2>
+              <dl>
+                <dt>Socket</dt>
+                <dd><code>${escapeHtml(socketUrl)}</code></dd>
+                <dt>Dashboard</dt>
+                <dd><code>${escapeHtml(dashboardUrl)}</code></dd>
+                <dt>Project</dt>
+                <dd><code>${escapeHtml(resolve(input.cwd))}</code></dd>
+                <dt>Model</dt>
+                <dd><code>${escapeHtml(input.config.model)}</code></dd>
+                <dt>Bootstrap</dt>
+                <dd>${escapeHtml(new Date(input.bootstrap.checkedAt).toISOString())}</dd>
+                <dt>Connected Clients</dt>
+                <dd id="summary-clients">${overview.clientCount}</dd>
+                <dt>Active Accounts</dt>
+                <dd id="summary-active-accounts">${overview.activeAccountCount}</dd>
+                <dt>Blocked Accounts</dt>
+                <dd id="summary-blocked-accounts">${overview.blockedAccountCount}</dd>
+                <dt>Protected Accounts</dt>
+                <dd id="summary-protected-accounts">${overview.protectedAccountCount}</dd>
+                <dt>Projects</dt>
+                <dd id="summary-projects">${overview.projectCount}</dd>
+                <dt>Deleted Sessions</dt>
+                <dd id="summary-deleted-sessions">${overview.deletedSessionCount}</dd>
+                <dt>Latest Login</dt>
+                <dd id="summary-latest-login">${formatMaybeTime(overview.latestLogin)}</dd>
+                <dt>Latest Session Update</dt>
+                <dd id="summary-latest-session">${formatMaybeTime(overview.latestSessionUpdate)}</dd>
+              </dl>
+            </section>
+            <section aria-labelledby="ascii-title">
+              <h2 id="ascii-title">Runtime Mark</h2>
+              <pre aria-label="NDX ASCII art">${DASHBOARD_ASCII_ART}</pre>
+            </section>
+          </div>
+          <section aria-labelledby="sources-title">
+            <h2 id="sources-title">Recognized Sources</h2>
+            <ul data-testid="dashboard-sources">${sources}</ul>
           </section>
-          <section aria-labelledby="server-info-title">
-            <h2 id="server-info-title">Server Information</h2>
-            <dl>
-              <dt>Socket</dt>
-              <dd><code>${escapeHtml(socketUrl)}</code></dd>
-              <dt>Dashboard</dt>
-              <dd><code>${escapeHtml(dashboardUrl)}</code></dd>
-              <dt>Project</dt>
-              <dd><code>${escapeHtml(resolve(input.cwd))}</code></dd>
-              <dt>Model</dt>
-              <dd><code>${escapeHtml(input.config.model)}</code></dd>
-              <dt>Bootstrap</dt>
-              <dd>${escapeHtml(new Date(input.bootstrap.checkedAt).toISOString())}</dd>
-            </dl>
+          <section aria-labelledby="bootstrap-title">
+            <h2 id="bootstrap-title">Bootstrap Elements</h2>
+            <ul class="bootstrap-list" data-testid="dashboard-bootstrap">${bootstrapRows}</ul>
           </section>
-        </div>
-        <section aria-labelledby="sources-title">
-          <h2 id="sources-title">Recognized Sources</h2>
-          <ul data-testid="dashboard-sources">${sources}</ul>
         </section>
-        <section aria-labelledby="bootstrap-title">
-          <h2 id="bootstrap-title">Bootstrap Elements</h2>
-          <ul class="bootstrap-list" data-testid="dashboard-bootstrap">${bootstrapRows}</ul>
-        </section>
-        <section class="session-log-panel" aria-labelledby="session-logs-title" data-testid="dashboard-session-logs">
-          <h2 id="session-logs-title">Session Logs</h2>
-          <form class="session-log-filters" aria-label="Session log filters">
+        <section id="session-logs-view" class="hidden" data-dashboard-view="sessions" aria-labelledby="session-logs-title" data-testid="dashboard-session-logs">
+          <div class="view-header">
+            <div>
+              <h1 id="session-logs-title">Session Logs</h1>
+              <p>Filter persisted sessions by account, project, or session id.</p>
+            </div>
+          </div>
+          <form class="filters" aria-label="Session log filters">
             <label for="account-filter">Account
               <select id="account-filter" data-filter-category="accounts">
                 <option value="">All accounts</option>
@@ -385,16 +464,49 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
               <tbody id="session-log-body"></tbody>
             </table>
           </div>
-          <section id="session-detail" class="session-detail hidden" aria-labelledby="session-detail-title" data-testid="session-log-detail">
-            <h2 id="session-detail-title">Session Detail</h2>
-            <dl id="session-detail-meta"></dl>
-            <div class="pager" aria-label="Session event pages">
-              <button type="button" id="event-prev">Previous</button>
-              <span id="event-page-status" class="muted"></span>
-              <button type="button" id="event-next">Next</button>
+        </section>
+        <section id="session-detail-view" class="hidden" data-dashboard-view="session-detail" aria-labelledby="session-detail-title" data-testid="session-log-detail">
+          <div class="view-header">
+            <div>
+              <h1 id="session-detail-title">Session Detail</h1>
+              <p>Raw persisted runtime events for the selected session.</p>
             </div>
-            <div id="event-list" class="event-list" data-testid="session-log-events"></div>
-          </section>
+            <button type="button" id="back-to-sessions" class="secondary">Back to Session Logs</button>
+          </div>
+          <dl id="session-detail-meta"></dl>
+          <div class="pager" aria-label="Session event pages">
+            <button type="button" id="event-prev">Previous</button>
+            <span id="event-page-status" class="muted"></span>
+            <button type="button" id="event-next">Next</button>
+          </div>
+          <div id="event-list" class="event-list" data-testid="session-log-events"></div>
+        </section>
+        <section id="users-view" class="hidden" data-dashboard-view="users" aria-labelledby="users-title" data-testid="dashboard-users">
+          <div class="view-header">
+            <div>
+              <h1 id="users-title">Users</h1>
+              <p>Local SQLite accounts with login and session activity.</p>
+            </div>
+          </div>
+          <p id="users-status" role="status" data-testid="users-status">User list is ready.</p>
+          <div class="table-wrap" aria-labelledby="users-table-title">
+            <h2 id="users-table-title" class="hidden">Users Table</h2>
+            <table data-testid="users-table">
+              <thead>
+                <tr>
+                  <th scope="col">User</th>
+                  <th scope="col">State</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Last Login</th>
+                  <th scope="col">Sessions</th>
+                  <th scope="col">Projects</th>
+                  <th scope="col">Events</th>
+                  <th scope="col">Last Session</th>
+                </tr>
+              </thead>
+              <tbody id="users-body"></tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>
@@ -413,6 +525,21 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         status.textContent = body.message || "Action completed.";
         return body;
       }
+      function showView(name) {
+        for (const view of document.querySelectorAll("[data-dashboard-view]")) {
+          view.classList.toggle("hidden", view.getAttribute("data-dashboard-view") !== name);
+        }
+        for (const button of document.querySelectorAll("[data-view-button]")) {
+          const active = button.getAttribute("data-view-button") === name;
+          button.setAttribute("aria-current", active ? "page" : "false");
+        }
+        if (name === "users") {
+          void loadUsers();
+        }
+        if (name === "sessions") {
+          void loadFacetsAndSessions();
+        }
+      }
       document.getElementById("reload-button").addEventListener("click", async () => {
         const body = await postAction("/api/reload", "Reloading configuration.");
         if (body.ok !== false) {
@@ -422,6 +549,11 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
       document.getElementById("exit-button").addEventListener("click", () => {
         void postAction("/api/exit", "Requesting server exit.");
       });
+      document.getElementById("overview-button").addEventListener("click", () => showView("overview"));
+      document.getElementById("session-logs-button").addEventListener("click", () => showView("sessions"));
+      document.getElementById("users-button").addEventListener("click", () => showView("users"));
+      document.getElementById("back-to-sessions").addEventListener("click", () => showView("sessions"));
+
       const selectedFilters = {
         accounts: new Set(),
         projects: new Set(),
@@ -437,16 +569,21 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
       const eventLimit = 50;
       const sessionLogStatus = document.getElementById("session-log-status");
       const sessionLogBody = document.getElementById("session-log-body");
-      const sessionDetail = document.getElementById("session-detail");
       const sessionDetailMeta = document.getElementById("session-detail-meta");
       const eventList = document.getElementById("event-list");
       const eventPageStatus = document.getElementById("event-page-status");
       const eventPrev = document.getElementById("event-prev");
       const eventNext = document.getElementById("event-next");
+      const usersStatus = document.getElementById("users-status");
+      const usersBody = document.getElementById("users-body");
 
       function setSessionLogStatus(message, failed = false) {
         sessionLogStatus.setAttribute("role", failed ? "alert" : "status");
         sessionLogStatus.textContent = message;
+      }
+      function setUsersStatus(message, failed = false) {
+        usersStatus.setAttribute("role", failed ? "alert" : "status");
+        usersStatus.textContent = message;
       }
       function option(select, value, label) {
         const entry = document.createElement("option");
@@ -455,7 +592,7 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         select.appendChild(entry);
       }
       function formatTime(value) {
-        return new Date(value).toISOString();
+        return typeof value === "number" ? new Date(value).toISOString() : "Never";
       }
       function sessionLabel(session) {
         return "#" + session.sequence + " " + session.title + " (" + session.user + ")";
@@ -565,7 +702,7 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
             }
             if (selectedSessionId === session.id) {
               selectedSessionId = "";
-              sessionDetail.classList.add("hidden");
+              showView("sessions");
             }
             await loadFacetsAndSessions();
             setSessionLogStatus(body.message || "Session deleted.");
@@ -588,7 +725,7 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         renderEventPage(body);
       }
       function renderEventPage(page) {
-        sessionDetail.classList.remove("hidden");
+        showView("session-detail");
         sessionDetailMeta.replaceChildren();
         for (const entry of [
           ["Account", page.session.user],
@@ -596,6 +733,8 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
           ["Session", "#" + page.session.sequence + " " + page.session.title],
           ["Status", page.session.status],
           ["Events", String(page.total)],
+          ["Created", formatTime(page.session.createdAt)],
+          ["Updated", formatTime(page.session.updatedAt)],
         ]) {
           const term = document.createElement("dt");
           term.textContent = entry[0];
@@ -631,6 +770,37 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         renderTags();
         await loadSessions();
       }
+      async function loadUsers() {
+        setUsersStatus("Loading users.");
+        const response = await fetch("/api/dashboard/users");
+        const body = await response.json();
+        if (!response.ok) {
+          setUsersStatus(body.message || "Failed to load users.", true);
+          return;
+        }
+        usersBody.replaceChildren();
+        for (const user of body.users) {
+          const row = document.createElement("tr");
+          row.setAttribute("data-testid", "dashboard-user-row");
+          const state = [user.isblock ? "blocked" : "active", user.isprotected ? "protected" : ""].filter(Boolean).join(", ");
+          for (const value of [
+            user.userid,
+            state,
+            formatTime(user.created),
+            formatTime(user.lastlogin),
+            String(user.sessionCount),
+            String(user.projectCount),
+            String(user.eventCount),
+            formatTime(user.lastSessionUpdatedAt),
+          ]) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          usersBody.appendChild(row);
+        }
+        setUsersStatus(body.users.length === 0 ? "No users found." : "Loaded " + body.users.length + " users.");
+      }
       for (const select of document.querySelectorAll("[data-filter-category]")) {
         select.addEventListener("change", () => {
           const category = select.getAttribute("data-filter-category");
@@ -650,9 +820,6 @@ export function renderDashboardHtml(input: DashboardRenderInput): string {
         eventOffset += eventLimit;
         void loadEvents();
       });
-      document.getElementById("session-logs-button").addEventListener("click", () => {
-        document.getElementById("session-logs-title").scrollIntoView({ behavior: "smooth", block: "start" });
-      });
       void loadFacetsAndSessions().catch((error) => {
         setSessionLogStatus(error instanceof Error ? error.message : String(error), true);
       });
@@ -667,4 +834,8 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function formatMaybeTime(value: number | undefined): string {
+  return value === undefined ? "Never" : new Date(value).toISOString();
 }
