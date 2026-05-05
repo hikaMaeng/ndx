@@ -26,6 +26,9 @@ Runtime settings are JSON files. Global settings live at
 
 Code-owned defaults are centralized in `src/config/defaults.ts`. User-editable
 model, provider, key, tool, and MCP settings remain in settings JSON files.
+AGENTS.md files and skill catalogs are loaded by their own cascades so runtime
+instructions, `/context`, and compacted sessions can distinguish project-owned
+guidance from user-owned guidance.
 
 ## Distribution
 

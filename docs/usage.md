@@ -68,11 +68,19 @@ Use `/home/.ndx/settings.json` for global settings. Use
 settings file must contain `"version"` equal to the installed package version;
 valid stale files are version-bumped in place.
 
+Instruction files cascade separately from settings. At startup ndx reads
+project `AGENTS.md`, project `.ndx/AGENTS.md`, and user-home
+`.ndx/AGENTS.md` when present. Skill catalogs are scanned from project
+`.ndx/skills`, project `.ndx/plugins/*/skills`, user-home `.ndx/skills`,
+user-home `.ndx/plugins/*/skills`, and user-home `.ndx/system/skills`.
+`skills/.system` is not scanned. `/context` reports AGENTS.md and skill catalog
+token estimates separately from conversation messages.
+
 Minimal shape:
 
 ```json
 {
-  "version": "0.1.27",
+  "version": "0.1.30",
   "model": "local-model",
   "providers": {
     "local": {
@@ -90,30 +98,28 @@ Minimal shape:
 `custom` entries. MCP servers are declared under `mcp`. Tool packages are
 filesystem packages, not settings entries.
 
-AGENTS.md loading follows the session cwd. Put global instructions in
-`/home/.ndx/AGENTS.md`, or use `/home/.ndx/AGENTS.override.md` to override that
-global file locally. Project instructions are read from the detected project
-root, defaulting to the nearest ancestor with `.git`, down to the cwd. In each
-directory, `AGENTS.override.md` wins over `AGENTS.md`; configured
-`projectDocFallbackFilenames` are considered after those names.
+AGENTS.md loading follows the detected project root. At startup ndx reads
+project `AGENTS.md`, project `.ndx/AGENTS.md`, and user-home
+`/home/.ndx/AGENTS.md` in that order. `AGENTS.override.md` and nested
+per-directory AGENTS files are not part of the cascade.
 
 Optional AGENTS.md settings:
 
 ```json
 {
   "projectDocMaxBytes": 32768,
-  "projectDocFallbackFilenames": ["WORKFLOW.md"],
   "projectRootMarkers": [".git"]
 }
 ```
 
-Skills live in `SKILL.md` files under `/home/.ndx/skills`,
-`<project>/.ndx/skills`, or cascading `<dir>/.agents/skills` folders. Each skill
+Skills live in `SKILL.md` files under `<project>/.ndx/skills`,
+`<project>/.ndx/plugins/*/skills`, `/home/.ndx/skills`,
+`/home/.ndx/plugins/*/skills`, or `/home/.ndx/system/skills`. Each skill
 requires YAML frontmatter with at least a useful `description`. Mention a skill
 with `$skill-name`; when names are ambiguous, link the exact path:
 
 ```text
-[$repo-skill](/path/to/.agents/skills/repo-skill/SKILL.md) run the workflow
+[$repo-skill](/path/to/project/.ndx/skills/repo-skill/SKILL.md) run the workflow
 ```
 
 ## Docker Sandbox

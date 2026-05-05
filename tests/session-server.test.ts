@@ -377,7 +377,10 @@ test("project identity is stored in .ndx/.project and scopes sessions by account
     );
     await server.flushPersistence();
     const firstProjectId = readProjectId(root);
-    assert.equal(readSqliteSessionMeta(persistenceDir, first)?.projectid, firstProjectId);
+    assert.equal(
+      readSqliteSessionMeta(persistenceDir, first)?.projectid,
+      firstProjectId,
+    );
 
     rmSync(join(root, ".ndx"), { recursive: true, force: true });
     const second = await createPersistedSession(
@@ -389,7 +392,10 @@ test("project identity is stored in .ndx/.project and scopes sessions by account
     const secondProjectId = readProjectId(root);
 
     assert.notEqual(secondProjectId, firstProjectId);
-    assert.equal(readSqliteSessionMeta(persistenceDir, second)?.projectid, secondProjectId);
+    assert.equal(
+      readSqliteSessionMeta(persistenceDir, second)?.projectid,
+      secondProjectId,
+    );
 
     const listed = await client.request<{
       sessions: Array<{ id: string; projectId: string }>;
@@ -911,11 +917,11 @@ test("dashboard reload re-reads settings and AGENTS sources", async () => {
       join(root, "AGENTS.md"),
       "# Project Instructions\n\nUse test reload.\n",
     );
-    mkdirSync(join(root, ".agents", "skills", "reload-skill"), {
+    mkdirSync(join(root, ".ndx", "skills", "reload-skill"), {
       recursive: true,
     });
     writeFileSync(
-      join(root, ".agents", "skills", "reload-skill", "SKILL.md"),
+      join(root, ".ndx", "skills", "reload-skill", "SKILL.md"),
       [
         "---",
         "name: reload-skill",
@@ -952,7 +958,7 @@ test("dashboard reload re-reads settings and AGENTS sources", async () => {
     assert.equal(body.sources?.includes(join(root, "AGENTS.md")), true);
     assert.equal(
       body.sources?.includes(
-        join(root, ".agents", "skills", "reload-skill", "SKILL.md"),
+        join(root, ".ndx", "skills", "reload-skill", "SKILL.md"),
       ),
       true,
     );
@@ -970,6 +976,58 @@ test("dashboard reload re-reads settings and AGENTS sources", async () => {
     assert.equal(started.session.model, "mock-reloaded");
   } finally {
     client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session server survives client websocket reset after command execution", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-socket-reset-"));
+  const globalDir = join(root, "home", ".ndx");
+  let server: SessionServer | undefined;
+  let firstClient: SessionClient | undefined;
+  let secondClient: SessionClient | undefined;
+
+  try {
+    writeShellTool(join(globalDir, "system", "tools", "shell"));
+    server = new SessionServer({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        paths: { globalDir, dataDir: join(root, "data") },
+      },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new MockModelClient(),
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    firstClient = await SessionClient.connect(address.url);
+    await initializeAndLoginClientAs(firstClient, "reset-client");
+    const started = await firstClient.request<{ session: { id: string } }>(
+      "session/start",
+      { cwd: root, clientId: "reset-client" },
+    );
+    const status = await firstClient.request<{ handled: true; output: string }>(
+      "command/execute",
+      {
+        name: "status",
+        sessionId: started.session.id,
+        clientId: "reset-client",
+      },
+    );
+    assert.equal(status.handled, true);
+    assert.equal(status.output.length > 0, true);
+
+    firstClient.close();
+    firstClient = undefined;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    secondClient = await SessionClient.connect(address.url);
+    await initializeAndLoginClientAs(secondClient, "after-reset-client");
+    const info = await secondClient.request<{ server?: string }>("server/info");
+    assert.equal(info.server, "ndx-ts-session-server");
+  } finally {
+    firstClient?.close();
+    secondClient?.close();
     await server?.close().catch(() => undefined);
     rmSync(root, { recursive: true, force: true });
   }
@@ -1124,10 +1182,10 @@ test("session lite mode prunes previous tool logs when a new user turn starts", 
     assert.equal(enabled.output.includes("lite: on"), true);
     assert.equal(enabled.output.includes("before"), true);
     assert.equal(enabled.output.includes("after"), true);
-    const activeContext = await client.request<{ handled: true; output: string }>(
-      "command/execute",
-      { name: "context", sessionId },
-    );
+    const activeContext = await client.request<{
+      handled: true;
+      output: string;
+    }>("command/execute", { name: "context", sessionId });
     assert.equal(activeContext.output.includes("assistant_tool_calls"), true);
     assert.equal(activeContext.output.includes("tool_results"), true);
     const rejected = await client.request<{ handled: true; output: string }>(
@@ -1170,7 +1228,10 @@ test("session lite mode prunes previous tool logs when a new user turn starts", 
       tables.some((table) => table.startsWith("session_context")),
       false,
     );
-    assert.equal(readSqliteContextEvents(persistenceDir, sessionId).length, contextEvents.length);
+    assert.equal(
+      readSqliteContextEvents(persistenceDir, sessionId).length,
+      contextEvents.length,
+    );
   } finally {
     client?.close();
     await server?.close().catch(() => undefined);
@@ -1309,6 +1370,61 @@ test("session compact stores a summary record and restarts model context there",
     assert.equal(
       records.some((record) => record.type === "context_compact"),
       true,
+    );
+  } finally {
+    client?.close();
+    await server?.close().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session skill tool events are audited but excluded from model context", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-skill-context-"));
+  const globalDir = join(root, "home", ".ndx");
+  const persistenceDir = join(root, "server-sessions");
+  let server: SessionServer | undefined;
+  let client: SessionClient | undefined;
+
+  try {
+    writeLoadSkillTool(join(globalDir, "system", "tools", "load_skill"));
+    server = new SessionServer({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      sources: [join(globalDir, "settings.json")],
+      createClient: () => new SkillToolModelClient(),
+      persistenceDir,
+    });
+    client = await SessionClient.connect(
+      (await server.listen(0, "127.0.0.1")).url,
+    );
+    await initializeAndLoginClient(client);
+    const start = await client.request<{ session: { id: string } }>(
+      "session/start",
+      { cwd: root },
+    );
+    const sessionId = start.session.id;
+
+    const completed = waitForMethod(client, "turn/completed");
+    await client.request("turn/start", { sessionId, prompt: "use a skill" });
+    await completed;
+    await server.flushPersistence();
+
+    const records = readSqliteRecords(persistenceDir, sessionId);
+    assert.equal(
+      records.some(
+        (record) =>
+          (record as { event?: { msg?: { type?: string; name?: string } } })
+            .event?.msg?.type === "tool_call" &&
+          (record as { event?: { msg?: { type?: string; name?: string } } })
+            .event?.msg?.name === "load_skill",
+      ),
+      true,
+    );
+    assert.deepEqual(
+      readSqliteContextEvents(persistenceDir, sessionId).map(
+        (event) => event.type,
+      ),
+      ["turn_started", "agent_message", "turn_complete"],
     );
   } finally {
     client?.close();
@@ -2002,7 +2118,9 @@ function readSqliteSessionData(
 }
 
 function readProjectId(cwd: string): string {
-  const parsed = JSON.parse(readFileSync(join(cwd, ".ndx", ".project"), "utf8")) as {
+  const parsed = JSON.parse(
+    readFileSync(join(cwd, ".ndx", ".project"), "utf8"),
+  ) as {
     projectid?: unknown;
   };
   assert.equal(typeof parsed.projectid, "string");
@@ -2040,8 +2158,7 @@ function readSqliteContextEvents(
       .map((row) => JSON.parse((row as { payload: string }).payload))
       .map((record) => ({
         type: String(
-          (record as { event?: { msg?: { type?: unknown } } }).event?.msg
-            ?.type,
+          (record as { event?: { msg?: { type?: unknown } } }).event?.msg?.type,
         ),
       }));
   } finally {
@@ -2070,9 +2187,7 @@ function readSqliteTableNames(dataDir: string): string[] {
       )
       .all()
       .map((row) => (row as { name?: unknown }).name)
-      .filter(
-        (name): name is string => typeof name === "string",
-      );
+      .filter((name): name is string => typeof name === "string");
   } finally {
     db.close();
   }
@@ -2097,9 +2212,7 @@ function readSqliteOwner(
   });
   try {
     const row = db
-      .prepare(
-        "select ownerid from session where sessionid = ?",
-      )
+      .prepare("select ownerid from session where sessionid = ?")
       .get(sessionId) as { ownerid?: unknown } | undefined;
     return typeof row?.ownerid === "string" ? row.ownerid : undefined;
   } finally {
@@ -2194,6 +2307,32 @@ function writeShellTool(toolDir: string): void {
   writeFileSync(
     join(toolDir, "tool.mjs"),
     'import { stdout } from "node:process"; stdout.write(JSON.stringify({ exitCode: 0, stdout: "", stderr: "" }) + "\\n");\n',
+  );
+}
+
+function writeLoadSkillTool(toolDir: string): void {
+  mkdirSync(toolDir, { recursive: true });
+  writeFileSync(
+    join(toolDir, "tool.json"),
+    JSON.stringify({
+      type: "function",
+      function: {
+        name: "load_skill",
+        description: "Load a skill.",
+        parameters: {
+          type: "object",
+          properties: { name: { type: "string" } },
+          required: ["name"],
+          additionalProperties: false,
+        },
+      },
+      command: "node",
+      args: ["tool.mjs"],
+    }),
+  );
+  writeFileSync(
+    join(toolDir, "tool.mjs"),
+    'import { stdout } from "node:process"; stdout.write(JSON.stringify({ ok: true, markdown: "# Skill" }) + "\\n");\n',
   );
 }
 
@@ -2307,6 +2446,34 @@ class ScriptedToolModelClient implements ModelClient {
     return {
       id: `scripted-text-${this.step}`,
       text: this.texts.shift() ?? "done",
+      toolCalls: [],
+      raw: { input },
+    };
+  }
+}
+
+class SkillToolModelClient implements ModelClient {
+  private step = 0;
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.step += 1;
+    if (this.step === 1) {
+      return {
+        id: "skill-call",
+        text: "",
+        toolCalls: [
+          {
+            callId: "skill-call-1",
+            name: "load_skill",
+            arguments: JSON.stringify({ name: "example" }),
+          },
+        ],
+        raw: { input },
+      };
+    }
+    return {
+      id: "skill-answer",
+      text: "skill applied",
       toolCalls: [],
       raw: { input },
     };

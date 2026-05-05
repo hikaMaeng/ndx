@@ -61,6 +61,7 @@ export interface ToolCallEvent {
   type: "tool_call";
   sessionId: string;
   turnId: string;
+  callId?: string;
   name: string;
   arguments: string;
 }
@@ -69,6 +70,8 @@ export interface ToolResultEvent {
   type: "tool_result";
   sessionId: string;
   turnId: string;
+  callId?: string;
+  name?: string;
   output: string;
 }
 

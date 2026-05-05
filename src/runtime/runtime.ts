@@ -41,6 +41,7 @@ export class AgentRuntime {
   private configured = false;
   private activeTurn: ActiveTurn | undefined;
   private readonly abortedTurnIds = new Set<string>();
+  private readonly skillToolCallIds = new Set<string>();
 
   constructor(options: AgentRuntimeOptions) {
     this.sessionId = options.sessionId ?? randomUUID();
@@ -223,21 +224,26 @@ export class AgentRuntime {
       return;
     }
     if (event.type === "tool_call") {
-      this.history.push({
-        type: "assistant_tool_calls",
-        toolCalls: [
-          {
-            callId: event.callId,
-            name: event.name,
-            arguments: event.arguments,
-          },
-        ],
-      });
+      if (isSkillToolName(event.name)) {
+        this.skillToolCallIds.add(event.callId);
+      } else {
+        this.history.push({
+          type: "assistant_tool_calls",
+          toolCalls: [
+            {
+              callId: event.callId,
+              name: event.name,
+              arguments: event.arguments,
+            },
+          ],
+        });
+      }
       this.emit(
         {
           type: "tool_call",
           sessionId: this.sessionId,
           turnId,
+          callId: event.callId,
           name: event.name,
           arguments: event.arguments,
         },
@@ -246,16 +252,22 @@ export class AgentRuntime {
       return;
     }
     if (event.type === "tool_result") {
-      this.history.push({
-        type: "function_call_output",
-        call_id: event.callId,
-        output: event.output,
-      });
+      if (this.skillToolCallIds.has(event.callId)) {
+        this.skillToolCallIds.delete(event.callId);
+      } else {
+        this.history.push({
+          type: "function_call_output",
+          call_id: event.callId,
+          output: event.output,
+        });
+      }
       this.emit(
         {
           type: "tool_result",
           sessionId: this.sessionId,
           turnId,
+          callId: event.callId,
+          name: event.name,
           output: event.output,
         },
         onEvent,
@@ -300,19 +312,39 @@ export class AgentRuntime {
   }
 }
 
+function isSkillToolName(name: string): boolean {
+  return [
+    "load_skill",
+    "read_skill",
+    "list_skills",
+    "skill_load",
+    "skill_search",
+    "skills",
+  ].includes(name);
+}
+
 function summarizeContext(
   history: ModelConversationItem[],
   config: NdxConfig,
 ): SessionContextSummary {
   const byKind = summarizeByKind(history);
+  const contextSources = config.contextSources ?? [];
+  for (const source of contextSources) {
+    addContextKindUsage(
+      byKind,
+      `${source.kind}_${source.origin}`,
+      source.estimatedTokens,
+    );
+  }
   const estimatedTokens = byKind.reduce(
     (sum, entry) => sum + entry.estimatedTokens,
     0,
   );
+  const itemCount = history.length + contextSources.length;
   const maxContextTokens = config.activeModel.maxContext;
   return {
-    restoredItems: history.length,
-    items: history.length,
+    restoredItems: itemCount,
+    items: itemCount,
     estimatedTokens,
     maxContextTokens,
     remainingTokens:
@@ -321,6 +353,21 @@ function summarizeContext(
         : Math.max(0, maxContextTokens - estimatedTokens),
     byKind,
   };
+}
+
+function addContextKindUsage(
+  byKind: SessionContextKindUsage[],
+  kind: string,
+  estimatedTokens: number,
+): void {
+  const current = byKind.find((entry) => entry.kind === kind);
+  if (current === undefined) {
+    byKind.push({ kind, items: 1, estimatedTokens });
+    byKind.sort((left, right) => left.kind.localeCompare(right.kind));
+    return;
+  }
+  current.items += 1;
+  current.estimatedTokens += estimatedTokens;
 }
 
 function summarizeByKind(
