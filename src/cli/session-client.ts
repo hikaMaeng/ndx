@@ -6,7 +6,10 @@ import type {
   SessionConfiguredEvent,
 } from "../shared/protocol.js";
 import { NDX_DEFAULTS } from "../config/defaults.js";
-import type { NdxBootstrapReport } from "../shared/types.js";
+import type {
+  ContextInstructionSource,
+  NdxBootstrapReport,
+} from "../shared/types.js";
 
 export interface CliSessionRuntime {
   client: CliSessionTransport;
@@ -35,6 +38,8 @@ export interface InitializeResult {
   toolSandbox?: ToolSandboxInfo;
   methods?: string[];
   bootstrap?: NdxBootstrapReport;
+  sources?: string[];
+  contextSources?: ContextInstructionSource[];
 }
 
 export interface ServerInfoResult {
@@ -600,7 +605,11 @@ function formatInitializeResult(
     lines.push(formatServerInfo(result));
   }
   const methods = result.methods?.join(", ") ?? "none";
-  lines.push(`[methods] ${methods}`, formatBootstrap(result.bootstrap));
+  lines.push(
+    `[methods] ${methods}`,
+    formatBootstrap(result.bootstrap),
+    formatSources(result.sources, result.contextSources),
+  );
   return lines.join("\n");
 }
 
@@ -698,6 +707,62 @@ function formatBootstrap(bootstrap: NdxBootstrapReport | undefined): string {
     `  existing: ${existing}`,
     ...rows,
   ].join("\n");
+}
+
+function formatSources(
+  sources: string[] | undefined,
+  contextSources: ContextInstructionSource[] | undefined,
+): string {
+  const sourceList = sources ?? [];
+  if (sourceList.length === 0) {
+    return "[sources] none";
+  }
+  const groups = summarizeSources(sourceList, contextSources ?? []);
+  return [
+    `[sources] ${sourceList.length}`,
+    ...groups.map((group) => `  ${group.label}: ${group.count}`),
+  ].join("\n");
+}
+
+function summarizeSources(
+  sources: string[],
+  contextSources: ContextInstructionSource[],
+): Array<{ label: string; count: number }> {
+  const counts = new Map<string, number>();
+  const sourceSet = new Set(sources);
+  for (const source of contextSources) {
+    if (!sourceSet.has(source.path)) {
+      continue;
+    }
+    const label =
+      source.kind === "agents"
+        ? `AGENTS.md ${source.origin}`
+        : `skills ${source.origin}`;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  for (const source of sources) {
+    if (contextSources.some((entry) => entry.path === source)) {
+      continue;
+    }
+    const label = source.endsWith("settings.json")
+      ? "settings"
+      : source.endsWith("search.json")
+        ? "search"
+        : "other";
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const preferred = [
+    "settings",
+    "search",
+    "AGENTS.md project",
+    "AGENTS.md user",
+    "skills project",
+    "skills user",
+    "other",
+  ];
+  return preferred
+    .filter((label) => counts.has(label))
+    .map((label) => ({ label, count: counts.get(label) ?? 0 }));
 }
 
 interface StartupLoginChoice {

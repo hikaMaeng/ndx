@@ -66,27 +66,30 @@ methods require login on that socket.
 
 Requests:
 
-| Method                     | Params                                                    | Result                                      |
-| -------------------------- | --------------------------------------------------------- | ------------------------------------------- |
-| `server/info`              | none                                                      | server, version, runtime, sandbox, protocol |
-| `initialize`               | none                                                      | server, methods, bootstrap, dashboard URL   |
-| `command/list`             | none                                                      | command definitions                         |
-| `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`           | command result                              |
-| `account/previous`         | none                                                      | last non-blocked account                    |
-| `account/create`           | `{ username }`                                            | created account                             |
-| `account/login`            | `{ username?, clientId? }`                                | socket identity                             |
-| `session/start`            | `{ cwd?, user?, clientId? }`                              | live session                                |
-| `session/list`             | `{ cwd?, user?, clientId? }`                              | workspace sessions                          |
-| `session/restore`          | `{ cwd?, selector, user?, clientId? }`                    | session plus events                         |
-| `session/deleteCandidates` | `{ cwd?, currentSessionId?, user?, clientId? }`           | delete candidates                           |
-| `session/delete`           | `{ cwd?, selector, currentSessionId?, user?, clientId? }` | deleted session                             |
-| `session/subscribe`        | `{ sessionId, user?, clientId? }`                         | session plus events                         |
-| `session/read`             | `{ sessionId }`                                           | session plus events                         |
-| `turn/start`               | `{ sessionId, prompt, user?, clientId? }`                 | turn id                                     |
-| `turn/interrupt`           | `{ sessionId, reason? }`                                  | updated session                             |
+| Method                     | Params                                                    | Result                                                    |
+| -------------------------- | --------------------------------------------------------- | --------------------------------------------------------- |
+| `server/info`              | none                                                      | server, version, runtime, sandbox, protocol               |
+| `initialize`               | none                                                      | server, methods, bootstrap, dashboard URL, loaded sources |
+| `command/list`             | none                                                      | command definitions                                       |
+| `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`           | command result                                            |
+| `account/previous`         | none                                                      | last non-blocked account                                  |
+| `account/create`           | `{ username }`                                            | created account                                           |
+| `account/login`            | `{ username?, clientId? }`                                | socket identity                                           |
+| `session/start`            | `{ cwd?, user?, clientId? }`                              | live session                                              |
+| `session/list`             | `{ cwd?, user?, clientId? }`                              | workspace sessions                                        |
+| `session/restore`          | `{ cwd?, selector, user?, clientId? }`                    | session plus events                                       |
+| `session/deleteCandidates` | `{ cwd?, currentSessionId?, user?, clientId? }`           | delete candidates                                         |
+| `session/delete`           | `{ cwd?, selector, currentSessionId?, user?, clientId? }` | deleted session                                           |
+| `session/subscribe`        | `{ sessionId, user?, clientId? }`                         | session plus events                                       |
+| `session/read`             | `{ sessionId }`                                           | session plus events                                       |
+| `turn/start`               | `{ sessionId, prompt, user?, clientId? }`                 | turn id                                                   |
+| `turn/interrupt`           | `{ sessionId, reason? }`                                  | updated session                                           |
 
-Notifications include `session/started`, `session/restored`,
-`session/deleted`, and runtime event notifications.
+`initialize.sources` lists the server-recognized settings, AGENTS.md, and
+`SKILL.md` files. `initialize.contextSources` carries the AGENTS.md and skill
+source groups used by `/context`; clients use it for startup visibility and do
+not add it to model context. Notifications include `session/started`,
+`session/restored`, `session/deleted`, and runtime event notifications.
 
 ## Dashboard HTTP
 
