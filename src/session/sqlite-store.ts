@@ -146,6 +146,7 @@ export interface AccountRecord {
 }
 
 export const DEFAULT_USER_ID = "defaultuser";
+const SESSION_SCHEMA_VERSION = 3;
 
 /** SQLite-backed durable state for ndx server accounts and sessions. */
 export class SqliteSessionStore {
@@ -551,7 +552,7 @@ export class SqliteSessionStore {
           "max(s.created) as lastSessionCreatedAt,",
           "max(s.updated) as lastSessionUpdatedAt",
           "from users u",
-          "left join session s on s.userid = u.id and s.deleted is null",
+          "left join session s on s.userid = u.userid and s.deleted is null",
           "group by u.userid, u.created, u.lastlogin, u.isblock, u.isprotected",
           "order by u.lastlogin desc, u.userid asc",
         ].join(" "),
@@ -765,7 +766,6 @@ export class SqliteSessionStore {
     this.db.exec("pragma foreign_keys = on");
     this.db.exec("pragma busy_timeout = 5000");
     this.db.exec("pragma synchronous = normal");
-    this.resetSessionSchemaIfNeeded();
     this.db.exec(`
       drop table if exists session_context_items_00;
       drop table if exists session_context_items_01;
@@ -808,11 +808,34 @@ export class SqliteSessionStore {
         kind text,
         last_seen_at integer not null
       );
+    `);
+    this.migrateUserAccountSchema();
+    this.db.exec(`
+      create unique index if not exists idx_users_userid on users(userid);
+      create index if not exists idx_users_lastlogin on users(lastlogin);
+    `);
+    this.migrateSessionSchemaIfNeeded();
+    this.ensureSessionTables();
+    this.db.exec(`
+      create index if not exists idx_session_user_project on session(userid, projectid);
+      create index if not exists idx_session_sessionid on session(sessionid);
+      create index if not exists idx_session_project_sequence_live on session(projectid, sequence) where deleted is null;
+      create index if not exists idx_sessiondata_sessionrowid on sessiondata(sessionrowid, rowid);
+      create index if not exists idx_sessiondata_type on sessiondata(sessionrowid, type, rowid);
+      create index if not exists idx_sessiondata_turn on sessiondata(sessionrowid, turnid, rowid);
+    `);
+    if (!this.accountExists(DEFAULT_USER_ID)) {
+      this.createAccount(DEFAULT_USER_ID);
+    }
+  }
+
+  private ensureSessionTables(): void {
+    this.db.exec(`
       create table if not exists session (
         rowid integer primary key autoincrement,
         sessionid text not null unique,
         created integer not null,
-        userid text not null references users(id) on delete cascade,
+        userid text not null references users(userid) on delete cascade,
         projectid text not null,
         path text not null,
         islite integer not null default 0,
@@ -842,33 +865,117 @@ export class SqliteSessionStore {
         iscontext integer not null default 0
       );
     `);
-    this.migrateUserAccountSchema();
-    this.db.exec(`
-      create unique index if not exists idx_users_userid on users(userid);
-      create index if not exists idx_users_lastlogin on users(lastlogin);
-      create index if not exists idx_session_user_project on session(userid, projectid);
-      create index if not exists idx_session_sessionid on session(sessionid);
-      create index if not exists idx_session_project_sequence_live on session(projectid, sequence) where deleted is null;
-      create index if not exists idx_sessiondata_sessionrowid on sessiondata(sessionrowid, rowid);
-      create index if not exists idx_sessiondata_type on sessiondata(sessionrowid, type, rowid);
-      create index if not exists idx_sessiondata_turn on sessiondata(sessionrowid, turnid, rowid);
-    `);
-    if (!this.accountExists(DEFAULT_USER_ID)) {
-      this.createAccount(DEFAULT_USER_ID);
-    }
   }
 
-  private resetSessionSchemaIfNeeded(): void {
+  private migrateSessionSchemaIfNeeded(): void {
     const row = this.db.prepare("pragma user_version").get() as
       | { user_version?: unknown }
       | undefined;
-    if (row?.user_version === 2) {
+    if (row?.user_version === SESSION_SCHEMA_VERSION) {
+      return;
+    }
+    if (
+      row?.user_version === 2 &&
+      this.hasTable("session") &&
+      this.hasTable("sessiondata")
+    ) {
+      this.migrateSessionUserForeignKey();
+      this.db.exec(`pragma user_version = ${SESSION_SCHEMA_VERSION}`);
       return;
     }
     this.db.exec(`
       drop table if exists sessiondata;
       drop table if exists session;
-      pragma user_version = 2;
+      pragma user_version = ${SESSION_SCHEMA_VERSION};
+    `);
+  }
+
+  private migrateSessionUserForeignKey(): void {
+    this.db.exec(`
+      alter table session rename to session_v2;
+      alter table sessiondata rename to sessiondata_v2;
+    `);
+    this.ensureSessionTables();
+    this.db.exec(`
+      insert into session (
+        rowid,
+        sessionid,
+        created,
+        userid,
+        projectid,
+        path,
+        islite,
+        ownerid,
+        lastlogin,
+        status,
+        model,
+        sequence,
+        title,
+        updated,
+        deleted,
+        eventcount,
+        lastdatarowid,
+        lastturnid,
+        compactrowid
+      )
+      select
+        s.rowid,
+        s.sessionid,
+        s.created,
+        coalesce(
+          (select u.userid from users u where u.id = s.userid limit 1),
+          lower(s.userid)
+        ),
+        s.projectid,
+        s.path,
+        s.islite,
+        s.ownerid,
+        s.lastlogin,
+        s.status,
+        s.model,
+        s.sequence,
+        s.title,
+        s.updated,
+        s.deleted,
+        s.eventcount,
+        s.lastdatarowid,
+        s.lastturnid,
+        s.compactrowid
+      from session_v2 s
+      where exists (
+        select 1
+        from users u
+        where u.id = s.userid or u.userid = lower(s.userid)
+      );
+
+      insert into sessiondata (
+        rowid,
+        type,
+        sessionrowid,
+        ownerid,
+        created,
+        payload_json,
+        msgtype,
+        turnid,
+        iscontext
+      )
+      select
+        d.rowid,
+        d.type,
+        d.sessionrowid,
+        d.ownerid,
+        d.created,
+        d.payload_json,
+        d.msgtype,
+        d.turnid,
+        d.iscontext
+      from sessiondata_v2 d
+      where exists (
+        select 1 from session s where s.rowid = d.sessionrowid
+      );
+
+      drop table sessiondata_v2;
+      drop table session_v2;
     `);
   }
 
@@ -1228,6 +1335,16 @@ export class SqliteSessionStore {
       .prepare(`pragma table_info(${table})`)
       .all()
       .some((row) => (row as { name?: unknown }).name === column);
+  }
+
+  private hasTable(table: string): boolean {
+    return (
+      this.db
+        .prepare(
+          "select 1 from sqlite_master where type = 'table' and name = ?",
+        )
+        .get(table) !== undefined
+    );
   }
 
   private transaction<T>(fn: () => T): T {

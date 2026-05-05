@@ -73,14 +73,16 @@ project `AGENTS.md`, project `.ndx/AGENTS.md`, and user-home
 `.ndx/AGENTS.md` when present. Skill catalogs are scanned from project
 `.ndx/skills`, project `.ndx/plugins/*/skills`, user-home `.ndx/skills`,
 user-home `.ndx/plugins/*/skills`, and user-home `.ndx/system/skills`.
-`skills/.system` is not scanned. `/context` reports AGENTS.md and skill catalog
-token estimates separately from conversation messages.
+`skills/.system` is not scanned. Startup `initialize` output includes a source
+summary so AGENTS.md and skill loading are visible before the first prompt.
+`/context` reports AGENTS.md and skill catalog token estimates separately from
+conversation messages.
 
 Minimal shape:
 
 ```json
 {
-  "version": "0.1.30",
+  "version": "0.1.32",
   "model": "local-model",
   "providers": {
     "local": {

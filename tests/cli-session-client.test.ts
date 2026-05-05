@@ -61,6 +61,9 @@ test("CLI session controller initializes socket, starts session, and renders sta
     stderr.join("\n").includes("[tool-sandbox] docker hika00/ndx-sandbox:test"),
     true,
   );
+  assert.equal(stderr.join("\n").includes("[sources] 4"), true);
+  assert.equal(stderr.join("\n").includes("AGENTS.md project: 1"), true);
+  assert.equal(stderr.join("\n").includes("skills user: 1"), true);
   assert.equal(stderr.join("\n").includes("[server/info]"), false);
 });
 
@@ -352,6 +355,26 @@ class FakeTransport implements CliSessionTransport {
         runtime: runtimeInfo(),
         toolSandbox: toolSandboxInfo(),
         bootstrap: bootstrapReport("/home/.ndx"),
+        sources: [
+          "/home/.ndx/settings.json",
+          "/workspace/AGENTS.md",
+          "/home/.ndx/system/skills/site/SKILL.md",
+          "/workspace/.ndx/search.json",
+        ],
+        contextSources: [
+          {
+            kind: "agents",
+            origin: "project",
+            path: "/workspace/AGENTS.md",
+            estimatedTokens: 12,
+          },
+          {
+            kind: "skills",
+            origin: "user",
+            path: "/home/.ndx/system/skills/site/SKILL.md",
+            estimatedTokens: 20,
+          },
+        ],
         methods: [
           "server/info",
           "initialize",

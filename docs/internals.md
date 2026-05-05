@@ -55,15 +55,17 @@ WebSocket connection state.
 
 SQLite `users` is the local account authority. The canonical account fields are
 `userid`, `created`, `lastlogin`, `isblock`, and `isprotected`; legacy `id` and
-`username` remain as compatibility keys for foreign keys. User ids are
+`username` remain as compatibility keys for older local account rows. User ids are
 lowercased ASCII letters and digits. Accounts have no passwords, cannot be
 deleted, and the protected `defaultuser` row is bootstrapped with matching
 `created` and `lastlogin` timestamps. `account/previous` reads the non-blocked
 row with the greatest `lastlogin`, so CLI startup does not depend on host client
 state.
 
-Session-domain data is reset to the clean `session` and `sessiondata` schema;
-the former `projects`, `sessions`, `session_events`, `session_context_*`, and
+Session-domain data uses schema version 3. `session.userid` stores the public
+normalized account id and references `users.userid`; v2 databases that
+referenced `users.id` are migrated in place before the first session insert.
+The former `projects`, `sessions`, `session_events`, `session_context_*`, and
 `session_owners` tables are dropped by the schema reset path. Empty sessions
 remain unnumbered and unpersisted until the first prompt.
 

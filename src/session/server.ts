@@ -233,10 +233,7 @@ export class SessionServer {
       writeJson(response, 200, this.store.dashboardSessionLogFacets());
       return;
     }
-    if (
-      request.method === "GET" &&
-      url.pathname === "/api/dashboard/summary"
-    ) {
+    if (request.method === "GET" && url.pathname === "/api/dashboard/summary") {
       writeJson(response, 200, this.dashboardOverview());
       return;
     }
@@ -516,6 +513,8 @@ export class SessionServer {
         return {
           ...this.serverInfo(),
           bootstrap: this.bootstrap,
+          sources: this.sources,
+          contextSources: this.config.contextSources ?? [],
           methods: [
             "server/info",
             "initialize",
@@ -621,7 +620,9 @@ export class SessionServer {
   }
 
   private createAccount(params: unknown): unknown {
-    const username = normalizeAccountId(requiredStringParam(params, "username"));
+    const username = normalizeAccountId(
+      requiredStringParam(params, "username"),
+    );
     if (this.store.accountExists(username)) {
       throw new Error(`account already exists: ${username}`);
     }
@@ -2042,7 +2043,10 @@ export class SessionServer {
     return reloaded;
   }
 
-  private reloadAndAcquire(session: LiveSession, ownerId?: string): LiveSession {
+  private reloadAndAcquire(
+    session: LiveSession,
+    ownerId?: string,
+  ): LiveSession {
     const persisted = this.readPersistedSession(session.id);
     if (persisted === undefined) {
       this.acquireOwnership(session, ownerId ?? session.ownerId);

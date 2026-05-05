@@ -19,6 +19,7 @@ import {
   type SessionNotification,
 } from "../src/session/client.js";
 import { SessionServer } from "../src/session/server.js";
+import { SqliteSessionStore } from "../src/session/sqlite-store.js";
 import type { RuntimeEventMsg } from "../src/shared/protocol.js";
 import type {
   ModelClient,
@@ -116,9 +117,13 @@ test("session server owns session events, subscribers, and SQLite persistence", 
         globalDir: string;
         elements: Array<{ name: string; status: string; path: string }>;
       };
+      sources: string[];
+      contextSources: unknown[];
     }>("initialize");
     await initializeAndLoginClient(subscriber);
     assert.equal(initialize.bootstrap.globalDir, globalDir);
+    assert.deepEqual(initialize.sources, [join(globalDir, "settings.json")]);
+    assert.deepEqual(initialize.contextSources, []);
     assert.equal(existsSync(join(globalDir, "settings.json")), false);
     assert.equal(existsSync(join(globalDir, "system", "skills")), true);
     assert.equal(
@@ -411,6 +416,36 @@ test("project identity is stored in .ndx/.project and scopes sessions by account
   } finally {
     client?.close();
     await server?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("SQLite v2 account rows migrate before first session insert", () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-session-v2-user-fk-"));
+  const dataDir = join(root, "server-sessions");
+  const cwd = join(root, "workspace");
+  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+  writeLegacyV2AccountDatabase(dataDir);
+
+  const store = SqliteSessionStore.open(dataDir);
+  try {
+    const sequence = store.createSession({
+      id: "session-fk",
+      user: "defaultuser",
+      cwd,
+      title: "first prompt",
+      status: "idle",
+      model: "mock",
+      createdAt: 1,
+    });
+    assert.equal(sequence, 1);
+    assert.equal(
+      readSqliteSessionMeta(dataDir, "session-fk")?.userid,
+      "defaultuser",
+    );
+  } finally {
+    store.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -1949,6 +1984,74 @@ function readSqliteRecords(
       )
       .all(sessionId)
       .map((row) => JSON.parse((row as { payload: string }).payload));
+  } finally {
+    db.close();
+  }
+}
+
+function writeLegacyV2AccountDatabase(dataDir: string): void {
+  const require = createRequire(import.meta.url);
+  const sqlite = require("node:sqlite") as {
+    DatabaseSync: new (path: string) => {
+      exec(sql: string): void;
+      close(): void;
+    };
+  };
+  const db = new sqlite.DatabaseSync(join(dataDir, "ndx.sqlite"));
+  try {
+    db.exec(`
+      pragma foreign_keys = on;
+      create table users (
+        id text primary key,
+        username text not null unique,
+        password text not null,
+        created_at integer not null,
+        updated_at integer not null,
+        userid text not null unique,
+        created integer not null,
+        lastlogin integer not null,
+        isblock integer not null default 0,
+        isprotected integer not null default 0
+      );
+      create table session (
+        rowid integer primary key autoincrement,
+        sessionid text not null unique,
+        created integer not null,
+        userid text not null references users(id) on delete cascade,
+        projectid text not null,
+        path text not null,
+        islite integer not null default 0,
+        ownerid text,
+        lastlogin integer not null,
+        status text not null default 'idle',
+        model text,
+        sequence integer not null,
+        title text not null,
+        updated integer not null,
+        deleted integer,
+        eventcount integer not null default 0,
+        lastdatarowid integer,
+        lastturnid text,
+        compactrowid integer,
+        unique(userid, projectid, sequence)
+      );
+      create table sessiondata (
+        rowid integer primary key autoincrement,
+        type text not null,
+        sessionrowid integer not null references session(rowid) on delete cascade,
+        ownerid text,
+        created integer not null,
+        payload_json text not null,
+        msgtype text,
+        turnid text,
+        iscontext integer not null default 0
+      );
+      insert into users
+        (id, username, password, created_at, updated_at, userid, created, lastlogin, isblock, isprotected)
+      values
+        ('defaultUser', 'defaultUser', '', 1, 1, 'defaultuser', 1, 1, 0, 1);
+      pragma user_version = 2;
+    `);
   } finally {
     db.close();
   }
