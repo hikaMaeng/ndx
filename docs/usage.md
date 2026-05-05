@@ -90,6 +90,32 @@ Minimal shape:
 `custom` entries. MCP servers are declared under `mcp`. Tool packages are
 filesystem packages, not settings entries.
 
+AGENTS.md loading follows the session cwd. Put global instructions in
+`/home/.ndx/AGENTS.md`, or use `/home/.ndx/AGENTS.override.md` to override that
+global file locally. Project instructions are read from the detected project
+root, defaulting to the nearest ancestor with `.git`, down to the cwd. In each
+directory, `AGENTS.override.md` wins over `AGENTS.md`; configured
+`projectDocFallbackFilenames` are considered after those names.
+
+Optional AGENTS.md settings:
+
+```json
+{
+  "projectDocMaxBytes": 32768,
+  "projectDocFallbackFilenames": ["WORKFLOW.md"],
+  "projectRootMarkers": [".git"]
+}
+```
+
+Skills live in `SKILL.md` files under `/home/.ndx/skills`,
+`<project>/.ndx/skills`, or cascading `<dir>/.agents/skills` folders. Each skill
+requires YAML frontmatter with at least a useful `description`. Mention a skill
+with `$skill-name`; when names are ambiguous, link the exact path:
+
+```text
+[$repo-skill](/path/to/.agents/skills/repo-skill/SKILL.md) run the workflow
+```
+
 ## Docker Sandbox
 
 The default sandbox image is `hika00/ndx-sandbox:0.1.1`. Override it only for

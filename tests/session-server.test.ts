@@ -911,6 +911,21 @@ test("dashboard reload re-reads settings and AGENTS sources", async () => {
       join(root, "AGENTS.md"),
       "# Project Instructions\n\nUse test reload.\n",
     );
+    mkdirSync(join(root, ".agents", "skills", "reload-skill"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, ".agents", "skills", "reload-skill", "SKILL.md"),
+      [
+        "---",
+        "name: reload-skill",
+        "description: Reload skill.",
+        "---",
+        "",
+        "Use reload skill.",
+        "",
+      ].join("\n"),
+    );
     server = new SessionServer({
       cwd: root,
       config: {
@@ -935,6 +950,12 @@ test("dashboard reload re-reads settings and AGENTS sources", async () => {
       true,
     );
     assert.equal(body.sources?.includes(join(root, "AGENTS.md")), true);
+    assert.equal(
+      body.sources?.includes(
+        join(root, ".agents", "skills", "reload-skill", "SKILL.md"),
+      ),
+      true,
+    );
 
     const dashboard = await fetch(address.dashboardUrl ?? "");
     const html = await dashboard.text();

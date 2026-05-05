@@ -18,6 +18,11 @@
 - `NDX_CLI_STATE_DIR` may move host CLI app state.
 - Settings version must match the installed package version.
 - Secrets must not be committed to repository files.
+- AGENTS.md project traversal stops at the detected project root. The default
+  root marker is `.git`; `projectRootMarkers` may narrow or disable traversal.
+- Skill `SKILL.md` files must use YAML frontmatter. Ambiguous plain `$skill`
+  names are not injected; use a concrete `SKILL.md` link when duplicate names
+  exist.
 
 ## Server And Sandbox
 

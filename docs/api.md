@@ -84,7 +84,8 @@ Notifications include `session/started`, `session/restored`,
 ## Dashboard HTTP
 
 `GET /` and `GET /dashboard` render the dashboard. `POST /api/reload` reloads
-settings and bootstrap state. `POST /api/exit` requests server shutdown.
+settings, AGENTS.md instruction sources, skill sources, and bootstrap state.
+`POST /api/exit` requests server shutdown.
 `GET /api/dashboard/summary` returns account, project, session, event, live
 session, and connected-client counts for the overview view.
 `GET /api/dashboard/users` returns local SQLite users with created time,

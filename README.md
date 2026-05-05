@@ -34,6 +34,13 @@ and ignores terminal shutdown signals until `ndxserver stop` is run or the
 dashboard exit action is used. Docker is used only for workspace-bound external
 tool and MCP execution.
 
+Startup context includes cascading AGENTS.md files and local skills. Global
+instructions are read from `/home/.ndx/AGENTS.override.md` or
+`/home/.ndx/AGENTS.md`; project instructions are read from the detected project
+root down to the session cwd. Skills are discovered from `/home/.ndx/skills`,
+project `.ndx/skills`, and `.agents/skills`, summarized in context, and fully
+loaded only when mentioned with `$skill-name` or a linked `SKILL.md` path.
+
 ## Verification
 
 ```bash

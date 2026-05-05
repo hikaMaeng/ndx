@@ -22,7 +22,8 @@
 3. The CLI calls public `server/info`, logs in, calls `initialize`, and starts
    or restores one session for the current folder.
 4. The server loads global and project settings, bootstraps `/home/.ndx/system`,
-   and prepares a Docker sandbox unless mock mode or
+   cascades AGENTS.md plus skills into the model context, and prepares a Docker
+   sandbox unless mock mode or
    `NDX_REQUIRE_DOCKER_SANDBOX=0` disables it.
 5. `AgentRuntime` sends the local conversation stack to the model client and
    emits runtime events.
@@ -68,7 +69,8 @@ timeout, the CLI prints launcher PID status and tails readable launcher logs.
 ## Change Boundaries
 
 - Runtime defaults are owned by `src/config/defaults.ts`.
-- Settings schema and merge behavior are owned by `src/config/index.ts`.
+- Settings schema, AGENTS.md discovery, skill discovery, and merge behavior are
+  owned by `src/config/index.ts`.
 - Server JSON-RPC helpers, server info, social login verification, dashboard
   rendering, params, notifications, runtime-event predicates, and websocket
   connection state live under `src/session/server/`.
