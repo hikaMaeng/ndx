@@ -123,6 +123,123 @@ test("agent sends full client-side context after tool calls", async () => {
   }
 });
 
+test("agent injects explicitly mentioned skill content before the user prompt", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-agent-skill-"));
+  try {
+    const skillPath = writeSkill(root, "repo-skill", "Repo skill body.");
+    const client = new SkillCaptureClient();
+
+    const result = await runAgent({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        skills: {
+          skills: [
+            {
+              name: "repo-skill",
+              description: "Repo skill",
+              path: skillPath,
+              scope: "repo",
+            },
+          ],
+          roots: [root],
+          errors: [],
+        },
+      },
+      client,
+      prompt: "$repo-skill perform the task",
+    });
+
+    assert.equal(result, "done");
+    assert.equal(client.inputs.length, 1);
+    assert.deepEqual(client.inputs[0], [
+      {
+        type: "message",
+        role: "user",
+        content: [
+          "# Skill: repo-skill",
+          "",
+          `<SKILL path="${skillPath}">`,
+          "---",
+          "name: repo-skill",
+          "description: test skill",
+          "---",
+          "",
+          "Repo skill body.",
+          "</SKILL>",
+        ].join("\n"),
+      },
+      {
+        type: "message",
+        role: "user",
+        content: "$repo-skill perform the task",
+      },
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("agent injects linked skill paths once and ignores ambiguous plain names", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-agent-skill-dedup-"));
+  try {
+    const firstSkill = writeSkill(join(root, "one"), "shared", "First body.");
+    const secondSkill = writeSkill(join(root, "two"), "shared", "Second body.");
+    const client = new SkillCaptureClient();
+
+    await runAgent({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        skills: {
+          skills: [
+            {
+              name: "shared",
+              description: "first",
+              path: firstSkill,
+              scope: "repo",
+            },
+            {
+              name: "shared",
+              description: "second",
+              path: secondSkill,
+              scope: "user",
+            },
+          ],
+          roots: [root],
+          errors: [],
+        },
+      },
+      client,
+      prompt: `[$shared](${firstSkill}) [$shared](${firstSkill}) $shared`,
+    });
+
+    assert.equal(client.inputs.length, 1);
+    assert.deepEqual(
+      (client.inputs[0] as Array<{ content?: string }>).map(
+        (item) => item.content,
+      ),
+      [
+        [
+          "# Skill: shared",
+          "",
+          `<SKILL path="${firstSkill}">`,
+          "---",
+          "name: shared",
+          "description: test skill",
+          "---",
+          "",
+          "First body.",
+          "</SKILL>",
+        ].join("\n"),
+        `[$shared](${firstSkill}) [$shared](${firstSkill}) $shared`,
+      ],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("agent abort signal stops before starting a model request", async () => {
   const client = new CountingModelClient();
   const controller = new AbortController();
@@ -262,6 +379,25 @@ function writeAbortAwareTool(
   );
 }
 
+function writeSkill(root: string, name: string, body: string): string {
+  const skillDir = root.endsWith(name) ? root : join(root, name);
+  mkdirSync(skillDir, { recursive: true });
+  const skillPath = join(skillDir, "SKILL.md");
+  writeFileSync(
+    skillPath,
+    [
+      "---",
+      `name: ${name}`,
+      "description: test skill",
+      "---",
+      "",
+      body,
+      "",
+    ].join("\n"),
+  );
+  return skillPath;
+}
+
 async function waitForFile(path: string): Promise<boolean> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
@@ -271,6 +407,19 @@ async function waitForFile(path: string): Promise<boolean> {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   return false;
+}
+
+class SkillCaptureClient implements ModelClient {
+  readonly inputs: unknown[] = [];
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.inputs.push(JSON.parse(JSON.stringify(input)) as unknown);
+    return {
+      text: "done",
+      toolCalls: [],
+      raw: {},
+    };
+  }
 }
 
 class CountingModelClient implements ModelClient {

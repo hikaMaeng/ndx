@@ -20,11 +20,13 @@ ndxserver --version
 ## Coverage Areas
 
 - Settings discovery, version normalization, merge precedence, model pools, MCP
-  declarations, and global bootstrap.
+  declarations, AGENTS.md cascade behavior, skill discovery, and global
+  bootstrap.
 - Model provider normalization for OpenAI Responses, Chat Completions fallback,
   Anthropic Messages, inference parameters, and sticky model routing.
 - Agent loop behavior, full client-side context follow-up, tool execution,
-  worker process isolation, abort propagation, and runtime event replay.
+  explicit skill injection, duplicate skill suppression, worker process
+  isolation, abort propagation, and runtime event replay.
 - Session server local account create/login/previous/block/unblock flow,
   WebSocket request/notification flow, SQLite persistence,
   `session`/`sessiondata` metadata, project-id scoping, legacy session-table

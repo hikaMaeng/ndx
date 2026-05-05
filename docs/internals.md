@@ -7,9 +7,27 @@ fields use last-writer-wins. Providers, permissions, websearch, MCP, keys, env,
 and tools merge by key. Model catalogs may be arrays or object maps and merge by
 local model id.
 
-`ensureGlobalNdxHome` creates the global directory, `system/tools`,
-`system/skills`, and built-in core tool packages. Built-in package manifests and
-runtimes are generated from `src/config/core-tools.ts`.
+`ensureGlobalNdxHome` creates the global directory, `skills`,
+`skills/.system`, `system/tools`, `system/skills`, and built-in core tool
+packages. Built-in package manifests and runtimes are generated from
+`src/config/core-tools.ts`.
+
+AGENTS.md instructions are loaded during `loadConfig`. `$NDX_HOME` prefers
+`AGENTS.override.md` over `AGENTS.md`; project instructions are then collected
+from the detected project root down to the session cwd. The default project root
+marker is `.git`. Each directory prefers `AGENTS.override.md`, then `AGENTS.md`,
+then configured `projectDocFallbackFilenames`. `projectDocMaxBytes` caps the
+total included bytes. Session configuration events and dashboard reload results
+record the exact instruction source paths.
+
+Skills are discovered from `$NDX_HOME/skills`, legacy
+`$NDX_HOME/system/skills`, project `.ndx/skills`, and cascading
+`.agents/skills` roots between the project root and cwd. Each `SKILL.md` must
+have YAML frontmatter; `name`, `description`, and
+`metadata.short-description` feed the model-visible available-skills list.
+Skills are deduped by canonical `SKILL.md` path and sorted by scope, name, and
+path. Full skill bodies are loaded into a turn only when the user mentions a
+unique `$skill-name` or links a concrete `SKILL.md` path.
 
 ## Defaults
 
@@ -23,6 +41,12 @@ sandbox, MCP, and external tool execution. Package version discovery lives in
 the model client, executes returned tool calls, appends
 `function_call_output` items, and stops when the model returns text without tool
 calls. The loop is bounded by `config.maxTurns`.
+
+Before the user prompt is sent, `runAgent` scans the prompt for explicit skill
+mentions. Linked `[$skill](.../SKILL.md)` selections resolve by canonical path.
+Plain `$skill-name` selections resolve only when exactly one enabled skill has
+that name. Selected skills are injected once as model-visible user context ahead
+of the prompt.
 
 `AgentRuntime` wraps the loop with session ids, turn ids, abort handling,
 runtime events, history, and provider error classification.

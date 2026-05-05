@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, parse, resolve } from "node:path";
 import type {
   EnvMap,
@@ -15,6 +23,9 @@ import type {
   PluginSettings,
   ProviderSettings,
   SearchRules,
+  SkillMetadata,
+  SkillScope,
+  SkillsContext,
   ToolRuntimeSettings,
   WebSearchSettings,
 } from "../shared/types.js";
@@ -46,6 +57,9 @@ interface PartialSettings {
   tools?: Partial<ToolRuntimeSettings>;
   keys?: EnvMap;
   env?: EnvMap;
+  projectDocMaxBytes?: number;
+  projectDocFallbackFilenames?: string[];
+  projectRootMarkers?: string[];
 }
 
 type ModelCatalogSettings =
@@ -58,6 +72,15 @@ interface PartialModelPools {
   reviewer?: string | string[];
   custom?: Record<string, string | string[]>;
 }
+
+const DEFAULT_AGENTS_MD_FILENAME = "AGENTS.md";
+const LOCAL_AGENTS_MD_FILENAME = "AGENTS.override.md";
+const DEFAULT_PROJECT_DOC_MAX_BYTES = 32 * 1024;
+const DEFAULT_PROJECT_ROOT_MARKERS = [".git"];
+const SKILL_FILENAME = "SKILL.md";
+const SKILLS_DIR_NAME = "skills";
+const AGENTS_DIR_NAME = ".agents";
+const PROJECT_DOC_SEPARATOR = "\n\n--- project-doc ---\n\n";
 
 /** Return the single global ndx configuration directory. */
 export function resolveGlobalNdxDir(options: ConfigLoadOptions = {}): string {
@@ -125,14 +148,23 @@ export function loadConfig(
     sources.push(searchFile);
   }
 
-  const instructionFiles = agentsFiles(cwd);
-  if (instructionFiles.length > 0) {
+  const agents = loadAgentsInstructions(cwd, globalDir, merged);
+  if (agents.instructions !== undefined) {
     merged.instructions = [
       expectString(merged.instructions, "instructions"),
-      formatAgentsInstructions(instructionFiles),
-    ].join("\n\n");
-    sources.push(...instructionFiles);
+      agents.instructions,
+    ].join(PROJECT_DOC_SEPARATOR);
+    sources.push(...agents.sources);
   }
+
+  const skills = loadSkillsContext(cwd, globalDir, agents.projectRoot);
+  if (skills.availableInstructions !== undefined) {
+    merged.instructions = [
+      expectString(merged.instructions, "instructions"),
+      skills.availableInstructions,
+    ].join("\n\n");
+  }
+  sources.push(...skills.skills.map((skill) => skill.path));
 
   return {
     config: finalizeConfig(merged, {
@@ -144,6 +176,7 @@ export function loadConfig(
           : join(projectDir, NDX_DEFAULTS.configDir),
       globalMcp,
       projectMcp,
+      skills,
     }),
     sources,
   };
@@ -170,6 +203,8 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
     status: globalDirStatus,
   });
   for (const directory of [
+    SKILLS_DIR_NAME,
+    join(SKILLS_DIR_NAME, ".system"),
     NDX_DEFAULTS.systemDir,
     join(NDX_DEFAULTS.systemDir, "tools"),
     join(NDX_DEFAULTS.systemDir, "skills"),
@@ -204,6 +239,9 @@ function runtimeDefaults(): PartialSettings {
     tools: { imageGeneration: NDX_DEFAULTS.imageGenerationEnabled },
     keys: {},
     env: {},
+    projectDocMaxBytes: DEFAULT_PROJECT_DOC_MAX_BYTES,
+    projectDocFallbackFilenames: [],
+    projectRootMarkers: [...DEFAULT_PROJECT_ROOT_MARKERS],
   };
 }
 
@@ -277,29 +315,426 @@ function projectSettingsFile(cwd: string): string | undefined {
   return existsSync(candidate) ? candidate : undefined;
 }
 
-function agentsFiles(cwd: string): string[] {
+interface LoadedAgentsInstructions {
+  instructions?: string;
+  sources: string[];
+  projectRoot: string;
+}
+
+function loadAgentsInstructions(
+  cwd: string,
+  globalDir: string,
+  settings: PartialSettings,
+): LoadedAgentsInstructions {
+  const resolvedCwd = resolve(cwd);
+  const maxBytes = expectNumber(
+    settings.projectDocMaxBytes,
+    "projectDocMaxBytes",
+  );
+  if (maxBytes === 0) {
+    return {
+      sources: [],
+      projectRoot: findProjectRoot(
+        resolvedCwd,
+        expectStringArray(settings.projectRootMarkers, "projectRootMarkers"),
+      ),
+    };
+  }
+
+  let remaining = maxBytes;
+  const sources: string[] = [];
+  const parts: string[] = [];
+
+  const global = firstReadableFile(globalDir, [
+    LOCAL_AGENTS_MD_FILENAME,
+    DEFAULT_AGENTS_MD_FILENAME,
+  ]);
+  if (global !== undefined) {
+    const loaded = readInstructionFile(global, remaining);
+    if (loaded.text.length > 0) {
+      parts.push(loaded.text);
+      sources.push(global);
+      remaining -= loaded.bytes;
+    }
+  }
+
+  const rootMarkers = expectStringArray(
+    settings.projectRootMarkers,
+    "projectRootMarkers",
+  );
+  const projectRoot = findProjectRoot(resolvedCwd, rootMarkers);
+  const fallbackFilenames = expectStringArray(
+    settings.projectDocFallbackFilenames,
+    "projectDocFallbackFilenames",
+  );
+  const projectFiles = projectAgentsFiles(
+    projectRoot,
+    resolvedCwd,
+    fallbackFilenames,
+  );
+  for (const file of projectFiles) {
+    if (remaining <= 0) {
+      break;
+    }
+    const loaded = readInstructionFile(file, remaining);
+    if (loaded.text.length === 0) {
+      continue;
+    }
+    parts.push(loaded.text);
+    sources.push(file);
+    remaining -= loaded.bytes;
+  }
+
+  if (parts.length === 0) {
+    return { sources, projectRoot };
+  }
+  return {
+    instructions: [
+      `# AGENTS.md instructions for ${resolvedCwd}`,
+      "",
+      "<INSTRUCTIONS>",
+      parts.join("\n\n"),
+      "</INSTRUCTIONS>",
+    ].join("\n"),
+    sources,
+    projectRoot,
+  };
+}
+
+function firstReadableFile(directory: string, filenames: string[]): string | undefined {
+  for (const filename of filenames) {
+    const path = join(directory, filename);
+    if (isFile(path)) {
+      return path;
+    }
+  }
+  return undefined;
+}
+
+function projectAgentsFiles(
+  projectRoot: string,
+  cwd: string,
+  fallbackFilenames: string[],
+): string[] {
   const files: string[] = [];
-  let current = resolve(cwd);
+  const candidates = candidateProjectDocFilenames(fallbackFilenames);
+  for (const directory of dirsBetween(projectRoot, cwd)) {
+    const file = firstReadableFile(directory, candidates);
+    if (file !== undefined) {
+      files.push(file);
+    }
+  }
+  return files;
+}
+
+function candidateProjectDocFilenames(fallbackFilenames: string[]): string[] {
+  const names = [LOCAL_AGENTS_MD_FILENAME, DEFAULT_AGENTS_MD_FILENAME];
+  for (const filename of fallbackFilenames) {
+    if (filename.length > 0 && !names.includes(filename)) {
+      names.push(filename);
+    }
+  }
+  return names;
+}
+
+function readInstructionFile(
+  path: string,
+  maxBytes: number,
+): { text: string; bytes: number } {
+  const data = readFileSync(path);
+  const bytes = Math.min(data.length, Math.max(0, maxBytes));
+  return {
+    text: data.subarray(0, bytes).toString("utf8").trimEnd(),
+    bytes,
+  };
+}
+
+function findProjectRoot(cwd: string, rootMarkers: string[]): string {
+  if (rootMarkers.length === 0) {
+    return cwd;
+  }
+  let current = cwd;
   const root = parse(current).root;
   while (true) {
-    const candidate = join(current, "AGENTS.md");
-    if (existsSync(candidate)) {
-      files.unshift(candidate);
+    if (rootMarkers.some((marker) => existsSync(join(current, marker)))) {
+      return current;
     }
     if (current === root) {
-      return files;
+      return cwd;
     }
     current = dirname(current);
   }
 }
 
-function formatAgentsInstructions(files: string[]): string {
+function dirsBetween(projectRoot: string, cwd: string): string[] {
+  const dirs: string[] = [];
+  let current = cwd;
+  while (true) {
+    dirs.push(current);
+    if (current === projectRoot) {
+      break;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return dirs.reverse();
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function loadSkillsContext(
+  cwd: string,
+  globalDir: string,
+  projectRoot: string,
+): SkillsContext {
+  const roots = skillRoots(resolve(cwd), globalDir, projectRoot);
+  const skills: SkillMetadata[] = [];
+  const errors: SkillsContext["errors"] = [];
+  const seenPaths = new Set<string>();
+  for (const root of roots) {
+    for (const file of skillFilesUnder(root.path)) {
+      const identity = canonicalPath(file);
+      if (seenPaths.has(identity)) {
+        continue;
+      }
+      seenPaths.add(identity);
+      try {
+        skills.push(parseSkillFile(file, root.scope, identity));
+      } catch (error) {
+        errors.push({
+          path: file,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+  skills.sort((a, b) =>
+    skillScopeRank(a.scope) - skillScopeRank(b.scope) ||
+    a.name.localeCompare(b.name) ||
+    a.path.localeCompare(b.path),
+  );
+  return {
+    skills,
+    roots: roots.map((root) => root.path),
+    errors,
+    availableInstructions: formatAvailableSkills(skills),
+  };
+}
+
+function skillRoots(
+  cwd: string,
+  globalDir: string,
+  projectRoot: string,
+): Array<{ path: string; scope: SkillScope }> {
+  const roots: Array<{ path: string; scope: SkillScope }> = [
+    { path: join(globalDir, SKILLS_DIR_NAME), scope: "user" },
+    { path: join(globalDir, SKILLS_DIR_NAME, ".system"), scope: "system" },
+    { path: join(globalDir, NDX_DEFAULTS.systemDir, "skills"), scope: "system" },
+  ];
+  for (const directory of dirsBetween(projectRoot, cwd)) {
+    roots.push({
+      path: join(directory, NDX_DEFAULTS.configDir, SKILLS_DIR_NAME),
+      scope: "repo",
+    });
+    roots.push({
+      path: join(directory, AGENTS_DIR_NAME, SKILLS_DIR_NAME),
+      scope: "repo",
+    });
+  }
+  const seen = new Set<string>();
+  return roots.filter((root) => {
+    const path = canonicalPath(root.path);
+    if (seen.has(path)) {
+      return false;
+    }
+    seen.add(path);
+    return true;
+  });
+}
+
+function skillFilesUnder(root: string): string[] {
+  if (!isDirectory(root)) {
+    return [];
+  }
+  const files: string[] = [];
+  const queue: Array<{ path: string; depth: number }> = [{ path: root, depth: 0 }];
+  const visited = new Set<string>([canonicalPath(root)]);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) {
+      break;
+    }
+    for (const entry of safeReadDir(current.path)) {
+      if (entry.startsWith(".")) {
+        continue;
+      }
+      const path = join(current.path, entry);
+      if (isDirectory(path)) {
+        if (current.depth < 6) {
+          const identity = canonicalPath(path);
+          if (!visited.has(identity)) {
+            visited.add(identity);
+            queue.push({ path, depth: current.depth + 1 });
+          }
+        }
+        continue;
+      }
+      if (entry === SKILL_FILENAME && isFile(path)) {
+        files.push(path);
+      }
+    }
+  }
+  return files;
+}
+
+function safeReadDir(path: string): string[] {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
+}
+
+function parseSkillFile(
+  path: string,
+  scope: SkillScope,
+  resolvedPath: string,
+): SkillMetadata {
+  const contents = readFileSync(path, "utf8");
+  const frontmatter = extractFrontmatter(contents);
+  if (frontmatter === undefined) {
+    throw new Error("missing YAML frontmatter delimited by ---");
+  }
+  const parsed = parseSkillFrontmatter(frontmatter);
+  return {
+    name: sanitizeSingleLine(parsed.name ?? defaultSkillName(path)),
+    description: sanitizeSingleLine(parsed.description ?? ""),
+    shortDescription:
+      parsed.shortDescription === undefined
+        ? undefined
+        : sanitizeSingleLine(parsed.shortDescription),
+    path: resolvedPath,
+    scope,
+  };
+}
+
+function extractFrontmatter(contents: string): string | undefined {
+  const normalized = contents.replaceAll("\r\n", "\n");
+  if (!normalized.startsWith("---\n")) {
+    return undefined;
+  }
+  const end = normalized.indexOf("\n---", 4);
+  return end === -1 ? undefined : normalized.slice(4, end);
+}
+
+function parseSkillFrontmatter(contents: string): {
+  name?: string;
+  description?: string;
+  shortDescription?: string;
+} {
+  const result: {
+    name?: string;
+    description?: string;
+    shortDescription?: string;
+  } = {};
+  let section: string | undefined;
+  for (const rawLine of contents.split("\n")) {
+    const line = rawLine.trimEnd();
+    if (line.trim().length === 0 || line.trimStart().startsWith("#")) {
+      continue;
+    }
+    const topLevel = !rawLine.startsWith(" ") && !rawLine.startsWith("\t");
+    const match = /^\s*([A-Za-z0-9_.-]+):\s*(.*)$/.exec(line);
+    if (match === null) {
+      continue;
+    }
+    const key = match[1] ?? "";
+    const value = unquoteYamlScalar(match[2] ?? "");
+    if (topLevel) {
+      section = value.length === 0 ? key : undefined;
+      if (key === "name") {
+        result.name = value;
+      } else if (key === "description") {
+        result.description = value;
+      }
+    } else if (section === "metadata" && key === "short-description") {
+      result.shortDescription = value;
+    }
+  }
+  return result;
+}
+
+function unquoteYamlScalar(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function defaultSkillName(path: string): string {
+  const parent = dirname(path);
+  const name = parent.slice(parent.lastIndexOf("/") + 1);
+  return name.length > 0 ? name : "skill";
+}
+
+function sanitizeSingleLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 1024);
+}
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+function skillScopeRank(scope: SkillScope): number {
+  switch (scope) {
+    case "repo":
+      return 0;
+    case "user":
+      return 1;
+    case "system":
+      return 2;
+  }
+}
+
+function formatAvailableSkills(skills: SkillMetadata[]): string | undefined {
+  if (skills.length === 0) {
+    return undefined;
+  }
   return [
-    "AGENTS.md instructions:",
-    ...files.flatMap((file) => [
-      `--- ${file} ---`,
-      readFileSync(file, "utf8").trimEnd(),
-    ]),
+    "# Available Skills",
+    "",
+    "A skill is a set of local instructions stored in a `SKILL.md` file. Use a skill when the user names it with `$skill-name` or when the task clearly matches its description. Open the `SKILL.md` file before relying on a skill.",
+    "",
+    ...skills.map((skill) => {
+      const description =
+        skill.shortDescription ?? skill.description ?? "No description.";
+      return `- ${skill.name}: ${description} (file: ${skill.path})`;
+    }),
   ].join("\n");
 }
 
@@ -312,6 +747,13 @@ function parseSettings(contents: string, file: string): PartialSettings {
   assertOptionalString(parsed.instructions, "instructions", file);
   assertOptionalInteger(parsed.maxTurns, "maxTurns", file);
   assertOptionalInteger(parsed.shellTimeoutMs, "shellTimeoutMs", file);
+  assertOptionalInteger(parsed.projectDocMaxBytes, "projectDocMaxBytes", file);
+  assertOptionalStringArray(
+    parsed.projectDocFallbackFilenames,
+    "projectDocFallbackFilenames",
+    file,
+  );
+  assertOptionalStringArray(parsed.projectRootMarkers, "projectRootMarkers", file);
   assertOptionalEnvMap(parsed.keys, "keys", file);
   assertOptionalEnvMap(parsed.env, "env", file);
   assertProviders(parsed.providers, file);
@@ -365,6 +807,17 @@ function mergeSettings(target: PartialSettings, source: PartialSettings): void {
   }
   if (source.shellTimeoutMs !== undefined) {
     target.shellTimeoutMs = source.shellTimeoutMs;
+  }
+  if (source.projectDocMaxBytes !== undefined) {
+    target.projectDocMaxBytes = source.projectDocMaxBytes;
+  }
+  if (source.projectDocFallbackFilenames !== undefined) {
+    target.projectDocFallbackFilenames = [
+      ...source.projectDocFallbackFilenames,
+    ];
+  }
+  if (source.projectRootMarkers !== undefined) {
+    target.projectRootMarkers = [...source.projectRootMarkers];
   }
   if (source.providers !== undefined) {
     target.providers = { ...(target.providers ?? {}), ...source.providers };
@@ -481,6 +934,7 @@ function finalizeConfig(
     projectNdxDir?: string;
     globalMcp: McpSettings;
     projectMcp: McpSettings;
+    skills: SkillsContext;
   },
 ): NdxConfig {
   const modelPools = expectModelPools(settings.model, "model");
@@ -522,6 +976,18 @@ function finalizeConfig(
       imageGeneration: settings.tools?.imageGeneration ?? false,
       dockerSandboxImage: settings.tools?.dockerSandboxImage,
     },
+    projectDocs: {
+      maxBytes: expectNumber(settings.projectDocMaxBytes, "projectDocMaxBytes"),
+      fallbackFilenames: expectStringArray(
+        settings.projectDocFallbackFilenames,
+        "projectDocFallbackFilenames",
+      ),
+      rootMarkers: expectStringArray(
+        settings.projectRootMarkers,
+        "projectRootMarkers",
+      ),
+    },
+    skills: runtime.skills,
     paths: {
       globalDir: runtime.globalDir,
       dataDir,
@@ -984,6 +1450,13 @@ function expectDeclaredProvider(
 function expectNumber(value: unknown, field: string): number {
   if (typeof value !== "number") {
     throw new Error(`${field} must be a number`);
+  }
+  return value;
+}
+
+function expectStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`${field} must be an array of strings`);
   }
   return value;
 }

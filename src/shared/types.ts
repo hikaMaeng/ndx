@@ -57,6 +57,29 @@ export interface ToolRuntimeSettings {
   dockerSandboxImage?: string;
 }
 
+export interface ProjectDocSettings {
+  maxBytes: number;
+  fallbackFilenames: string[];
+  rootMarkers: string[];
+}
+
+export type SkillScope = "repo" | "user" | "system";
+
+export interface SkillMetadata {
+  name: string;
+  description: string;
+  shortDescription?: string;
+  path: string;
+  scope: SkillScope;
+}
+
+export interface SkillsContext {
+  skills: SkillMetadata[];
+  roots: string[];
+  errors: Array<{ path: string; message: string }>;
+  availableInstructions?: string;
+}
+
 export interface NdxPaths {
   globalDir: string;
   dataDir?: string;
@@ -154,6 +177,8 @@ export interface NdxConfig {
   projectMcp: McpSettings;
   plugins: PluginSettings[];
   tools: ToolRuntimeSettings;
+  projectDocs?: ProjectDocSettings;
+  skills?: SkillsContext;
   paths: NdxPaths;
 }
 
