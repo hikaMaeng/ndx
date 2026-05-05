@@ -46,10 +46,17 @@ added to model context.
 | `/restoreSession` | Switch to a saved session by UUID or list number. |
 | `/deleteSession`  | Delete another session for the current cwd.       |
 | `/interrupt`      | Interrupt the current turn.                       |
+| `/compact`        | Summarize saved context and restart from it.      |
+| `/context`        | Print current context usage by item kind.         |
+| `/lite`           | Toggle lite context mode with `on` or `off`.      |
 | `/exit`           | Close the CLI client.                             |
 
 `/exit` does not stop a managed detached server. Use a process signal or the
 dashboard exit endpoint for server shutdown.
+
+`/context` includes conversation history plus startup instruction estimates.
+AGENTS.md and skill catalog entries are grouped as project or user sources,
+separate from message and tool rows.
 
 ## WebSocket JSON-RPC
 
@@ -59,24 +66,24 @@ methods require login on that socket.
 
 Requests:
 
-| Method                     | Params                                                          | Result                                      |
-| -------------------------- | --------------------------------------------------------------- | ------------------------------------------- |
-| `server/info`              | none                                                            | server, version, runtime, sandbox, protocol |
-| `initialize`               | none                                                            | server, methods, bootstrap, dashboard URL   |
-| `command/list`             | none                                                            | command definitions                         |
-| `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`                 | command result                              |
-| `account/previous`         | none                                                            | last non-blocked account                    |
-| `account/create`           | `{ username }`                                                  | created account                             |
-| `account/login`            | `{ username?, clientId? }`                                      | socket identity                             |
-| `session/start`            | `{ cwd?, user?, clientId? }`                                    | live session                                |
-| `session/list`             | `{ cwd?, user?, clientId? }`                                    | workspace sessions                          |
-| `session/restore`          | `{ cwd?, selector, user?, clientId? }`                          | session plus events                         |
-| `session/deleteCandidates` | `{ cwd?, currentSessionId?, user?, clientId? }`                 | delete candidates                           |
-| `session/delete`           | `{ cwd?, selector, currentSessionId?, user?, clientId? }`       | deleted session                             |
-| `session/subscribe`        | `{ sessionId, user?, clientId? }`                               | session plus events                         |
-| `session/read`             | `{ sessionId }`                                                 | session plus events                         |
-| `turn/start`               | `{ sessionId, prompt, user?, clientId? }`                       | turn id                                     |
-| `turn/interrupt`           | `{ sessionId, reason? }`                                        | updated session                             |
+| Method                     | Params                                                    | Result                                      |
+| -------------------------- | --------------------------------------------------------- | ------------------------------------------- |
+| `server/info`              | none                                                      | server, version, runtime, sandbox, protocol |
+| `initialize`               | none                                                      | server, methods, bootstrap, dashboard URL   |
+| `command/list`             | none                                                      | command definitions                         |
+| `command/execute`          | `{ name, args?, sessionId?, user?, clientId? }`           | command result                              |
+| `account/previous`         | none                                                      | last non-blocked account                    |
+| `account/create`           | `{ username }`                                            | created account                             |
+| `account/login`            | `{ username?, clientId? }`                                | socket identity                             |
+| `session/start`            | `{ cwd?, user?, clientId? }`                              | live session                                |
+| `session/list`             | `{ cwd?, user?, clientId? }`                              | workspace sessions                          |
+| `session/restore`          | `{ cwd?, selector, user?, clientId? }`                    | session plus events                         |
+| `session/deleteCandidates` | `{ cwd?, currentSessionId?, user?, clientId? }`           | delete candidates                           |
+| `session/delete`           | `{ cwd?, selector, currentSessionId?, user?, clientId? }` | deleted session                             |
+| `session/subscribe`        | `{ sessionId, user?, clientId? }`                         | session plus events                         |
+| `session/read`             | `{ sessionId }`                                           | session plus events                         |
+| `turn/start`               | `{ sessionId, prompt, user?, clientId? }`                 | turn id                                     |
+| `turn/interrupt`           | `{ sessionId, reason? }`                                  | updated session                             |
 
 Notifications include `session/started`, `session/restored`,
 `session/deleted`, and runtime event notifications.

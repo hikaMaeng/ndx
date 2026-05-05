@@ -7,27 +7,21 @@ fields use last-writer-wins. Providers, permissions, websearch, MCP, keys, env,
 and tools merge by key. Model catalogs may be arrays or object maps and merge by
 local model id.
 
-`ensureGlobalNdxHome` creates the global directory, `skills`,
-`skills/.system`, `system/tools`, `system/skills`, and built-in core tool
-packages. Built-in package manifests and runtimes are generated from
-`src/config/core-tools.ts`.
+`ensureGlobalNdxHome` creates the global directory, `skills`, `system/tools`,
+`system/skills`, and built-in core tool packages. Built-in package manifests and
+runtimes are generated from `src/config/core-tools.ts`.
 
-AGENTS.md instructions are loaded during `loadConfig`. `$NDX_HOME` prefers
-`AGENTS.override.md` over `AGENTS.md`; project instructions are then collected
-from the detected project root down to the session cwd. The default project root
-marker is `.git`. Each directory prefers `AGENTS.override.md`, then `AGENTS.md`,
-then configured `projectDocFallbackFilenames`. `projectDocMaxBytes` caps the
-total included bytes. Session configuration events and dashboard reload results
-record the exact instruction source paths.
+AGENTS.md loading is an explicit cascade rather than an open-ended ancestor
+scan. The loader reads project `AGENTS.md`, project `.ndx/AGENTS.md`, and
+user-home `.ndx/AGENTS.md` when present, in that order. All three files are
+included in startup instructions and reported as recognized sources.
 
-Skills are discovered from `$NDX_HOME/skills`, legacy
-`$NDX_HOME/system/skills`, project `.ndx/skills`, and cascading
-`.agents/skills` roots between the project root and cwd. Each `SKILL.md` must
-have YAML frontmatter; `name`, `description`, and
-`metadata.short-description` feed the model-visible available-skills list.
-Skills are deduped by canonical `SKILL.md` path and sorted by scope, name, and
-path. Full skill bodies are loaded into a turn only when the user mentions a
-unique `$skill-name` or links a concrete `SKILL.md` path.
+Skill discovery is also explicit. The scan order is project `.ndx/skills`,
+project `.ndx/plugins/*/skills`, user-home `.ndx/skills`, user-home
+`.ndx/plugins/*/skills`, and user-home `.ndx/system/skills`. Directories named
+`skills/.system` and `.agents/skills` are not part of the runtime contract.
+Skill catalog entries are included in startup instructions, while the full
+SKILL.md body is still loaded only when the model chooses to use that skill.
 
 ## Defaults
 
@@ -76,17 +70,17 @@ remain unnumbered and unpersisted until the first prompt.
 The `session` table is the metadata projection used to inspect session identity
 and ownership:
 
-| Column | Contract |
-| ------ | -------- |
-| `rowid` | Monotonic SQLite primary key. |
-| `sessionid` | Runtime session UUID. |
-| `created` | Session metadata creation timestamp. |
-| `userid` | Account id that can see the session. |
-| `projectid` | UUID from `<project>/.ndx/.project`. |
-| `path` | Physical project path for display and sandbox preparation. |
-| `islite` | Persisted lite context mode flag. |
-| `ownerid` | Current client ownership UUID allowed to update the session. |
-| `lastlogin` | Last ownership claim timestamp. |
+| Column      | Contract                                                     |
+| ----------- | ------------------------------------------------------------ |
+| `rowid`     | Monotonic SQLite primary key.                                |
+| `sessionid` | Runtime session UUID.                                        |
+| `created`   | Session metadata creation timestamp.                         |
+| `userid`    | Account id that can see the session.                         |
+| `projectid` | UUID from `<project>/.ndx/.project`.                         |
+| `path`      | Physical project path for display and sandbox preparation.   |
+| `islite`    | Persisted lite context mode flag.                            |
+| `ownerid`   | Current client ownership UUID allowed to update the session. |
+| `lastlogin` | Last ownership claim timestamp.                              |
 
 The `sessiondata` table stores persisted session payload records with `type`,
 `sessionrowid`, `ownerid`, `created`, and `payload_json`; it also stores
@@ -104,6 +98,17 @@ Lite context mode keeps persisted tool call and tool result rows for audit, but
 omits prior tool rows from model context when a new user turn starts. The active
 turn keeps its local tool stack until the model finishes or exhausts the turn
 limit. Toggling lite mode updates `session.islite`.
+
+Skill-loading tool calls and their results are always audit records only. They
+are stored in `sessiondata`, but are not marked as provider-facing context and
+are not restored into future model history regardless of lite mode. This keeps
+skill body loading independent from compact checkpoints and from lite-mode
+tool-log pruning.
+
+Context summaries include conversation history plus instruction-source
+estimates. `/context` groups AGENTS.md and skill catalog tokens separately as
+project or user sources, for example `agents_project`, `agents_user`,
+`skills_project`, and `skills_user`.
 
 ## Managed CLI Server
 

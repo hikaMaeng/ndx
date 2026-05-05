@@ -161,6 +161,7 @@ export interface NdxConfig {
   model: string;
   modelPools: ModelPools;
   instructions: string;
+  contextSources?: ContextInstructionSource[];
   env: EnvMap;
   keys: EnvMap;
   maxTurns: number;
@@ -185,6 +186,16 @@ export interface NdxConfig {
 export interface LoadedConfig {
   config: NdxConfig;
   sources: string[];
+}
+
+export type ContextInstructionKind = "agents" | "skills";
+export type ContextInstructionOrigin = "project" | "user";
+
+export interface ContextInstructionSource {
+  kind: ContextInstructionKind;
+  origin: ContextInstructionOrigin;
+  path: string;
+  estimatedTokens: number;
 }
 
 export interface ShellResult {

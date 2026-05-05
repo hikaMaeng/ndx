@@ -139,7 +139,7 @@ test("loadConfig cascades global settings, current project settings, and global 
   }
 });
 
-test("loadConfig cascades global and project AGENTS.md with override, fallback, and source order", () => {
+test("loadConfig cascades project and user AGENTS.md in fixed source order", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
@@ -155,35 +155,37 @@ test("loadConfig cascades global and project AGENTS.md with override, fallback, 
         mock: { type: "openai", key: "", url: "http://mock.example/v1" },
       },
       models: [{ name: "mock", provider: "mock" }],
-      projectDocFallbackFilenames: ["WORKFLOW.md"],
     });
-    writeFileSync(join(globalDir, "AGENTS.md"), "global base ignored\n");
-    writeFileSync(join(globalDir, "AGENTS.override.md"), "global override\n");
+    writeFileSync(join(globalDir, "AGENTS.md"), "user home\n");
     writeFileSync(join(project, "AGENTS.md"), "project root\n");
-    writeFileSync(join(nested, "AGENTS.md"), "nested base ignored\n");
-    writeFileSync(join(nested, "AGENTS.override.md"), "nested override\n");
+    mkdirSync(join(project, ".ndx"), { recursive: true });
+    writeFileSync(join(project, ".ndx", "AGENTS.md"), "project ndx\n");
+    writeFileSync(join(nested, "AGENTS.md"), "nested ignored\n");
 
     const loaded = loadConfig(nested, { globalDir });
 
-    assert.equal(loaded.config.instructions.includes("global override"), true);
-    assert.equal(loaded.config.instructions.includes("global base ignored"), false);
+    assert.equal(loaded.config.instructions.includes("user home"), true);
     assert.equal(loaded.config.instructions.includes("project root"), true);
-    assert.equal(loaded.config.instructions.includes("nested override"), true);
-    assert.equal(loaded.config.instructions.includes("nested base ignored"), false);
+    assert.equal(loaded.config.instructions.includes("project ndx"), true);
+    assert.equal(loaded.config.instructions.includes("nested ignored"), false);
     assert.deepEqual(
-      loaded.sources.filter((source) => source.endsWith("AGENTS.md") || source.endsWith("AGENTS.override.md")),
+      loaded.sources.filter((source) => source.endsWith("AGENTS.md")),
       [
-        join(globalDir, "AGENTS.override.md"),
         join(project, "AGENTS.md"),
-        join(nested, "AGENTS.override.md"),
+        join(project, ".ndx", "AGENTS.md"),
+        join(globalDir, "AGENTS.md"),
       ],
+    );
+    assert.deepEqual(
+      loaded.config.contextSources?.map((source) => source.origin),
+      ["project", "project", "user"],
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("loadConfig uses project doc fallbacks and max byte budget", () => {
+test("loadConfig applies max byte budget to fixed AGENTS.md cascade", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
@@ -196,29 +198,27 @@ test("loadConfig uses project doc fallbacks and max byte budget", () => {
         mock: { type: "openai", key: "", url: "http://mock.example/v1" },
       },
       models: [{ name: "mock", provider: "mock" }],
-      projectDocFallbackFilenames: ["WORKFLOW.md"],
       projectDocMaxBytes: 8,
     });
-    writeFileSync(join(project, "WORKFLOW.md"), "fallback instructions");
+    writeFileSync(join(project, "AGENTS.md"), "project instructions");
+    writeFileSync(join(globalDir, "AGENTS.md"), "user instructions");
 
     const loaded = loadConfig(project, { globalDir });
 
-    assert.equal(loaded.config.instructions.includes("fallback"), true);
+    assert.equal(loaded.config.instructions.includes("project"), true);
     assert.equal(
-      loaded.config.instructions.includes("fallback instructions"),
+      loaded.config.instructions.includes("project instructions"),
       false,
     );
-    assert.equal(loaded.sources.includes(join(project, "WORKFLOW.md")), true);
+    assert.equal(loaded.sources.includes(join(project, "AGENTS.md")), true);
+    assert.equal(loaded.sources.includes(join(globalDir, "AGENTS.md")), false);
     assert.equal(loaded.config.projectDocs?.maxBytes, 8);
-    assert.deepEqual(loaded.config.projectDocs?.fallbackFilenames, [
-      "WORKFLOW.md",
-    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("loadConfig discovers global and cascading project skills for model-visible summaries", () => {
+test("loadConfig discovers skills from fixed project, plugin, user, and system roots", () => {
   const root = tempRoot();
   try {
     const globalDir = join(root, "home", ".ndx");
@@ -240,19 +240,41 @@ test("loadConfig discovers global and cascading project skills for model-visible
       "Global user skill",
     );
     writeSkill(
-      join(globalDir, "skills", ".system", "system-tool"),
+      join(globalDir, "plugins", "user-plugin", "skills", "user-plugin-tool"),
+      "user-plugin-tool",
+      "Global plugin skill",
+    );
+    writeSkill(
+      join(globalDir, "system", "skills", "system-tool"),
       "system-tool",
       "Bundled system skill",
     );
     writeSkill(
-      join(project, ".agents", "skills", "repo-tool"),
-      "repo-tool",
-      "Project repo skill",
+      join(globalDir, "skills", ".system", "ignored-system-tool"),
+      "ignored-system-tool",
+      "Ignored legacy system skill",
+    );
+    writeSkill(
+      join(project, ".ndx", "skills", "project-tool"),
+      "project-tool",
+      "Project skill",
+    );
+    writeSkill(
+      join(
+        project,
+        ".ndx",
+        "plugins",
+        "project-plugin",
+        "skills",
+        "project-plugin-tool",
+      ),
+      "project-plugin-tool",
+      "Project plugin skill",
     );
     writeSkill(
       join(nested, ".ndx", "skills", "nested-tool"),
       "nested-tool",
-      "Nested repo skill",
+      "Nested skill ignored outside project root",
     );
 
     const loaded = loadConfig(nested, { globalDir });
@@ -261,19 +283,32 @@ test("loadConfig discovers global and cascading project skills for model-visible
     assert.deepEqual(
       skills.map((skill) => `${skill.scope}:${skill.name}`),
       [
-        "repo:nested-tool",
-        "repo:repo-tool",
+        "repo:project-plugin-tool",
+        "repo:project-tool",
+        "user:user-plugin-tool",
         "user:user-tool",
         "system:system-tool",
       ],
     );
     assert.equal(
-      loaded.config.instructions.includes("- repo-tool: Project repo skill"),
+      loaded.config.instructions.includes("- project-tool: Project skill"),
       true,
     );
     assert.equal(
-      loaded.sources.some((source) => source.endsWith("repo-tool/SKILL.md")),
+      loaded.sources.some((source) => source.endsWith("project-tool/SKILL.md")),
       true,
+    );
+    assert.equal(
+      loaded.sources.some((source) =>
+        source.endsWith("ignored-system-tool/SKILL.md"),
+      ),
+      false,
+    );
+    assert.deepEqual(
+      loaded.config.contextSources
+        ?.filter((source) => source.kind === "skills")
+        .map((source) => source.origin),
+      ["project", "project", "user", "user", "user"],
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

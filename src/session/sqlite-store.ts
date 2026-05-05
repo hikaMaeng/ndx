@@ -203,9 +203,8 @@ export class SqliteSessionStore {
   accountExists(username: string): boolean {
     const userid = normalizeAccountId(username);
     return (
-      this.db
-        .prepare("select 1 from users where userid = ?")
-        .get(userid) !== undefined
+      this.db.prepare("select 1 from users where userid = ?").get(userid) !==
+      undefined
     );
   }
 
@@ -251,7 +250,9 @@ export class SqliteSessionStore {
     }
     const now = Date.now();
     this.db
-      .prepare("update users set lastlogin = ?, updated_at = ? where userid = ?")
+      .prepare(
+        "update users set lastlogin = ?, updated_at = ? where userid = ?",
+      )
       .run(now, now, userid);
     return { ...account, lastlogin: now };
   }
@@ -301,7 +302,9 @@ export class SqliteSessionStore {
     if (account.isprotected) {
       throw new Error(`${userid} cannot be blocked`);
     }
-    this.db.prepare("update users set isblock = 1 where userid = ?").run(userid);
+    this.db
+      .prepare("update users set isblock = 1 where userid = ?")
+      .run(userid);
     return { ...account, isblock: true };
   }
 
@@ -314,7 +317,9 @@ export class SqliteSessionStore {
     if (account.isprotected) {
       throw new Error(`${userid} cannot be unblocked`);
     }
-    this.db.prepare("update users set isblock = 0 where userid = ?").run(userid);
+    this.db
+      .prepare("update users set isblock = 0 where userid = ?")
+      .run(userid);
     return { ...account, isblock: false };
   }
 
@@ -711,7 +716,9 @@ export class SqliteSessionStore {
         },
       );
       this.db
-        .prepare("update session set compactrowid = ?, updated = ? where sessionid = ?")
+        .prepare(
+          "update session set compactrowid = ?, updated = ? where sessionid = ?",
+        )
         .run(eventId, compactedAt, sessionId);
       return { summary, eventId, compactedAt };
     });
@@ -728,7 +735,9 @@ export class SqliteSessionStore {
   sessionExists(sessionId: string): boolean {
     return (
       this.db
-        .prepare("select 1 from session where sessionid = ? and deleted is null")
+        .prepare(
+          "select 1 from session where sessionid = ? and deleted is null",
+        )
         .get(sessionId) !== undefined
     );
   }
@@ -1395,12 +1404,32 @@ function runtimeEvent(
 }
 
 function isContextEvent(event: RuntimeEvent): boolean {
+  if (
+    (event.msg.type === "tool_call" || event.msg.type === "tool_result") &&
+    isSkillToolName(event.msg.name)
+  ) {
+    return false;
+  }
   return (
     event.msg.type === "turn_started" ||
     event.msg.type === "agent_message" ||
     event.msg.type === "tool_call" ||
     event.msg.type === "tool_result" ||
     event.msg.type === "turn_complete"
+  );
+}
+
+function isSkillToolName(name: string | undefined): boolean {
+  return (
+    name !== undefined &&
+    [
+      "load_skill",
+      "read_skill",
+      "list_skills",
+      "skill_load",
+      "skill_search",
+      "skills",
+    ].includes(name)
   );
 }
 

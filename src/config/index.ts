@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname, join, parse, resolve } from "node:path";
 import type {
+  ContextInstructionSource,
   EnvMap,
   JsonObject,
   LoadedConfig,
@@ -74,12 +75,10 @@ interface PartialModelPools {
 }
 
 const DEFAULT_AGENTS_MD_FILENAME = "AGENTS.md";
-const LOCAL_AGENTS_MD_FILENAME = "AGENTS.override.md";
 const DEFAULT_PROJECT_DOC_MAX_BYTES = 32 * 1024;
 const DEFAULT_PROJECT_ROOT_MARKERS = [".git"];
 const SKILL_FILENAME = "SKILL.md";
 const SKILLS_DIR_NAME = "skills";
-const AGENTS_DIR_NAME = ".agents";
 const PROJECT_DOC_SEPARATOR = "\n\n--- project-doc ---\n\n";
 
 /** Return the single global ndx configuration directory. */
@@ -92,9 +91,7 @@ export function configFiles(
   cwd: string,
   options: ConfigLoadOptions = {},
 ): string[] {
-  const files = [
-    join(resolveGlobalNdxDir(options), NDX_DEFAULTS.settingsFile),
-  ];
+  const files = [join(resolveGlobalNdxDir(options), NDX_DEFAULTS.settingsFile)];
   const project = projectSettingsFile(cwd);
   if (project !== undefined && project !== files[0]) {
     files.push(project);
@@ -157,7 +154,7 @@ export function loadConfig(
     sources.push(...agents.sources);
   }
 
-  const skills = loadSkillsContext(cwd, globalDir, agents.projectRoot);
+  const skills = loadSkillsContext(globalDir, agents.projectRoot);
   if (skills.availableInstructions !== undefined) {
     merged.instructions = [
       expectString(merged.instructions, "instructions"),
@@ -177,6 +174,10 @@ export function loadConfig(
       globalMcp,
       projectMcp,
       skills,
+      contextSources: [
+        ...agents.contextSources,
+        ...skills.skills.map((skill) => skillContextSource(skill)),
+      ],
     }),
     sources,
   };
@@ -204,7 +205,6 @@ export function ensureGlobalNdxHome(globalDir: string): NdxBootstrapReport {
   });
   for (const directory of [
     SKILLS_DIR_NAME,
-    join(SKILLS_DIR_NAME, ".system"),
     NDX_DEFAULTS.systemDir,
     join(NDX_DEFAULTS.systemDir, "tools"),
     join(NDX_DEFAULTS.systemDir, "skills"),
@@ -318,6 +318,7 @@ function projectSettingsFile(cwd: string): string | undefined {
 interface LoadedAgentsInstructions {
   instructions?: string;
   sources: string[];
+  contextSources: ContextInstructionSource[];
   projectRoot: string;
 }
 
@@ -334,6 +335,7 @@ function loadAgentsInstructions(
   if (maxBytes === 0) {
     return {
       sources: [],
+      contextSources: [],
       projectRoot: findProjectRoot(
         resolvedCwd,
         expectStringArray(settings.projectRootMarkers, "projectRootMarkers"),
@@ -341,52 +343,55 @@ function loadAgentsInstructions(
     };
   }
 
-  let remaining = maxBytes;
-  const sources: string[] = [];
-  const parts: string[] = [];
-
-  const global = firstReadableFile(globalDir, [
-    LOCAL_AGENTS_MD_FILENAME,
-    DEFAULT_AGENTS_MD_FILENAME,
-  ]);
-  if (global !== undefined) {
-    const loaded = readInstructionFile(global, remaining);
-    if (loaded.text.length > 0) {
-      parts.push(loaded.text);
-      sources.push(global);
-      remaining -= loaded.bytes;
-    }
-  }
-
   const rootMarkers = expectStringArray(
     settings.projectRootMarkers,
     "projectRootMarkers",
   );
   const projectRoot = findProjectRoot(resolvedCwd, rootMarkers);
-  const fallbackFilenames = expectStringArray(
-    settings.projectDocFallbackFilenames,
-    "projectDocFallbackFilenames",
-  );
-  const projectFiles = projectAgentsFiles(
-    projectRoot,
-    resolvedCwd,
-    fallbackFilenames,
-  );
-  for (const file of projectFiles) {
+  let remaining = maxBytes;
+  const sources: string[] = [];
+  const contextSources: ContextInstructionSource[] = [];
+  const parts: string[] = [];
+  const candidates: Array<{
+    path: string;
+    origin: ContextInstructionSource["origin"];
+  }> = [
+    { path: join(projectRoot, DEFAULT_AGENTS_MD_FILENAME), origin: "project" },
+    {
+      path: join(
+        projectRoot,
+        NDX_DEFAULTS.configDir,
+        DEFAULT_AGENTS_MD_FILENAME,
+      ),
+      origin: "project",
+    },
+    { path: join(globalDir, DEFAULT_AGENTS_MD_FILENAME), origin: "user" },
+  ];
+
+  for (const candidate of candidates) {
     if (remaining <= 0) {
       break;
     }
-    const loaded = readInstructionFile(file, remaining);
+    if (!isFile(candidate.path)) {
+      continue;
+    }
+    const loaded = readInstructionFile(candidate.path, remaining);
     if (loaded.text.length === 0) {
       continue;
     }
     parts.push(loaded.text);
-    sources.push(file);
+    sources.push(candidate.path);
+    contextSources.push({
+      kind: "agents",
+      origin: candidate.origin,
+      path: candidate.path,
+      estimatedTokens: estimateTextTokens(loaded.text),
+    });
     remaining -= loaded.bytes;
   }
 
   if (parts.length === 0) {
-    return { sources, projectRoot };
+    return { sources, contextSources, projectRoot };
   }
   return {
     instructions: [
@@ -397,44 +402,9 @@ function loadAgentsInstructions(
       "</INSTRUCTIONS>",
     ].join("\n"),
     sources,
+    contextSources,
     projectRoot,
   };
-}
-
-function firstReadableFile(directory: string, filenames: string[]): string | undefined {
-  for (const filename of filenames) {
-    const path = join(directory, filename);
-    if (isFile(path)) {
-      return path;
-    }
-  }
-  return undefined;
-}
-
-function projectAgentsFiles(
-  projectRoot: string,
-  cwd: string,
-  fallbackFilenames: string[],
-): string[] {
-  const files: string[] = [];
-  const candidates = candidateProjectDocFilenames(fallbackFilenames);
-  for (const directory of dirsBetween(projectRoot, cwd)) {
-    const file = firstReadableFile(directory, candidates);
-    if (file !== undefined) {
-      files.push(file);
-    }
-  }
-  return files;
-}
-
-function candidateProjectDocFilenames(fallbackFilenames: string[]): string[] {
-  const names = [LOCAL_AGENTS_MD_FILENAME, DEFAULT_AGENTS_MD_FILENAME];
-  for (const filename of fallbackFilenames) {
-    if (filename.length > 0 && !names.includes(filename)) {
-      names.push(filename);
-    }
-  }
-  return names;
 }
 
 function readInstructionFile(
@@ -466,23 +436,6 @@ function findProjectRoot(cwd: string, rootMarkers: string[]): string {
   }
 }
 
-function dirsBetween(projectRoot: string, cwd: string): string[] {
-  const dirs: string[] = [];
-  let current = cwd;
-  while (true) {
-    dirs.push(current);
-    if (current === projectRoot) {
-      break;
-    }
-    const parent = dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-  return dirs.reverse();
-}
-
 function isFile(path: string): boolean {
   try {
     return statSync(path).isFile();
@@ -500,11 +453,10 @@ function isDirectory(path: string): boolean {
 }
 
 function loadSkillsContext(
-  cwd: string,
   globalDir: string,
   projectRoot: string,
 ): SkillsContext {
-  const roots = skillRoots(resolve(cwd), globalDir, projectRoot);
+  const roots = skillRoots(globalDir, projectRoot);
   const skills: SkillMetadata[] = [];
   const errors: SkillsContext["errors"] = [];
   const seenPaths = new Set<string>();
@@ -525,10 +477,11 @@ function loadSkillsContext(
       }
     }
   }
-  skills.sort((a, b) =>
-    skillScopeRank(a.scope) - skillScopeRank(b.scope) ||
-    a.name.localeCompare(b.name) ||
-    a.path.localeCompare(b.path),
+  skills.sort(
+    (a, b) =>
+      skillScopeRank(a.scope) - skillScopeRank(b.scope) ||
+      a.name.localeCompare(b.name) ||
+      a.path.localeCompare(b.path),
   );
   return {
     skills,
@@ -539,25 +492,25 @@ function loadSkillsContext(
 }
 
 function skillRoots(
-  cwd: string,
   globalDir: string,
   projectRoot: string,
 ): Array<{ path: string; scope: SkillScope }> {
   const roots: Array<{ path: string; scope: SkillScope }> = [
+    {
+      path: join(projectRoot, NDX_DEFAULTS.configDir, SKILLS_DIR_NAME),
+      scope: "repo",
+    },
+    ...pluginSkillRoots(
+      join(projectRoot, NDX_DEFAULTS.configDir, "plugins"),
+      "repo",
+    ),
     { path: join(globalDir, SKILLS_DIR_NAME), scope: "user" },
-    { path: join(globalDir, SKILLS_DIR_NAME, ".system"), scope: "system" },
-    { path: join(globalDir, NDX_DEFAULTS.systemDir, "skills"), scope: "system" },
+    ...pluginSkillRoots(join(globalDir, "plugins"), "user"),
+    {
+      path: join(globalDir, NDX_DEFAULTS.systemDir, "skills"),
+      scope: "system",
+    },
   ];
-  for (const directory of dirsBetween(projectRoot, cwd)) {
-    roots.push({
-      path: join(directory, NDX_DEFAULTS.configDir, SKILLS_DIR_NAME),
-      scope: "repo",
-    });
-    roots.push({
-      path: join(directory, AGENTS_DIR_NAME, SKILLS_DIR_NAME),
-      scope: "repo",
-    });
-  }
   const seen = new Set<string>();
   return roots.filter((root) => {
     const path = canonicalPath(root.path);
@@ -569,12 +522,24 @@ function skillRoots(
   });
 }
 
+function pluginSkillRoots(
+  pluginsDir: string,
+  scope: SkillScope,
+): Array<{ path: string; scope: SkillScope }> {
+  return safeReadDir(pluginsDir)
+    .map((entry) => join(pluginsDir, entry))
+    .filter(isDirectory)
+    .map((pluginDir) => ({ path: join(pluginDir, SKILLS_DIR_NAME), scope }));
+}
+
 function skillFilesUnder(root: string): string[] {
   if (!isDirectory(root)) {
     return [];
   }
   const files: string[] = [];
-  const queue: Array<{ path: string; depth: number }> = [{ path: root, depth: 0 }];
+  const queue: Array<{ path: string; depth: number }> = [
+    { path: root, depth: 0 },
+  ];
   const visited = new Set<string>([canonicalPath(root)]);
   while (queue.length > 0) {
     const current = queue.shift();
@@ -710,6 +675,27 @@ function canonicalPath(path: string): string {
   }
 }
 
+function skillContextSource(skill: SkillMetadata): ContextInstructionSource {
+  return {
+    kind: "skills",
+    origin: skill.scope === "repo" ? "project" : "user",
+    path: skill.path,
+    estimatedTokens: estimateFileTokens(skill.path),
+  };
+}
+
+function estimateFileTokens(path: string): number {
+  try {
+    return estimateTextTokens(readFileSync(path, "utf8"));
+  } catch {
+    return 0;
+  }
+}
+
+function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 function skillScopeRank(scope: SkillScope): number {
   switch (scope) {
     case "repo":
@@ -753,7 +739,11 @@ function parseSettings(contents: string, file: string): PartialSettings {
     "projectDocFallbackFilenames",
     file,
   );
-  assertOptionalStringArray(parsed.projectRootMarkers, "projectRootMarkers", file);
+  assertOptionalStringArray(
+    parsed.projectRootMarkers,
+    "projectRootMarkers",
+    file,
+  );
   assertOptionalEnvMap(parsed.keys, "keys", file);
   assertOptionalEnvMap(parsed.env, "env", file);
   assertProviders(parsed.providers, file);
@@ -935,6 +925,7 @@ function finalizeConfig(
     globalMcp: McpSettings;
     projectMcp: McpSettings;
     skills: SkillsContext;
+    contextSources: ContextInstructionSource[];
   },
 ): NdxConfig {
   const modelPools = expectModelPools(settings.model, "model");
@@ -988,6 +979,7 @@ function finalizeConfig(
       ),
     },
     skills: runtime.skills,
+    contextSources: runtime.contextSources,
     paths: {
       globalDir: runtime.globalDir,
       dataDir,

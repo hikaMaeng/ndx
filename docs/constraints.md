@@ -12,6 +12,12 @@
 ## Settings
 
 - Runtime model/provider/key configuration is JSON-only.
+- AGENTS.md cascading is limited to project `AGENTS.md`, project
+  `.ndx/AGENTS.md`, and user-home `.ndx/AGENTS.md`.
+- Skill discovery is limited to project `.ndx/skills`, project
+  `.ndx/plugins/*/skills`, user-home `.ndx/skills`, user-home
+  `.ndx/plugins/*/skills`, and user-home `.ndx/system/skills`.
+- `skills/.system` is not a valid skill discovery location.
 - No runtime environment variable selects model, provider URL, provider key, or
   ndx home.
 - `NDX_SANDBOX_IMAGE` may override the sandbox image for explicit verification.

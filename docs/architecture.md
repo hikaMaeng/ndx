@@ -22,8 +22,8 @@
 3. The CLI calls public `server/info`, logs in, calls `initialize`, and starts
    or restores one session for the current folder.
 4. The server loads global and project settings, bootstraps `/home/.ndx/system`,
-   cascades AGENTS.md plus skills into the model context, and prepares a Docker
-   sandbox unless mock mode or
+   loads AGENTS.md and skill catalogs from the fixed project/user cascade, and
+   prepares a Docker sandbox unless mock mode or
    `NDX_REQUIRE_DOCKER_SANDBOX=0` disables it.
 5. `AgentRuntime` sends the local conversation stack to the model client and
    emits runtime events.

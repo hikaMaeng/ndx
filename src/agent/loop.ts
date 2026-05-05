@@ -28,7 +28,7 @@ export interface AgentRunOptions {
 export type AgentEvent =
   | { type: "model_text"; text: string }
   | { type: "tool_call"; callId: string; name: string; arguments: string }
-  | { type: "tool_result"; callId: string; output: string }
+  | { type: "tool_result"; callId: string; name: string; output: string }
   | { type: "token_count"; usage: TokenUsage };
 
 export async function runAgent(options: AgentRunOptions): Promise<string> {
@@ -250,6 +250,7 @@ async function executeToolCalls(
     options.onEvent?.({
       type: "tool_result",
       callId: output.item.call_id,
+      name: output.name,
       output: output.output,
     });
   }
@@ -260,6 +261,7 @@ async function executeToolCall(
   call: ModelToolCall,
   options: AgentRunOptions,
 ): Promise<{
+  name: string;
   output: string;
   item: { type: "function_call_output"; call_id: string; output: string };
 }> {
@@ -284,6 +286,7 @@ async function executeToolCall(
   );
   const output = result.output;
   return {
+    name: call.name,
     output,
     item: {
       type: "function_call_output",

@@ -12,6 +12,9 @@ export class WebSocketConnection {
     private readonly onText: (message: string) => void,
   ) {
     socket.on("data", (chunk) => this.handleData(chunk));
+    socket.on("error", () => {
+      this.destroy();
+    });
   }
 
   sendJson(payload: unknown): void {

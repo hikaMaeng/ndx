@@ -8,7 +8,12 @@ import { conversationHistoryFromRuntimeEvents } from "../src/runtime/history.js"
 import { MockModelClient } from "../src/model/mock-client.js";
 import type { RuntimeEvent } from "../src/shared/protocol.js";
 import { AgentRuntime } from "../src/runtime/runtime.js";
-import type { NdxBootstrapReport, NdxConfig } from "../src/shared/types.js";
+import type {
+  ModelClient,
+  ModelResponse,
+  NdxBootstrapReport,
+  NdxConfig,
+} from "../src/shared/types.js";
 
 const baseConfig: NdxConfig = {
   model: "mock",
@@ -246,6 +251,91 @@ test("runtime context summary updates when history is replaced", () => {
   assert.equal(after.remainingTokens !== undefined, true);
 });
 
+test("runtime context summary separates instruction sources", () => {
+  const runtime = new AgentRuntime({
+    cwd: process.cwd(),
+    config: {
+      ...baseConfig,
+      activeModel: { ...baseConfig.activeModel, maxContext: 1000 },
+      contextSources: [
+        {
+          kind: "agents",
+          origin: "project",
+          path: "/repo/AGENTS.md",
+          estimatedTokens: 10,
+        },
+        {
+          kind: "skills",
+          origin: "user",
+          path: "/home/.ndx/system/skills/example/SKILL.md",
+          estimatedTokens: 20,
+        },
+      ],
+    },
+    client: new MockModelClient(),
+    bootstrap: bootstrapReport(baseConfig.paths.globalDir),
+    history: [{ type: "message", role: "user", content: "first" }],
+  });
+
+  const summary = runtime.contextSummary();
+
+  assert.equal(summary.items, 3);
+  assert.equal(
+    summary.byKind?.some(
+      (entry) =>
+        entry.kind === "agents_project" && entry.estimatedTokens === 10,
+    ),
+    true,
+  );
+  assert.equal(
+    summary.byKind?.some(
+      (entry) => entry.kind === "skills_user" && entry.estimatedTokens === 20,
+    ),
+    true,
+  );
+});
+
+test("runtime excludes skill tool calls from saved model context", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-runtime-skill-"));
+  const events: RuntimeEvent[] = [];
+  try {
+    const globalDir = join(root, "home", ".ndx");
+    writeLoadSkillTool(join(globalDir, "system", "tools", "load_skill"));
+    const runtime = new AgentRuntime({
+      cwd: root,
+      config: { ...baseConfig, paths: { globalDir } },
+      client: new SkillToolModelClient(),
+      bootstrap: bootstrapReport(globalDir),
+    });
+
+    await runtime.runPrompt("use a skill", (event) => events.push(event));
+
+    assert.deepEqual(
+      events.map((event) => event.msg.type),
+      [
+        "session_configured",
+        "turn_started",
+        "tool_call",
+        "tool_result",
+        "agent_message",
+        "turn_complete",
+      ],
+    );
+    assert.equal(
+      runtime
+        .contextSummary()
+        .byKind?.some(
+          (entry) =>
+            entry.kind === "assistant_tool_calls" ||
+            entry.kind === "tool_results",
+        ),
+      false,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function bootstrapReport(globalDir: string): NdxBootstrapReport {
   return {
     globalDir,
@@ -258,6 +348,60 @@ function bootstrapReport(globalDir: string): NdxBootstrapReport {
       },
     ],
   };
+}
+
+function writeLoadSkillTool(toolDir: string): void {
+  mkdirSync(toolDir, { recursive: true });
+  writeFileSync(
+    join(toolDir, "tool.json"),
+    JSON.stringify({
+      type: "function",
+      function: {
+        name: "load_skill",
+        description: "Load a skill.",
+        parameters: {
+          type: "object",
+          properties: { name: { type: "string" } },
+          required: ["name"],
+          additionalProperties: false,
+        },
+      },
+      command: "node",
+      args: ["tool.mjs"],
+    }),
+  );
+  writeFileSync(
+    join(toolDir, "tool.mjs"),
+    'import { stdout } from "node:process"; stdout.write(JSON.stringify({ ok: true, markdown: "# Skill" }) + "\\n");\n',
+  );
+}
+
+class SkillToolModelClient implements ModelClient {
+  private step = 0;
+
+  async create(input: unknown): Promise<ModelResponse> {
+    this.step += 1;
+    if (this.step === 1) {
+      return {
+        id: "skill-call",
+        text: "",
+        toolCalls: [
+          {
+            callId: "skill-call-1",
+            name: "load_skill",
+            arguments: JSON.stringify({ name: "example" }),
+          },
+        ],
+        raw: { input },
+      };
+    }
+    return {
+      id: "skill-answer",
+      text: "skill applied",
+      toolCalls: [],
+      raw: { input },
+    };
+  }
 }
 
 test("model error classification separates retryable failures", () => {
