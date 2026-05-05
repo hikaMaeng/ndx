@@ -499,11 +499,11 @@ export class SqliteSessionStore {
     const sessionRow = this.db
       .prepare(
         [
-          "select count(case when deleted_at is null then 1 end) as sessionCount,",
-          "count(case when deleted_at is not null then 1 end) as deletedSessionCount,",
-          "coalesce(sum(case when deleted_at is null then event_count else 0 end), 0) as eventCount,",
-          "max(case when deleted_at is null then updated_at end) as latestSessionUpdate",
-          "from sessions",
+          "select count(case when deleted is null then 1 end) as sessionCount,",
+          "count(case when deleted is not null then 1 end) as deletedSessionCount,",
+          "coalesce(sum(case when deleted is null then eventcount else 0 end), 0) as eventCount,",
+          "max(case when deleted is null then updated end) as latestSessionUpdate",
+          "from session",
         ].join(" "),
       )
       .get() as
@@ -515,7 +515,9 @@ export class SqliteSessionStore {
         }
       | undefined;
     const projectRow = this.db
-      .prepare("select count(1) as projectCount from projects")
+      .prepare(
+        "select count(distinct projectid) as projectCount from session where deleted is null",
+      )
       .get() as { projectCount?: unknown } | undefined;
     return {
       accountCount: numericRowValue(accountRow?.accountCount),
@@ -538,13 +540,13 @@ export class SqliteSessionStore {
       .prepare(
         [
           "select u.userid, u.created, u.lastlogin, u.isblock, u.isprotected,",
-          "count(s.id) as sessionCount,",
-          "count(distinct s.project_id) as projectCount,",
-          "coalesce(sum(s.event_count), 0) as eventCount,",
-          "max(s.created_at) as lastSessionCreatedAt,",
-          "max(s.updated_at) as lastSessionUpdatedAt",
+          "count(s.rowid) as sessionCount,",
+          "count(distinct s.projectid) as projectCount,",
+          "coalesce(sum(s.eventcount), 0) as eventCount,",
+          "max(s.created) as lastSessionCreatedAt,",
+          "max(s.updated) as lastSessionUpdatedAt",
           "from users u",
-          "left join sessions s on s.user_id = u.id and s.deleted_at is null",
+          "left join session s on s.userid = u.id and s.deleted is null",
           "group by u.userid, u.created, u.lastlogin, u.isblock, u.isprotected",
           "order by u.lastlogin desc, u.userid asc",
         ].join(" "),

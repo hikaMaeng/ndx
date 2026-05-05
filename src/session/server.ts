@@ -189,6 +189,10 @@ export class SessionServer {
     });
     this.dashboardServer.on("request", (request, response) => {
       void this.handleDashboardRequest(request, response).catch((error) => {
+        if (response.headersSent || response.writableEnded) {
+          response.destroy(error instanceof Error ? error : undefined);
+          return;
+        }
         response.writeHead(500, {
           "content-type": "application/json; charset=utf-8",
         });
@@ -215,10 +219,11 @@ export class SessionServer {
       request.method === "GET" &&
       (url.pathname === "/" || url.pathname === "/dashboard")
     ) {
+      const html = this.renderDashboardHtml();
       response.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
       });
-      response.end(this.renderDashboardHtml());
+      response.end(html);
       return;
     }
     if (
