@@ -46,9 +46,9 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
 
   options.onEvent?.({
     type: "warning",
-    message: `agent stopped after max_turns=${options.config.maxTurns}; current turn ended without closing the session`,
+    message: `agent stopped after max_turns=${options.config.maxTurns} before producing a final answer; current turn ended without closing the session and the requested work may be incomplete`,
   });
-  return state.finalText;
+  return "";
 }
 
 interface AgentLoopState {
@@ -225,13 +225,15 @@ function updateStateFromModelResponse(
     });
   }
   if (response.text) {
-    state.finalText = response.text;
     state.input.push({
       type: "message",
       role: "assistant",
       content: response.text,
     });
-    options.onEvent?.({ type: "model_text", text: response.text });
+    if (response.toolCalls.length === 0) {
+      state.finalText = response.text;
+      options.onEvent?.({ type: "model_text", text: response.text });
+    }
   }
   if (response.usage !== undefined) {
     options.onEvent?.({ type: "token_count", usage: response.usage });

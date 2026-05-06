@@ -74,7 +74,7 @@ const commandArgs = sandbox.length > 0
   ? ["exec", "-w", sandboxCwd, sandbox, "/bin/bash", "-lc", command]
   : shellArgs;
 const result = await new Promise((resolveResult, reject) => {
-  const child = spawn(commandExec, commandArgs, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(commandExec, commandArgs, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   let stdout = "";
   let stderr = "";
   let timedOut = false;
@@ -159,8 +159,8 @@ const sandbox = process.env.NDX_SANDBOX_CONTAINER ?? "";
 const sandboxCwd = toSandboxPath(cwd);
 const result = await new Promise((resolveResult, reject) => {
   const child = sandbox.length > 0
-    ? spawn("docker", ["exec", "-i", "-w", sandboxCwd, sandbox, "apply_patch"], { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] })
-    : spawn("apply_patch", [], { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+    ? spawn("docker", ["exec", "-i", "-w", sandboxCwd, sandbox, "apply_patch"], { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
+    : spawn("apply_patch", [], { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   let stdout = "";
   let stderr = "";
   child.stdout.setEncoding("utf8");

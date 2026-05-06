@@ -107,8 +107,34 @@ test("agent max turns emits warning and returns without throwing", async () => {
     events.some(
       (event) =>
         event.type === "warning" &&
-        event.message?.includes("max_turns=1") === true,
+        event.message?.includes("max_turns=1") === true &&
+        event.message?.includes("before producing a final answer") === true,
     ),
+    true,
+  );
+});
+
+test("agent max turns does not return partial text from tool-call response", async () => {
+  const events: Array<{ type: string; text?: string; message?: string }> = [];
+  const result = await runAgent({
+    cwd: process.cwd(),
+    config: { ...baseConfig, maxTurns: 1 },
+    client: new TextAndToolCallClient(),
+    prompt: "start scaffold",
+    onEvent: (event) => events.push(event),
+  });
+
+  assert.equal(result, "");
+  assert.equal(
+    events.some(
+      (event) =>
+        event.type === "model_text" &&
+        event.text === "기본 monorepo 구조를 생성하겠습니다.",
+    ),
+    false,
+  );
+  assert.equal(
+    events.some((event) => event.type === "warning"),
     true,
   );
 });
@@ -551,6 +577,22 @@ class LoopingToolClient implements ModelClient {
       toolCalls: [
         {
           callId: `loop-${Date.now()}`,
+          name: "list_skills",
+          arguments: "{}",
+        },
+      ],
+      raw: {},
+    };
+  }
+}
+
+class TextAndToolCallClient implements ModelClient {
+  async create(): Promise<ModelResponse> {
+    return {
+      text: "기본 monorepo 구조를 생성하겠습니다.",
+      toolCalls: [
+        {
+          callId: "partial-tool",
           name: "list_skills",
           arguments: "{}",
         },
