@@ -240,6 +240,51 @@ test("agent injects linked skill paths once and ignores ambiguous plain names", 
   }
 });
 
+test("agent loads skill bodies through the built-in skill tool", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ndx-agent-load-skill-"));
+  try {
+    const skillPath = writeSkill(
+      root,
+      "web-service-scaffold",
+      "Scaffold web service body.",
+    );
+    const client = new LoadSkillClient();
+
+    const result = await runAgent({
+      cwd: root,
+      config: {
+        ...baseConfig,
+        paths: { globalDir: join(root, "home", ".ndx") },
+        skills: {
+          skills: [
+            {
+              name: "web-service-scaffold",
+              description: "Scaffold web services",
+              path: skillPath,
+              scope: "user",
+            },
+          ],
+          roots: [root],
+          errors: [],
+        },
+      },
+      client,
+      prompt: "use skills to scaffold a web project",
+    });
+
+    assert.equal(result, "done");
+    assert.equal(client.sawLoadSkillSchema, true);
+    const toolOutput = client.inputs[1]?.find(
+      (item) => item.type === "function_call_output",
+    )?.output;
+    assert.ok(toolOutput !== undefined);
+    assert.equal(toolOutput.includes("Scaffold web service body."), true);
+    assert.equal(toolOutput.includes(skillPath), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("agent abort signal stops before starting a model request", async () => {
   const client = new CountingModelClient();
   const controller = new AbortController();
@@ -414,6 +459,41 @@ class SkillCaptureClient implements ModelClient {
 
   async create(input: unknown): Promise<ModelResponse> {
     this.inputs.push(JSON.parse(JSON.stringify(input)) as unknown);
+    return {
+      text: "done",
+      toolCalls: [],
+      raw: {},
+    };
+  }
+}
+
+class LoadSkillClient implements ModelClient {
+  readonly inputs: Array<Array<{ type?: string; output?: string }>> = [];
+  sawLoadSkillSchema = false;
+
+  async create(input: unknown, tools?: unknown[]): Promise<ModelResponse> {
+    this.inputs.push(
+      JSON.parse(JSON.stringify(input)) as Array<{
+        type?: string;
+        output?: string;
+      }>,
+    );
+    this.sawLoadSkillSchema ||= JSON.stringify(tools ?? []).includes(
+      '"name":"load_skill"',
+    );
+    if (this.inputs.length === 1) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            callId: "load-skill-1",
+            name: "load_skill",
+            arguments: JSON.stringify({ name: "web-service-scaffold" }),
+          },
+        ],
+        raw: {},
+      };
+    }
     return {
       text: "done",
       toolCalls: [],

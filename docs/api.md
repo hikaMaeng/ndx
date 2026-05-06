@@ -58,6 +58,11 @@ dashboard exit endpoint for server shutdown.
 AGENTS.md and skill catalog entries are grouped as project or user sources,
 separate from message and tool rows.
 
+The model-facing task tool set includes `list_skills` and `load_skill`.
+`load_skill` accepts a unique skill `name` or canonical `path` and returns the
+full `SKILL.md` markdown from the host runtime. Skill tool calls are audit
+events, but their results are not restored into future model context.
+
 ## WebSocket JSON-RPC
 
 The session server is a WebSocket JSON-RPC endpoint. `server/info`,
