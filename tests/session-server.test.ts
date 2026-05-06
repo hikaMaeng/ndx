@@ -1274,7 +1274,7 @@ test("session lite mode prunes previous tool logs when a new user turn starts", 
   }
 });
 
-test("session lite mode prunes failed prior turn tool logs on next user request", async () => {
+test("session lite mode prunes max-turn prior tool logs on next user request", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-session-lite-failed-"));
   const globalDir = join(root, "home", ".ndx");
   const persistenceDir = join(root, "server-sessions");
@@ -1305,12 +1305,18 @@ test("session lite mode prunes failed prior turn tool logs on next user request"
     );
     const sessionId = start.session.id;
 
-    const firstFailed = waitForMethod(client, "error");
+    const firstWarning = waitForMethod(client, "warning");
+    const firstCompleted = waitForMethod(client, "turn/completed");
     await client.request("turn/start", {
       sessionId,
-      prompt: "first failed turn",
+      prompt: "first max-turn turn",
     });
-    await firstFailed;
+    const warning = await firstWarning;
+    assert.equal(
+      JSON.stringify(warning).includes("agent stopped after max_turns=1"),
+      true,
+    );
+    await firstCompleted;
     await server.flushPersistence();
 
     const enabled = await client.request<{ handled: true; output: string }>(
@@ -1334,7 +1340,7 @@ test("session lite mode prunes failed prior turn tool logs on next user request"
       (secondInput as Array<{ content?: string }>)
         .map((item) => item.content)
         .filter((content): content is string => content !== undefined),
-      ["first failed turn", "second turn"],
+      ["first max-turn turn", "second turn"],
     );
   } finally {
     client?.close();

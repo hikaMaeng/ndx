@@ -82,7 +82,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.35",
+  "version": "0.1.36",
   "model": "local-model",
   "providers": {
     "local": {
@@ -140,7 +140,12 @@ NDX_SANDBOX_IMAGE=hika00/ndx-sandbox:0.1.1 ndx
 ```
 
 External tools see the project as `/workspace` and global state as
-`/home/.ndx`.
+`/home/.ndx`. On Windows hosts, the server may report a host cwd such as
+`F:\dev\test2`, but Docker-backed tools still execute inside Linux. Use POSIX
+shell syntax and `/workspace` paths for `shell`, `list_dir`, `apply_patch`, and
+similar workspace tools; do not use Windows `cmd.exe`, PowerShell, `dir /b`,
+drive-letter paths in shell commands, or mixed paths such as
+`/workspace/workspace`.
 
 ## Deploy
 
