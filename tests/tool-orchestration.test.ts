@@ -64,7 +64,6 @@ const baseConfig: NdxConfig = {
 
 const internalToolNames = [
   "update_plan",
-  "request_user_input",
   "spawn_agent",
   "send_input",
   "send_message",
@@ -353,18 +352,6 @@ function directArgsForTool(name: string): Record<string, unknown> {
   }
   if (name === "report_agent_job_result") {
     return { job_id: "job", item_id: "item", result: { ok: true } };
-  }
-  if (name === "request_user_input") {
-    return {
-      questions: [
-        {
-          id: "choice",
-          header: "Choice",
-          question: "Choose one.",
-          options: [{ label: "A", description: "first" }],
-        },
-      ],
-    };
   }
   if (name === "direct_echo") {
     return { value: "direct-ok" };

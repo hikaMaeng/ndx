@@ -61,7 +61,9 @@ separate from message and tool rows.
 The model-facing task tool set includes `list_skills` and `load_skill`.
 `load_skill` accepts a unique skill `name` or canonical `path` and returns the
 full `SKILL.md` markdown from the host runtime. Skill tool calls are audit
-events, but their results are not restored into future model context.
+events, but their results are not restored into future model context. The
+non-interactive TypeScript runtime does not expose `request_user_input` to the
+model tool schema.
 
 ## WebSocket JSON-RPC
 
