@@ -1,0 +1,59 @@
+{
+  "target": {
+    "id": "dependency-direction-contract",
+    "title": "Dependencies remain app-to-package and acyclic",
+    "test": "Apps may depend on packages, but packages must not depend on apps. packages/ndx internal source must not create the previous session-runtime-agent-session cycle.",
+    "steps": [
+      {
+        "id": "check-app-imports",
+        "instruction": "Search packages for imports from apps and inspect app package dependencies.",
+        "expected": "No package source imports apps/*, and app packages depend on @neurondev/ndx-core."
+      },
+      {
+        "id": "check-internal-cycle",
+        "instruction": "Inspect imports among packages/ndx/src/server, runtime, agent, and tools.",
+        "expected": "runtime does not import agent, agent does not import server/session, and the old session -> runtime -> agent -> session cycle is absent."
+      }
+    ],
+    "passCriteria": "The dependency direction rule is enforced by observable imports and package manifests."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "check-app-imports",
+        "instruction": "Search packages for imports from apps and inspect app package dependencies.",
+        "expected": "No package source imports apps/*, and app packages depend on @neurondev/ndx-core."
+      },
+      "result": true,
+      "descript": "packages/ndx does not import app code and apps depend on the core package.",
+      "evidence": [
+        "rg \"apps/|../../apps|from ['\\\"].*apps\" packages/ndx/src returned no matches.",
+        "apps/ndx/package.json depends on @neurondev/ndx-core: workspace:^.",
+        "apps/ndxserver/package.json depends on @neurondev/ndx-core: workspace:^."
+      ]
+    },
+    {
+      "target": {
+        "id": "check-internal-cycle",
+        "instruction": "Inspect imports among packages/ndx/src/server, runtime, agent, and tools.",
+        "expected": "runtime does not import agent, agent does not import server/session, and the old session -> runtime -> agent -> session cycle is absent."
+      },
+      "result": true,
+      "descript": "The old runtime-agent-session cycle is broken by runner injection and top-level tools.",
+      "evidence": [
+        "packages/ndx/src/runtime/runtime.ts defines RuntimeAgentRunner and has no import from ../agent.",
+        "packages/ndx/src/session/server.ts imports runAgent and passes runAgent into new AgentRuntime.",
+        "packages/ndx/src/agent/loop.ts imports ../tools/registry.js, ../tools/process-runner.js, and ../tools/schema.js, not session tools.",
+        "rg over runtime/agent/tools for agent-loop/session-server cycle only found tools/external/runner.ts importing ../../session/sandbox-paths.js for path mapping."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Dependency direction is app-to-package and the previous session-runtime-agent-session cycle is absent.",
+    "evidence": [
+      "Package manifests and imports inspected with rg.",
+      "yarn build completed successfully with the new import graph."
+    ]
+  }
+}

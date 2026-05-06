@@ -1,0 +1,22 @@
+{
+  "name": "@neurondev/ndxserver-app",
+  "private": true,
+  "version": "0.1.39",
+  "type": "module",
+  "description": "Private ndx server app wrapper.",
+  "scripts": {
+    "build": "yarn exec tsc -p tsconfig.json",
+    "test": "node -e \"console.log('agenttest app policy: strict JSON results under test/YYYYMMDD')\""
+  },
+  "dependencies": {
+    "@neurondev/ndx-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.18",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "yarn@4.14.1"
+}

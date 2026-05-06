@@ -1,0 +1,30 @@
+{
+  "name": "@neurondev/ndx",
+  "version": "0.1.39",
+  "type": "module",
+  "description": "Install-facing ndx CLI package.",
+  "files": [
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "bin": {
+    "ndx": "dist/bin/ndx.js",
+    "ndxserver": "dist/bin/ndxserver.js"
+  },
+  "scripts": {
+    "build": "yarn exec tsc -p tsconfig.json",
+    "test": "node -e \"console.log('agenttest app policy: strict JSON results under test/YYYYMMDD')\""
+  },
+  "dependencies": {
+    "@neurondev/ndx-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.18",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "yarn@4.14.1"
+}

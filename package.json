@@ -1,27 +1,22 @@
 {
-  "name": "@neurondev/ndx",
+  "name": "ndx-monorepo",
+  "private": true,
   "version": "0.1.39",
   "type": "module",
-  "description": "TypeScript-first local coding agent.",
-  "files": [
-    "dist/src",
-    "README.md",
-    "LICENSE",
-    "NOTICE"
+  "description": "TypeScript-first local coding agent monorepo.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
   ],
-  "bin": {
-    "ndx": "dist/src/cli/main.js",
-    "ndxserver": "dist/src/cli/ndxserver.js"
-  },
   "scripts": {
-    "build": "yarn exec tsc -p tsconfig.json",
-    "test": "yarn build && node --test dist/tests/*.test.js",
-    "start": "node dist/src/cli/main.js",
+    "build": "yarn turbo run build",
+    "test": "node -e \"console.log('agenttest policy: strict JSON results under test/YYYYMMDD')\"",
     "deploy": "node scripts/deploy.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.18",
     "prettier": "^3.5.3",
+    "turbo": "^2.9.9",
     "typescript": "^5.9.2"
   },
   "engines": {

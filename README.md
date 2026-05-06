@@ -1,4 +1,4 @@
-ndx is a TypeScript-first local coding agent with a host WebSocket session server and Docker-backed tool sandbox.
+ndx is a TypeScript-first local coding agent monorepo with install-compatible CLI bins and a Docker-backed tool sandbox.
 
 | Goal               | File                 |
 | ------------------ | -------------------- |
@@ -15,33 +15,21 @@ ndx is a TypeScript-first local coding agent with a host WebSocket session serve
 ```bash
 yarn install --immutable
 yarn build
-node dist/src/cli/main.js --mock "list files"
+node apps/ndx/dist/bin/ndx.js --mock "list files"
 ```
 
-Install-test releases use Verdaccio:
+Install-test releases keep the public package name and bins:
 
 ```bash
 npm install -g @neurondev/ndx --registry https://verdaccio.neurondev.net/
-ndx
+ndx --version
+ndxserver --version
 ```
 
-`ndx` accepts one normal startup argument: an optional WebSocket server address.
-When no reachable server is supplied, the CLI starts a detached local
-server for the current folder, then connects to it. On Windows, plain
-`ndxserver` is also a background server trigger; use `ndxserver serve` for a
-foreground server terminal. The server continues running after the CLI exits
-and ignores terminal shutdown signals until `ndxserver stop` is run or the
-dashboard exit action is used. Docker is used only for workspace-bound external
-tool and MCP execution.
-
-Startup context includes cascading AGENTS.md files and local skills. ndx reads
-project `AGENTS.md`, project `.ndx/AGENTS.md`, and user-home
-`.ndx/AGENTS.md` in that order. Skill catalogs are discovered from project
-`.ndx/skills`, project `.ndx/plugins/*/skills`, user-home `.ndx/skills`,
-user-home `.ndx/plugins/*/skills`, and user-home `.ndx/system/skills`.
-`skills/.system` is not scanned. When the model needs a skill body at turn
-time, it uses the built-in `load_skill` tool instead of reading host paths
-through shell commands.
+`apps/ndx` publishes `@neurondev/ndx` and keeps both `ndx` and `ndxserver`
+bins. Runtime logic lives in `packages/ndx` as `@neurondev/ndx-core`; app
+packages are wrappers only. `apps/toolcontainer` owns the sandbox Docker build
+context used by root `docker-compose.yml`.
 
 ## Verification
 
@@ -49,9 +37,9 @@ through shell commands.
 npm run deploy
 ```
 
-The deploy script builds and tests TypeScript, removes prior compose resources,
-rebuilds the sandbox image, starts `ndx-sandbox`, verifies a sandbox write, and
-tears the compose stack down.
+The deploy script runs the Turbo build and agenttest policy hook, removes prior
+compose resources, rebuilds and starts `ndx-sandbox`, verifies a sandbox write,
+and tears the compose stack down.
 
 ## License
 

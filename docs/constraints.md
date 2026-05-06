@@ -2,7 +2,7 @@
 
 ## Runtime Defaults
 
-- Code-owned defaults live in `src/config/defaults.ts`.
+- Code-owned defaults live in `packages/ndx/src/config/defaults.ts`.
 - The default host is `127.0.0.1`.
 - The managed socket and dashboard ports are `45123` and `45124`.
 - The global runtime directory is `/home/.ndx`.
@@ -34,6 +34,12 @@
 
 - The ndx server is a host process, not a Docker service.
 - Docker is only the external tool and MCP stdio sandbox.
+- Root `docker-compose.yml` builds `ndx-sandbox` from `apps/toolcontainer`.
+- App packages may depend on `@neurondev/ndx-core`; `packages/ndx` must not
+  import from `apps/*`.
+- `apps/ndx` and `apps/ndxserver` are wrappers only. Argument parsing, config
+  loading, session orchestration, dashboard rendering, Docker sandbox logic,
+  and tool execution stay in `packages/ndx`.
 - Session visibility is scoped by `userid` plus `projectid`, not by path alone.
 - Project ids come from `<project>/.ndx/.project`; path reuse after deleting
   that file is a new project scope.

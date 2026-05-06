@@ -1,0 +1,142 @@
+{
+  "id": "monorepo-refactor",
+  "title": "Turbo monorepo refactor",
+  "dependencies": {
+    "ndx": "0.1.35",
+    "node": ">=22",
+    "yarn": ">=4.14.1"
+  },
+  "items": {
+    "workspace": [
+      {
+        "id": "root-workspace-contract",
+        "title": "Root workspace uses Turbo and Yarn PnP",
+        "test": "The repository root must be a private Turbo monorepo using Yarn Plug'n'Play workspaces for apps and packages.",
+        "steps": [
+          {
+            "id": "inspect-root-manifests",
+            "instruction": "Inspect package.json, .yarnrc.yml, turbo.json, tsconfig.json, and tsconfig.base.json.",
+            "expected": "Root package.json is private, declares apps/* and packages/* workspaces, has turbo-backed build/test/deploy scripts, .yarnrc.yml uses pnp, turbo.json exists, and root tsconfig references workspace projects."
+          },
+          {
+            "id": "install-and-build",
+            "instruction": "Run yarn install --immutable and yarn build.",
+            "expected": "Both commands complete successfully without creating node_modules."
+          }
+        ],
+        "passCriteria": "The root workspace contract is implemented and buildable through Turbo."
+      }
+    ],
+    "packages": [
+      {
+        "id": "domain-package-contract",
+        "title": "Domain package owns ndx logic",
+        "test": "The ndx domain implementation must live under packages/ndx and expose stable subpath exports.",
+        "steps": [
+          {
+            "id": "inspect-package-layout",
+            "instruction": "Inspect packages/ndx/package.json and packages/ndx/src.",
+            "expected": "The package is named @neurondev/ndx-core and contains cli, server, dashboard, config, model, agent, runtime, process, tools, and shared source folders."
+          },
+          {
+            "id": "inspect-exports",
+            "instruction": "Inspect packages/ndx/package.json exports.",
+            "expected": "The package exports ., ./cli, ./server, ./dashboard, and ./shared from dist files."
+          }
+        ],
+        "passCriteria": "packages/ndx is the domain package and exposes the planned public subpaths."
+      },
+      {
+        "id": "dependency-direction-contract",
+        "title": "Dependencies remain app-to-package and acyclic",
+        "test": "Apps may depend on packages, but packages must not depend on apps. packages/ndx internal source must not create the previous session-runtime-agent-session cycle.",
+        "steps": [
+          {
+            "id": "check-app-imports",
+            "instruction": "Search packages for imports from apps and inspect app package dependencies.",
+            "expected": "No package source imports apps/*, and app packages depend on @neurondev/ndx-core."
+          },
+          {
+            "id": "check-internal-cycle",
+            "instruction": "Inspect imports among packages/ndx/src/server, runtime, agent, and tools.",
+            "expected": "runtime does not import agent, agent does not import server/session, and the old session -> runtime -> agent -> session cycle is absent."
+          }
+        ],
+        "passCriteria": "The dependency direction rule is enforced by observable imports and package manifests."
+      }
+    ],
+    "apps": [
+      {
+        "id": "app-wrapper-contract",
+        "title": "Apps are thin wrappers and preserve bins",
+        "test": "apps/ndx and apps/ndxserver must be thin wrappers over @neurondev/ndx-core while @neurondev/ndx still publishes ndx and ndxserver bins.",
+        "steps": [
+          {
+            "id": "inspect-apps",
+            "instruction": "Inspect apps/ndx and apps/ndxserver source files.",
+            "expected": "App sources only import @neurondev/ndx-core subpaths and invoke exported entrypoints; they do not contain argument parsing, config loading, session orchestration, dashboard rendering, or Docker sandbox logic."
+          },
+          {
+            "id": "run-bins",
+            "instruction": "Build the workspace, then run apps/ndx/dist/bin/ndx.js --version and apps/ndx/dist/bin/ndxserver.js --version.",
+            "expected": "Both commands print the package version and exit successfully."
+          },
+          {
+            "id": "pack-contract",
+            "instruction": "Run yarn workspace @neurondev/ndx pack --dry-run and inspect the package files.",
+            "expected": "The publish package includes compiled bin files for ndx and ndxserver and compiled app files, without source-only dependency on the root src folder."
+          }
+        ],
+        "passCriteria": "@neurondev/ndx remains install-compatible and apps stay orchestration-only."
+      },
+      {
+        "id": "toolcontainer-contract",
+        "title": "Toolcontainer owns sandbox image",
+        "test": "The sandbox Dockerfile must live under apps/toolcontainer and compose must build from that app.",
+        "steps": [
+          {
+            "id": "inspect-compose",
+            "instruction": "Inspect docker-compose.yml and apps/toolcontainer/Dockerfile.",
+            "expected": "docker-compose.yml builds ndx-sandbox from apps/toolcontainer and the Dockerfile preserves the existing sandbox runtime packages and apply_patch helper."
+          }
+        ],
+        "passCriteria": "The Docker sandbox is represented as an app without changing the sandbox contract."
+      }
+    ],
+    "documentation": [
+      {
+        "id": "docs-describe-monorepo",
+        "title": "Docs describe the monorepo contract",
+        "test": "Root and package documentation must describe the monorepo layout, public interfaces, dependency rules, and test/deploy process.",
+        "steps": [
+          {
+            "id": "inspect-root-docs",
+            "instruction": "Inspect README.md and docs/overview.md, architecture.md, api.md, usage.md, constraints.md, internals.md, and testing.md.",
+            "expected": "The docs describe apps/ndx, apps/ndxserver, apps/toolcontainer, packages/ndx, Turbo build, bin compatibility, dependency direction, and agenttest/deploy verification."
+          },
+          {
+            "id": "inspect-package-docs",
+            "instruction": "Inspect packages/ndx/README.md and packages/ndx/docs.",
+            "expected": "packages/ndx has README.md plus docs/overview.md, architecture.md, api.md, usage.md, constraints.md, internals.md, and testing.md."
+          }
+        ],
+        "passCriteria": "Documentation matches the implemented monorepo and package contracts."
+      }
+    ],
+    "deploy": [
+      {
+        "id": "deploy-contract",
+        "title": "Deploy verifies build and sandbox",
+        "test": "The final deploy path must build the monorepo, run the policy test hook, refresh Docker compose, verify sandbox write, and tear down compose.",
+        "steps": [
+          {
+            "id": "run-deploy",
+            "instruction": "Run npm run deploy.",
+            "expected": "The deploy command completes successfully and its output includes Turbo build execution, Docker compose down, compose build, compose up, sandbox write verification, and final compose down."
+          }
+        ],
+        "passCriteria": "npm run deploy completes the full repository verification contract."
+      }
+    ]
+  }
+}

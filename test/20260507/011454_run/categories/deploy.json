@@ -1,0 +1,43 @@
+[
+  {
+    "target": {
+      "id": "deploy-contract",
+      "title": "Deploy verifies build and sandbox",
+      "test": "The final deploy path must build the monorepo, run the policy test hook, refresh Docker compose, verify sandbox write, and tear down compose.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy.",
+          "expected": "The deploy command completes successfully and its output includes Turbo build execution, Docker compose down, compose build, compose up, sandbox write verification, and final compose down."
+        }
+      ],
+      "passCriteria": "npm run deploy completes the full repository verification contract."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy.",
+          "expected": "The deploy command completes successfully and its output includes Turbo build execution, Docker compose down, compose build, compose up, sandbox write verification, and final compose down."
+        },
+        "result": true,
+        "descript": "The full deploy command completed the build, policy hook, compose refresh, sandbox write, and teardown.",
+        "evidence": [
+          "npm run deploy exited 0.",
+          "Deploy output included turbo 2.9.9 with 4 successful build tasks.",
+          "Deploy output included agenttest policy hook: strict JSON results under test/YYYYMMDD.",
+          "Deploy output built docker.io/hika00/ndx-sandbox:0.1.1 from apps/toolcontainer.",
+          "Deploy output created, started, stopped, removed ndx-ndx-sandbox-1, then removed ndx_default network."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "npm run deploy satisfies the repository verification contract.",
+      "evidence": [
+        "Command passed: npm run deploy.",
+        "docker-compose.yml build context is apps/toolcontainer."
+      ]
+    }
+  }
+]

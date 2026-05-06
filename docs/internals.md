@@ -9,7 +9,7 @@ local model id.
 
 `ensureGlobalNdxHome` creates the global directory, `skills`, `system/tools`,
 `system/skills`, and built-in core tool packages. Built-in package manifests and
-runtimes are generated from `src/config/core-tools.ts`.
+runtimes are generated from `packages/ndx/src/config/core-tools.ts`.
 
 AGENTS.md loading is an explicit cascade rather than an open-ended ancestor
 scan. The loader reads project `AGENTS.md`, project `.ndx/AGENTS.md`, and
@@ -28,9 +28,9 @@ paths into Docker sandbox paths.
 
 ## Defaults
 
-`src/config/defaults.ts` owns runtime constants shared across CLI, server,
-sandbox, MCP, and external tool execution. Package version discovery lives in
-`src/config/package-version.ts`.
+`packages/ndx/src/config/defaults.ts` owns runtime constants shared across CLI,
+server, sandbox, MCP, and external tool execution. Package version discovery
+lives in `packages/ndx/src/config/package-version.ts`.
 
 ## Agent Loop
 
@@ -47,13 +47,15 @@ of the prompt. For non-explicit but relevant skills, the model calls
 `load_skill`; those tool results are visible only in the active turn.
 
 `AgentRuntime` wraps the loop with session ids, turn ids, abort handling,
-runtime events, history, and provider error classification.
+runtime events, history, and provider error classification. The server injects
+the concrete `runAgent` function so runtime does not import the agent package
+and the previous session-runtime-agent-session import cycle stays broken.
 
 ## Session Server
 
 `SessionServer` owns live sessions, WebSocket clients, auth, SQLite persistence,
 Docker sandbox preparation, and dashboard HTTP. Helper modules under
-`src/session/server/` own dashboard rendering, bootstrap formatting, server
+`packages/ndx/src/session/server/` own dashboard rendering, bootstrap formatting, server
 info, JSON-RPC helpers, params, notifications, runtime-event predicates, and
 WebSocket connection state.
 
@@ -145,10 +147,24 @@ process. Linux launches through `setsid` when available, falling back to
 
 ## Tools
 
-`ToolRegistry` scans task, core, project, global, plugin, and MCP layers. Each
+`ToolRegistry` lives under `packages/ndx/src/tools` and scans task, core,
+project, global, plugin, and MCP layers. Each
 tool call runs in a worker Node process. Task tools execute in the worker.
 External tools and configured MCP commands execute in the Docker sandbox when
 the server provides `NDX_SANDBOX_CONTAINER`.
 
 Host paths are mapped into sandbox paths before `docker exec`; project paths map
 under `/workspace` and global paths map under `/home/.ndx`.
+
+## Monorepo Baseline
+
+The pre-refactor source lived under root `src/` and built as a single
+`@neurondev/ndx` TypeScript package. The monorepo baseline moves implementation
+into `packages/ndx`, keeps install-facing bins in `apps/ndx`, keeps the private
+server app in `apps/ndxserver`, and moves the sandbox Dockerfile to
+`apps/toolcontainer`.
+
+The public core exports are `@neurondev/ndx-core`, `@neurondev/ndx-core/cli`,
+`@neurondev/ndx-core/server`, `@neurondev/ndx-core/dashboard`, and
+`@neurondev/ndx-core/shared`. Existing `dist/src/...` paths are not a supported
+API contract.
