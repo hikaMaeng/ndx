@@ -55,6 +55,45 @@ export function mapHostPathToSandboxPath(
   return absolute ? sandboxCwd : value;
 }
 
+/** Replace host absolute paths embedded in text with sandbox paths. */
+export function mapHostPathsInText(
+  value: string,
+  mapping: SandboxPathMapping,
+): string {
+  let result = value;
+  for (const [hostRoot, sandboxRoot] of embeddedPathMappings(mapping)) {
+    if (hostRoot === undefined || hostRoot.length === 0) {
+      continue;
+    }
+    const sandbox = normalizeContainerPath(sandboxRoot);
+    for (const variant of hostRootVariants(hostRoot)) {
+      result = result.replace(hostPathTextPattern(variant), (match) =>
+        mapHostPathToSandboxPath(match, {
+          ...mapping,
+          sandboxWorkspace: sandbox,
+          sandboxGlobal: sandbox,
+        }),
+      );
+    }
+  }
+  return result;
+}
+
+function embeddedPathMappings(
+  mapping: SandboxPathMapping,
+): Array<[string | undefined, string]> {
+  return [
+    [
+      mapping.hostWorkspace,
+      mapping.sandboxWorkspace ?? NDX_DEFAULTS.containerWorkspaceDir,
+    ],
+    [
+      mapping.hostGlobal,
+      mapping.sandboxGlobal ?? NDX_DEFAULTS.containerGlobalDir,
+    ],
+  ];
+}
+
 function mapAgainstRoot(
   value: string,
   hostRoot: string | undefined,
@@ -110,4 +149,21 @@ function hostPathKey(value: string): string {
 
 function isInsideContainerRoot(value: string, root: string): boolean {
   return value === root || value.startsWith(`${root}/`);
+}
+
+function hostRootVariants(hostRoot: string): string[] {
+  const normalized = normalizeHostAbsolutePath(hostRoot);
+  return [...new Set([normalized, normalized.replace(/\//g, "\\")])];
+}
+
+function hostPathTextPattern(hostRoot: string): RegExp {
+  const escaped = escapeRegExp(hostRoot);
+  return new RegExp(
+    `${escaped}(?:[\\\\/][^\\s"'\\\`|;&<>)]*)*`,
+    /^[a-zA-Z]:[\\/]/.test(hostRoot) ? "gi" : "g",
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

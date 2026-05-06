@@ -1,7 +1,10 @@
 import { resolve } from "node:path";
 import { NDX_DEFAULTS } from "../../../config/defaults.js";
 import { runProcess } from "../../../process/index.js";
-import { mapHostPathToSandboxPath } from "../../sandbox-paths.js";
+import {
+  mapHostPathsInText,
+  mapHostPathToSandboxPath,
+} from "../../sandbox-paths.js";
 import type {
   ExternalToolRuntime,
   ToolContext,
@@ -33,6 +36,10 @@ export async function runExternalTool(
     sandbox === undefined || sandbox.length === 0
       ? runtime.command
       : sandboxCommand(runtime.command);
+  const toolArgs =
+    sandbox === undefined || sandbox.length === 0
+      ? args
+      : mapToolArgumentsToSandbox(context, args);
   const commandArgs =
     sandbox === undefined || sandbox.length === 0
       ? runtime.args
@@ -53,7 +60,7 @@ export async function runExternalTool(
     tool: runtime.name ?? runtime.toolDir.split(/[\\/]/).at(-1) ?? command,
     command,
     commandArgs: auditCommandArgs(commandArgs),
-    arguments: args,
+    arguments: toolArgs,
     toolCwd,
     requestCwd,
     hostToolCwd: cwd,
@@ -76,7 +83,7 @@ export async function runExternalTool(
         ? { ...process.env, ...env }
         : process.env,
     input: `${JSON.stringify({
-      arguments: args,
+      arguments: toolArgs,
       cwd: requestCwd,
     })}\n`,
     timeoutMs,
@@ -221,4 +228,35 @@ function mapHostPathToSandbox(context: ToolContext, value: string): string {
     hostGlobal: context.config.paths.globalDir,
     sandboxGlobal: NDX_DEFAULTS.containerGlobalDir,
   });
+}
+
+function mapToolArgumentsToSandbox(
+  context: ToolContext,
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  return mapUnknownToolValue(context, value) as Record<string, unknown>;
+}
+
+function mapUnknownToolValue(context: ToolContext, value: unknown): unknown {
+  if (typeof value === "string") {
+    return mapHostPathsInText(value, {
+      hostWorkspace: context.env.NDX_SANDBOX_HOST_WORKSPACE,
+      sandboxWorkspace: context.env.NDX_SANDBOX_WORKSPACE,
+      sandboxCwd: context.env.NDX_SANDBOX_CWD,
+      hostGlobal: context.config.paths.globalDir,
+      sandboxGlobal: NDX_DEFAULTS.containerGlobalDir,
+    });
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => mapUnknownToolValue(context, item));
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        mapUnknownToolValue(context, item),
+      ]),
+    );
+  }
+  return value;
 }
