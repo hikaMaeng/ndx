@@ -1,5 +1,13 @@
 # Testing
 
+## Policy
+
+`ndx` uses agenttest as the repository testing policy. Agenttest suites are
+strict JSON files executed by Codex through the filesystem-backed TypeScript
+runner in the global `agenttest` skill.
+
+Executable unit-test files under `tests/` are not part of the policy.
+
 ## Commands
 
 ```bash
@@ -7,6 +15,11 @@ yarn build
 yarn test
 npm run deploy
 ```
+
+`yarn build` runs `turbo run build` across `apps/*` and `packages/*`.
+`npm run deploy` runs the Turbo build, the agenttest policy hook, legacy compose
+cleanup, isolated compose build from `apps/toolcontainer`, compose up, sandbox
+write verification, and final compose down.
 
 Install verification, when required:
 
@@ -37,8 +50,11 @@ ndxserver --version
   failed `maxTurns` turns with persisted tool logs.
 - Managed CLI startup discovery, detached `ndxserver` process lifetime, default
   socket/dashboard port reporting, and attach-before-start behavior.
-- Docker sandbox state, container labels, path mapping, image override, and
-  external tool/MCP sandbox execution.
+- Docker sandbox state, container labels, path mapping, image override, Windows
+  host-path mapping, and external tool/MCP sandbox execution.
+- Monorepo package boundaries: app-to-package dependency direction, no
+  package-to-app imports, public bin compatibility, `@neurondev/ndx-core`
+  subpath exports, and Docker build-context ownership.
 
 ## Browser Verification
 
@@ -60,9 +76,3 @@ The dashboard is the only browser surface. Browser checks must target:
 
 Prefer Playwright role/name locators where available. Use documented test ids
 only for stable non-user-facing anchors.
-
-## Test Records
-
-Feature verification plans live at `tests/plans/{name}-YYYYMMDD.md`. Execution
-reports live at `tests/reports/{name}/YYYYMMDD_HHMMSS.md`. Browser reports must
-record the locator strategy that passed.

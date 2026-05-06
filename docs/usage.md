@@ -13,7 +13,7 @@ Yarn uses Plug'n'Play; do not add a workspace `node_modules` tree.
 ## Local Run
 
 ```bash
-node dist/src/cli/main.js --mock "list files"
+node apps/ndx/dist/bin/ndx.js --mock "list files"
 ```
 
 Mock mode starts an embedded loopback server and uses `MockModelClient`.
@@ -21,7 +21,7 @@ Mock mode starts an embedded loopback server and uses `MockModelClient`.
 Run the normal managed CLI:
 
 ```bash
-node dist/src/cli/main.js
+node apps/ndx/dist/bin/ndx.js
 ```
 
 The CLI tries `ws://127.0.0.1:45123`. If unreachable, it starts a local server
@@ -168,10 +168,10 @@ incomplete; partial text from a tool-call response is not printed as completion.
 npm run deploy
 ```
 
-Deploy runs the local TypeScript build and tests, removes prior legacy compose
-resources, uses an isolated compose project for the Docker refresh, rebuilds
-`ndx-sandbox`, starts it, verifies a file write in `/workspace/tmp`, and tears
-the compose stack down.
+Deploy runs the Turbo build and agenttest policy hook, removes prior legacy
+compose resources, uses an isolated compose project for the Docker refresh,
+rebuilds `ndx-sandbox` from `apps/toolcontainer`, starts it, verifies a file
+write in `/workspace/tmp`, and tears the compose stack down.
 
 ## Install Test
 

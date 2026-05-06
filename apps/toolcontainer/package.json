@@ -1,0 +1,12 @@
+{
+  "name": "@neurondev/ndx-toolcontainer",
+  "private": true,
+  "version": "0.1.39",
+  "type": "module",
+  "description": "Docker build context for the ndx workspace tool sandbox.",
+  "scripts": {
+    "build": "node -e \"console.log('toolcontainer build is docker compose owned')\"",
+    "test": "node -e \"console.log('agenttest app policy: strict JSON results under test/YYYYMMDD')\""
+  },
+  "packageManager": "yarn@4.14.1"
+}

@@ -1,21 +1,30 @@
 # Architecture
 
-## Source Layout
+## Workspace Layout
 
-| Folder         | Role                                                                        |
-| -------------- | --------------------------------------------------------------------------- |
-| `src/cli/`     | CLI entrypoint, managed startup, login helpers, interactive session client. |
-| `src/config/`  | Defaults, settings loading, validation, merging, bootstrap, version lookup. |
-| `src/model/`   | Provider adapters, mock client, routed model factory, sticky routing.       |
-| `src/process/` | Process runner and serial/parallel task queue.                              |
-| `src/agent/`   | Model/tool loop for one turn sequence.                                      |
-| `src/runtime/` | Runtime event production, abort handling, provider error classification.    |
-| `src/session/` | WebSocket server/client, SQLite store, Docker sandbox, commands, tools.     |
-| `src/shared/`  | Protocol and shared runtime data contracts.                                 |
+| Folder                 | Role                                                              |
+| ---------------------- | ----------------------------------------------------------------- |
+| `apps/ndx/`            | Publish-facing `@neurondev/ndx` bin wrappers for `ndx`/`ndxserver`. |
+| `apps/ndxserver/`      | Private server wrapper used as a separate app boundary.           |
+| `apps/toolcontainer/`  | Docker build context for the workspace tool sandbox.              |
+| `packages/ndx/`        | `@neurondev/ndx-core` domain package.                             |
+| `packages/ndx/src/cli/` | CLI entrypoint, managed startup, login helpers, session client.   |
+| `packages/ndx/src/server/` | Public server export surface.                                  |
+| `packages/ndx/src/dashboard/` | Public dashboard export surface.                            |
+| `packages/ndx/src/config/` | Defaults, settings loading, bootstrap, version lookup.        |
+| `packages/ndx/src/model/` | Provider adapters, mock client, routed model factory.          |
+| `packages/ndx/src/tools/` | Tool registry, worker execution, external tools, MCP adapters. |
+| `packages/ndx/src/session/` | WebSocket server/client, SQLite store, Docker sandbox.       |
+| `packages/ndx/src/shared/` | Protocol and shared runtime data contracts.                   |
+
+Apps depend on packages. Packages do not depend on apps. Inside
+`packages/ndx`, dependencies are kept one-way: shared/config/model/process/tools
+feed agent/runtime/session/cli rather than importing app wrappers.
 
 ## Flow
 
-1. `ndx` parses CLI flags and probes the requested WebSocket address.
+1. `apps/ndx` bin wrappers import `@neurondev/ndx-core/cli` and call `main`.
+2. `ndx` parses CLI flags and probes the requested WebSocket address.
 2. Managed startup connects to an existing server or starts a detached
    `ndxserver` host process at `127.0.0.1:45123` plus dashboard
    `127.0.0.1:45124`, then connects over WebSocket.
@@ -25,8 +34,8 @@
    loads AGENTS.md and skill catalogs from the fixed project/user cascade, and
    prepares a Docker sandbox unless mock mode or
    `NDX_REQUIRE_DOCKER_SANDBOX=0` disables it.
-5. `AgentRuntime` sends the local conversation stack to the model client and
-   emits runtime events.
+5. `SessionServer` wires `runAgent` into `AgentRuntime`; runtime no longer
+   imports the agent loop directly.
 6. The tool registry exposes task, core, project, global, plugin, and MCP tools.
    Each tool call runs in a worker Node process.
 7. External tools and MCP stdio commands run through `docker exec` when
@@ -68,10 +77,10 @@ timeout, the CLI prints launcher PID status and tails readable launcher logs.
 
 ## Change Boundaries
 
-- Runtime defaults are owned by `src/config/defaults.ts`.
+- Runtime defaults are owned by `packages/ndx/src/config/defaults.ts`.
 - Settings schema, AGENTS.md discovery, skill discovery, and merge behavior are
-  owned by `src/config/index.ts`.
+  owned by `packages/ndx/src/config/index.ts`.
 - Server JSON-RPC helpers, server info, social login verification, dashboard
   rendering, params, notifications, runtime-event predicates, and websocket
-  connection state live under `src/session/server/`.
-- Tool execution subdomains live under `src/session/tools/`.
+  connection state live under `packages/ndx/src/session/server/`.
+- Tool execution subdomains live under `packages/ndx/src/tools/`.

@@ -1,13 +1,17 @@
 # Overview
 
-ndx is a single TypeScript package for a local coding agent. The active product
-surface is the root package, `src/`, `tests/`, `docs/`, and the Docker deploy
-flow.
+ndx is a Turbo monorepo for a local coding agent. The active product surface is
+split into app wrappers under `apps/`, domain logic under `packages/ndx`, root
+documentation, agenttest suites under `test/`, and the Docker deploy flow.
 
 ## Runtime Shape
 
-- The CLI binary is `ndx`; `ndxserver` uses a bootstrap entrypoint to enter
-  server mode without relying on npm shim command-name propagation.
+- `apps/ndx` publishes `@neurondev/ndx` and preserves the public `ndx` and
+  `ndxserver` bins.
+- `apps/ndxserver` is a private server wrapper for local workspace orchestration.
+- `apps/toolcontainer` owns the Docker sandbox image build context.
+- `packages/ndx` publishes `@neurondev/ndx-core` and owns CLI, server,
+  dashboard, config, model, agent, runtime, tool, process, and shared logic.
 - Normal `ndx` startup accepts only an optional server address. The default is
   `ws://127.0.0.1:45123`.
 - If the requested server is not reachable, the CLI starts a local
@@ -24,13 +28,16 @@ Runtime settings are JSON files. Global settings live at
 `<project>/.ndx/settings.json`. Global search rules live at
 `/home/.ndx/search.json`.
 
-Code-owned defaults are centralized in `src/config/defaults.ts`. User-editable
-model, provider, key, tool, and MCP settings remain in settings JSON files.
+Code-owned defaults are centralized in
+`packages/ndx/src/config/defaults.ts`. User-editable model, provider, key,
+tool, and MCP settings remain in settings JSON files.
 AGENTS.md files and skill catalogs are loaded by their own cascades so runtime
 instructions, `/context`, and compacted sessions can distinguish project-owned
 guidance from user-owned guidance.
 
 ## Distribution
 
-The package name is `@neurondev/ndx`. Verdaccio is the default install-test
-registry. Public npm publishing is explicit-only.
+The install-facing package name remains `@neurondev/ndx`. It depends on
+`@neurondev/ndx-core` and exposes the same `ndx` and `ndxserver` bins after
+global install. Verdaccio is the default install-test registry. Public npm
+publishing is explicit-only.

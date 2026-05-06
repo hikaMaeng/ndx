@@ -1,0 +1,60 @@
+[
+  {
+    "target": {
+      "id": "root-workspace-contract",
+      "title": "Root workspace uses Turbo and Yarn PnP",
+      "test": "The repository root must be a private Turbo monorepo using Yarn Plug'n'Play workspaces for apps and packages.",
+      "steps": [
+        {
+          "id": "inspect-root-manifests",
+          "instruction": "Inspect package.json, .yarnrc.yml, turbo.json, tsconfig.json, and tsconfig.base.json.",
+          "expected": "Root package.json is private, declares apps/* and packages/* workspaces, has turbo-backed build/test/deploy scripts, .yarnrc.yml uses pnp, turbo.json exists, and root tsconfig references workspace projects."
+        },
+        {
+          "id": "install-and-build",
+          "instruction": "Run yarn install --immutable and yarn build.",
+          "expected": "Both commands complete successfully without creating node_modules."
+        }
+      ],
+      "passCriteria": "The root workspace contract is implemented and buildable through Turbo."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-root-manifests",
+          "instruction": "Inspect package.json, .yarnrc.yml, turbo.json, tsconfig.json, and tsconfig.base.json.",
+          "expected": "Root package.json is private, declares apps/* and packages/* workspaces, has turbo-backed build/test/deploy scripts, .yarnrc.yml uses pnp, turbo.json exists, and root tsconfig references workspace projects."
+        },
+        "result": true,
+        "descript": "Root manifests implement the Turbo monorepo contract.",
+        "evidence": [
+          "package.json has private true and workspaces [\"apps/*\",\"packages/*\"].",
+          ".yarnrc.yml contains nodeLinker: pnp.",
+          "turbo.json defines build/test tasks and tsconfig.json references packages/ndx, apps/ndx, and apps/ndxserver."
+        ]
+      },
+      {
+        "target": {
+          "id": "install-and-build",
+          "instruction": "Run yarn install --immutable and yarn build.",
+          "expected": "Both commands complete successfully without creating node_modules."
+        },
+        "result": true,
+        "descript": "Immutable install and Turbo build completed successfully.",
+        "evidence": [
+          "yarn install --immutable exited 0.",
+          "yarn build exited 0 with 4 successful Turbo tasks.",
+          ".gitignore excludes node_modules and no workspace node_modules tree was created."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "The root workspace is a buildable Turbo/Yarn PnP monorepo.",
+      "evidence": [
+        "Root manifests inspected in package.json, .yarnrc.yml, turbo.json, tsconfig.json, and tsconfig.base.json.",
+        "Commands passed: yarn install --immutable; yarn build."
+      ]
+    }
+  }
+]

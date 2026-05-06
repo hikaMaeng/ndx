@@ -1,0 +1,60 @@
+[
+  {
+    "target": {
+      "id": "docs-describe-monorepo",
+      "title": "Docs describe the monorepo contract",
+      "test": "Root and package documentation must describe the monorepo layout, public interfaces, dependency rules, and test/deploy process.",
+      "steps": [
+        {
+          "id": "inspect-root-docs",
+          "instruction": "Inspect README.md and docs/overview.md, architecture.md, api.md, usage.md, constraints.md, internals.md, and testing.md.",
+          "expected": "The docs describe apps/ndx, apps/ndxserver, apps/toolcontainer, packages/ndx, Turbo build, bin compatibility, dependency direction, and agenttest/deploy verification."
+        },
+        {
+          "id": "inspect-package-docs",
+          "instruction": "Inspect packages/ndx/README.md and packages/ndx/docs.",
+          "expected": "packages/ndx has README.md plus docs/overview.md, architecture.md, api.md, usage.md, constraints.md, internals.md, and testing.md."
+        }
+      ],
+      "passCriteria": "Documentation matches the implemented monorepo and package contracts."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-root-docs",
+          "instruction": "Inspect README.md and docs/overview.md, architecture.md, api.md, usage.md, constraints.md, internals.md, and testing.md.",
+          "expected": "The docs describe apps/ndx, apps/ndxserver, apps/toolcontainer, packages/ndx, Turbo build, bin compatibility, dependency direction, and agenttest/deploy verification."
+        },
+        "result": true,
+        "descript": "Root docs describe the new monorepo and verification contract.",
+        "evidence": [
+          "README.md describes apps/ndx, apps/ndxserver, apps/toolcontainer, packages/ndx, install bins, and npm run deploy.",
+          "docs/architecture.md documents workspace layout and dependency direction.",
+          "docs/testing.md documents Turbo build, agenttest policy, deploy, and monorepo package-boundary coverage."
+        ]
+      },
+      {
+        "target": {
+          "id": "inspect-package-docs",
+          "instruction": "Inspect packages/ndx/README.md and packages/ndx/docs.",
+          "expected": "packages/ndx has README.md plus docs/overview.md, architecture.md, api.md, usage.md, constraints.md, internals.md, and testing.md."
+        },
+        "result": true,
+        "descript": "The core package has the required README and docs set.",
+        "evidence": [
+          "packages/ndx/README.md exists with a nav table.",
+          "packages/ndx/docs contains overview.md, architecture.md, api.md, usage.md, constraints.md, internals.md, and testing.md.",
+          "App package README/docs were also added under apps/ndx, apps/ndxserver, and apps/toolcontainer."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Documentation matches the monorepo implementation.",
+      "evidence": [
+        "Root and package docs inspected after updates.",
+        "Dashboard markup contract remains documented in docs/constraints.md and packages/ndx/docs/testing.md."
+      ]
+    }
+  }
+]

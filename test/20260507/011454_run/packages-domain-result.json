@@ -1,0 +1,56 @@
+{
+  "target": {
+    "id": "domain-package-contract",
+    "title": "Domain package owns ndx logic",
+    "test": "The ndx domain implementation must live under packages/ndx and expose stable subpath exports.",
+    "steps": [
+      {
+        "id": "inspect-package-layout",
+        "instruction": "Inspect packages/ndx/package.json and packages/ndx/src.",
+        "expected": "The package is named @neurondev/ndx-core and contains cli, server, dashboard, config, model, agent, runtime, process, tools, and shared source folders."
+      },
+      {
+        "id": "inspect-exports",
+        "instruction": "Inspect packages/ndx/package.json exports.",
+        "expected": "The package exports ., ./cli, ./server, ./dashboard, and ./shared from dist files."
+      }
+    ],
+    "passCriteria": "packages/ndx is the domain package and exposes the planned public subpaths."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-package-layout",
+        "instruction": "Inspect packages/ndx/package.json and packages/ndx/src.",
+        "expected": "The package is named @neurondev/ndx-core and contains cli, server, dashboard, config, model, agent, runtime, process, tools, and shared source folders."
+      },
+      "result": true,
+      "descript": "The core package owns the required domain folders.",
+      "evidence": [
+        "packages/ndx/package.json name is @neurondev/ndx-core.",
+        "find packages/ndx/src -maxdepth 2 includes cli, server, dashboard, config, model, agent, runtime, process, tools, and shared."
+      ]
+    },
+    {
+      "target": {
+        "id": "inspect-exports",
+        "instruction": "Inspect packages/ndx/package.json exports.",
+        "expected": "The package exports ., ./cli, ./server, ./dashboard, and ./shared from dist files."
+      },
+      "result": true,
+      "descript": "The core package exposes the planned subpaths from dist.",
+      "evidence": [
+        "packages/ndx/package.json exports ., ./cli, ./server, ./dashboard, ./shared, and ./package.json.",
+        "yarn build produced dist entrypoints for those exports."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "packages/ndx is the ndx core domain package.",
+    "evidence": [
+      "packages/ndx/package.json and packages/ndx/src layout inspected.",
+      "yarn build completed successfully after extraction."
+    ]
+  }
+}

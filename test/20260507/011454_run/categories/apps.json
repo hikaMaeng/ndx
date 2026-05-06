@@ -1,0 +1,121 @@
+[
+  {
+    "target": {
+      "id": "app-wrapper-contract",
+      "title": "Apps are thin wrappers and preserve bins",
+      "test": "apps/ndx and apps/ndxserver must be thin wrappers over @neurondev/ndx-core while @neurondev/ndx still publishes ndx and ndxserver bins.",
+      "steps": [
+        {
+          "id": "inspect-apps",
+          "instruction": "Inspect apps/ndx and apps/ndxserver source files.",
+          "expected": "App sources only import @neurondev/ndx-core subpaths and invoke exported entrypoints; they do not contain argument parsing, config loading, session orchestration, dashboard rendering, or Docker sandbox logic."
+        },
+        {
+          "id": "run-bins",
+          "instruction": "Build the workspace, then run apps/ndx/dist/bin/ndx.js --version and apps/ndx/dist/bin/ndxserver.js --version.",
+          "expected": "Both commands print the package version and exit successfully."
+        },
+        {
+          "id": "pack-contract",
+          "instruction": "Run yarn workspace @neurondev/ndx npm pack --dry-run and inspect the package files.",
+          "expected": "The publish package includes compiled bin files for ndx and ndxserver and compiled app files, without source-only dependency on the root src folder."
+        }
+      ],
+      "passCriteria": "@neurondev/ndx remains install-compatible and apps stay orchestration-only."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-apps",
+          "instruction": "Inspect apps/ndx and apps/ndxserver source files.",
+          "expected": "App sources only import @neurondev/ndx-core subpaths and invoke exported entrypoints; they do not contain argument parsing, config loading, session orchestration, dashboard rendering, or Docker sandbox logic."
+        },
+        "result": true,
+        "descript": "App sources are bin loaders only.",
+        "evidence": [
+          "apps/ndx/src/bin/ndx.ts imports loadCoreCli and calls main().",
+          "apps/ndx/src/bin/ndxserver.ts and apps/ndxserver/src/bin/ndxserver.ts set NDX_INVOKED_AS_SERVER and call core main().",
+          "rg over app sources found no config loading, SessionServer construction, dashboard rendering, or Docker sandbox implementation."
+        ]
+      },
+      {
+        "target": {
+          "id": "run-bins",
+          "instruction": "Build the workspace, then run apps/ndx/dist/bin/ndx.js --version and apps/ndx/dist/bin/ndxserver.js --version.",
+          "expected": "Both commands print the package version and exit successfully."
+        },
+        "result": true,
+        "descript": "Built app bins print the expected version.",
+        "evidence": [
+          "yarn build exited 0.",
+          "node apps/ndx/dist/bin/ndx.js --version printed 0.1.35.",
+          "node apps/ndx/dist/bin/ndxserver.js --version printed 0.1.35.",
+          "node apps/ndxserver/dist/bin/ndxserver.js --version printed 0.1.35."
+        ]
+      },
+      {
+        "target": {
+          "id": "pack-contract",
+          "instruction": "Run yarn workspace @neurondev/ndx npm pack --dry-run and inspect the package files.",
+          "expected": "The publish package includes compiled bin files for ndx and ndxserver and compiled app files, without source-only dependency on the root src folder."
+        },
+        "result": true,
+        "descript": "The Yarn 4 pack dry-run includes compiled bin files and package docs.",
+        "evidence": [
+          "yarn workspace @neurondev/ndx pack --dry-run exited 0.",
+          "Dry-run output included dist/bin/ndx.js and dist/bin/ndxserver.js.",
+          "Packed package.json rewrites @neurondev/ndx-core dependency to ^0.1.35.",
+          "Temporary prefix install from /tmp/ndx-core.tgz and /tmp/ndx-app.tgz ran /tmp/ndx-global/bin/ndx --version and /tmp/ndx-global/bin/ndxserver --version, both printing 0.1.35."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "@neurondev/ndx remains install-compatible and app wrappers stay thin.",
+      "evidence": [
+        "App sources inspected under apps/ndx/src/bin and apps/ndxserver/src/bin.",
+        "Commands passed: yarn build; node app bin --version checks; yarn workspace @neurondev/ndx pack --dry-run; npm install -g --prefix /tmp/ndx-global /tmp/ndx-core.tgz /tmp/ndx-app.tgz."
+      ]
+    }
+  },
+  {
+    "target": {
+      "id": "toolcontainer-contract",
+      "title": "Toolcontainer owns sandbox image",
+      "test": "The sandbox Dockerfile must live under apps/toolcontainer and compose must build from that app.",
+      "steps": [
+        {
+          "id": "inspect-compose",
+          "instruction": "Inspect docker-compose.yml and apps/toolcontainer/Dockerfile.",
+          "expected": "docker-compose.yml builds ndx-sandbox from apps/toolcontainer and the Dockerfile preserves the existing sandbox runtime packages and apply_patch helper."
+        }
+      ],
+      "passCriteria": "The Docker sandbox is represented as an app without changing the sandbox contract."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-compose",
+          "instruction": "Inspect docker-compose.yml and apps/toolcontainer/Dockerfile.",
+          "expected": "docker-compose.yml builds ndx-sandbox from apps/toolcontainer and the Dockerfile preserves the existing sandbox runtime packages and apply_patch helper."
+        },
+        "result": true,
+        "descript": "Compose builds the sandbox from apps/toolcontainer and the Dockerfile keeps the original runtime contract.",
+        "evidence": [
+          "docker-compose.yml ndx-sandbox build.context is apps/toolcontainer.",
+          "apps/toolcontainer/Dockerfile starts FROM node:22-bookworm-slim.",
+          "Dockerfile installs bash, git, jq, patch, python3, ripgrep, wget, xz-utils, Playwright Chromium, and /usr/local/bin/apply_patch.",
+          "npm run deploy built hika00/ndx-sandbox:0.1.1 and verified the sandbox write."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "The Docker sandbox build context is now represented as apps/toolcontainer.",
+      "evidence": [
+        "docker-compose.yml and apps/toolcontainer/Dockerfile inspected.",
+        "Command passed: npm run deploy."
+      ]
+    }
+  }
+]
