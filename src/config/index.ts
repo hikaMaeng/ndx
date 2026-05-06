@@ -714,7 +714,7 @@ function formatAvailableSkills(skills: SkillMetadata[]): string | undefined {
   return [
     "# Available Skills",
     "",
-    "A skill is a set of local instructions stored in a `SKILL.md` file. Use a skill when the user names it with `$skill-name`, asks to use skills, or when the task clearly matches its description. Call the `load_skill` tool with the skill name before relying on a skill; do not use shell, cat, type, or PowerShell to open skill files.",
+    "A skill is a set of local instructions stored in a `SKILL.md` file. Startup AGENTS.md and skill catalog entries are already loaded in context; do not use shell, cat, Windows type, or PowerShell to re-open those startup source paths. When the user names a skill, asks to use skills, or the task clearly matches a skill description, call `load_skill` as the first tool call for the matching skill before any filesystem or shell exploration. Use `list_skills` only when the matching skill name is ambiguous.",
     "",
     ...skills.map((skill) => {
       const description =

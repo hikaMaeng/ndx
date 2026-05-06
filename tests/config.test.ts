@@ -295,6 +295,18 @@ test("loadConfig discovers skills from fixed project, plugin, user, and system r
       true,
     );
     assert.equal(
+      loaded.config.instructions.includes(
+        "call `load_skill` as the first tool call",
+      ),
+      true,
+    );
+    assert.equal(
+      loaded.config.instructions.includes(
+        "do not use shell, cat, Windows type, or PowerShell",
+      ),
+      true,
+    );
+    assert.equal(
       loaded.sources.some((source) => source.endsWith("project-tool/SKILL.md")),
       true,
     );
