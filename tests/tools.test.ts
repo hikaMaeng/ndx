@@ -72,7 +72,6 @@ test("registry exposes internal task tools only from the agent body", async () =
       .filter((name) =>
         [
           "update_plan",
-          "request_user_input",
           "spawn_agent",
           "send_input",
           "resume_agent",
@@ -89,7 +88,6 @@ test("registry exposes internal task tools only from the agent body", async () =
       ),
     [
       "update_plan",
-      "request_user_input",
       "spawn_agent",
       "send_input",
       "send_message",

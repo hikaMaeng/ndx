@@ -26,8 +26,8 @@ ndxserver --version
   Anthropic Messages, inference parameters, and sticky model routing.
 - Agent loop behavior, full client-side context follow-up, tool execution,
   explicit skill injection, built-in skill loading, duplicate skill
-  suppression, worker process isolation, abort propagation, and runtime event
-  replay.
+  suppression, unavailable interactive input exclusion, worker process
+  isolation, abort propagation, and runtime event replay.
 - Session server local account create/login/previous/block/unblock flow,
   WebSocket request/notification flow, SQLite persistence,
   `session`/`sessiondata` metadata, project-id scoping, legacy session-table
