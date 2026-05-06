@@ -11,6 +11,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runAgent } from "../src/agent/loop.js";
+import { CORE_TOOL_PACKAGES } from "../src/config/core-tools.js";
 import { ensureGlobalNdxHome } from "../src/config/index.js";
 import { createToolRegistry } from "../src/session/tools/registry.js";
 import type {
@@ -252,6 +253,8 @@ test("registry exposes bootstrapped core capability tools as external tools", as
     assert.equal(schemaText.includes("project at /workspace"), true);
     assert.equal(schemaText.includes("POSIX bash"), true);
     assert.equal(schemaText.includes("/workspace/workspace"), true);
+    const runtimeText = JSON.stringify(CORE_TOOL_PACKAGES);
+    assert.equal(runtimeText.includes("windowsHide: true"), true);
 
     const context = {
       cwd: root,

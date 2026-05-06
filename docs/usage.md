@@ -82,7 +82,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.36",
+  "version": "0.1.37",
   "model": "local-model",
   "providers": {
     "local": {
@@ -146,6 +146,14 @@ shell syntax and `/workspace` paths for `shell`, `list_dir`, `apply_patch`, and
 similar workspace tools; do not use Windows `cmd.exe`, PowerShell, `dir /b`,
 drive-letter paths in shell commands, or mixed paths such as
 `/workspace/workspace`.
+
+On Windows, ndx starts managed servers and tool worker processes with hidden
+helper windows. Tool output stays in the active ndx terminal instead of opening
+new console windows for each `docker exec`, Node worker, or sandbox probe.
+
+If a turn reaches `maxTurns`, ndx reports a warning and keeps the session open.
+The warning means the current request did not produce a final answer and may be
+incomplete; partial text from a tool-call response is not printed as completion.
 
 ## Deploy
 

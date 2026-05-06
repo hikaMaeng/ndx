@@ -1,4 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import {
+  spawn,
+  type ChildProcess,
+  type SpawnOptionsWithoutStdio,
+} from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
@@ -146,11 +150,11 @@ export async function runProcess(
   const args = options.args ?? [];
   const cwd = resolve(options.cwd ?? process.cwd());
   return await new Promise<ProcessRunResult>((resolveResult, reject) => {
-    const child = spawn(options.command, args, {
-      cwd,
-      env: options.env ?? process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const child = spawn(
+      options.command,
+      args,
+      processSpawnOptions(cwd, options.env),
+    );
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -200,6 +204,18 @@ export async function runProcess(
     });
     child.stdin.end(options.input ?? "");
   });
+}
+
+export function processSpawnOptions(
+  cwd: string,
+  env: NodeJS.ProcessEnv | undefined,
+): SpawnOptionsWithoutStdio & { windowsHide: true } {
+  return {
+    cwd,
+    env: env ?? process.env,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+  };
 }
 
 function processCleanup(

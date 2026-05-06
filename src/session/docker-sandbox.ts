@@ -395,7 +395,10 @@ function run(
   args: string[],
 ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   return new Promise((resolveRun, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");

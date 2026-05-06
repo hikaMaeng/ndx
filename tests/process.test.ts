@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runProcess, TaskQueue } from "../src/process/index.js";
+import {
+  processSpawnOptions,
+  runProcess,
+  TaskQueue,
+} from "../src/process/index.js";
 
 test("runProcess captures output and exit status", async () => {
   const result = await runProcess({
@@ -10,6 +14,13 @@ test("runProcess captures output and exit status", async () => {
   assert.equal(result.exitCode, 0);
   assert.equal(result.stdout, "ok");
   assert.equal(result.stderr, "");
+});
+
+test("runProcess spawn options hide Windows helper terminals", () => {
+  const options = processSpawnOptions(process.cwd(), undefined);
+
+  assert.equal(options.windowsHide, true);
+  assert.deepEqual(options.stdio, ["pipe", "pipe", "pipe"]);
 });
 
 test("TaskQueue supports nested serial and parallel plans", async () => {
