@@ -82,7 +82,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.34",
+  "version": "0.1.35",
   "model": "local-model",
   "providers": {
     "local": {
@@ -125,9 +125,10 @@ with `$skill-name`; when names are ambiguous, link the exact path:
 ```
 
 When a task asks to use skills or clearly matches a skill description, the model
-loads the full body through the built-in `load_skill` tool. It should not use
-`shell`, `cat`, Windows `type`, or PowerShell to open `SKILL.md` paths because
-external tools may run inside the Linux sandbox path namespace.
+is instructed to load the full body through the built-in `load_skill` tool
+before filesystem or shell exploration. It should not use `shell`, `cat`,
+Windows `type`, or PowerShell to open startup AGENTS.md or `SKILL.md` paths
+because external tools may run inside the Linux sandbox path namespace.
 
 ## Docker Sandbox
 

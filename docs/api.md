@@ -63,7 +63,9 @@ The model-facing task tool set includes `list_skills` and `load_skill`.
 full `SKILL.md` markdown from the host runtime. Skill tool calls are audit
 events, but their results are not restored into future model context. The
 non-interactive TypeScript runtime does not expose `request_user_input` to the
-model tool schema.
+model tool schema. Startup AGENTS.md and skill catalog source paths are already
+loaded in context; models are instructed to use `load_skill` before filesystem
+or shell exploration when a request asks to use skills.
 
 ## WebSocket JSON-RPC
 
