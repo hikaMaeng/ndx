@@ -43,15 +43,15 @@ export const CORE_TOOL_PACKAGES: CoreToolPackage[] = [
   {
     name: "shell",
     description:
-      "Run a shell command in the local workspace and return stdout, stderr, and exit status.",
+      "Run a shell command and return stdout, stderr, and exit status. When the tool sandbox is Docker, this runs POSIX /bin/bash inside the Linux container with the project at /workspace; do not use Windows cmd, PowerShell, dir /b, or drive-letter paths.",
     requirements: SHELL_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
         command: stringSchema(
-          "Command line to run through the platform shell.",
+          "Command line to run through the runtime shell. In Docker tool sandbox mode this is POSIX bash, not Windows cmd or PowerShell.",
         ),
         cwd: stringSchema(
-          "Optional working directory. Defaults to the agent cwd.",
+          "Optional working directory. In Docker tool sandbox mode use /workspace or a path under /workspace; do not append an extra workspace segment to a Windows host path.",
         ),
         timeoutMs: integerSchema("Optional timeout in milliseconds."),
       },
@@ -218,11 +218,13 @@ function pathKey(path) {
   {
     name: "list_dir",
     description:
-      "Lists entries in a local directory with 1-indexed entry numbers and simple type labels.",
+      "Lists entries in a local directory with 1-indexed entry numbers and simple type labels. In Docker tool sandbox mode the project root is /workspace; use /workspace paths or the exact host path, not mixed paths like F:\\dev\\project\\workspace.",
     requirements: NODE_TOOL_REQUIREMENTS,
     parameters: objectSchema(
       {
-        dir_path: stringSchema("Absolute path to the directory to list."),
+        dir_path: stringSchema(
+          "Directory to list. In Docker tool sandbox mode prefer /workspace for the project root and /workspace/<child> for children; do not use /workspace/workspace or Windows shell syntax.",
+        ),
         offset: integerSchema("The entry number to start listing from."),
         limit: integerSchema("The maximum number of entries to return."),
         depth: integerSchema("The maximum directory depth to traverse."),

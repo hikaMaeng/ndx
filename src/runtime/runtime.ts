@@ -274,6 +274,18 @@ export class AgentRuntime {
       );
       return;
     }
+    if (event.type === "warning") {
+      this.emit(
+        {
+          type: "warning",
+          sessionId: this.sessionId,
+          turnId,
+          message: event.message,
+        },
+        onEvent,
+      );
+      return;
+    }
     this.emit(
       {
         type: "token_count",

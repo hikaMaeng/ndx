@@ -29,7 +29,8 @@ export type AgentEvent =
   | { type: "model_text"; text: string }
   | { type: "tool_call"; callId: string; name: string; arguments: string }
   | { type: "tool_result"; callId: string; name: string; output: string }
-  | { type: "token_count"; usage: TokenUsage };
+  | { type: "token_count"; usage: TokenUsage }
+  | { type: "warning"; message: string };
 
 export async function runAgent(options: AgentRunOptions): Promise<string> {
   const state = createInitialState(options.prompt, options.config, options.cwd);
@@ -43,7 +44,11 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
     state.input = result.nextInput;
   }
 
-  throw new Error(`agent stopped after max_turns=${options.config.maxTurns}`);
+  options.onEvent?.({
+    type: "warning",
+    message: `agent stopped after max_turns=${options.config.maxTurns}; current turn ended without closing the session`,
+  });
+  return state.finalText;
 }
 
 interface AgentLoopState {

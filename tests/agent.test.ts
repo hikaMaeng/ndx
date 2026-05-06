@@ -84,6 +84,35 @@ test("mock agent exercises shell tool and completes", async () => {
   }
 });
 
+test("agent max turns emits warning and returns without throwing", async () => {
+  const events: Array<{ type: string; message?: string }> = [];
+  const result = await runAgent({
+    cwd: process.cwd(),
+    config: { ...baseConfig, maxTurns: 1 },
+    client: new LoopingToolClient(),
+    prompt: "keep using tools",
+    onEvent: (event) => events.push(event),
+  });
+
+  assert.equal(result, "");
+  assert.equal(
+    events.some((event) => event.type === "tool_call"),
+    true,
+  );
+  assert.equal(
+    events.some((event) => event.type === "tool_result"),
+    true,
+  );
+  assert.equal(
+    events.some(
+      (event) =>
+        event.type === "warning" &&
+        event.message?.includes("max_turns=1") === true,
+    ),
+    true,
+  );
+});
+
 test("agent sends full client-side context after tool calls", async () => {
   const root = mkdtempSync(join(tmpdir(), "ndx-agent-context-stack-"));
   try {
@@ -510,6 +539,22 @@ class CountingModelClient implements ModelClient {
     return {
       text: "unused",
       toolCalls: [],
+      raw: {},
+    };
+  }
+}
+
+class LoopingToolClient implements ModelClient {
+  async create(): Promise<ModelResponse> {
+    return {
+      text: "",
+      toolCalls: [
+        {
+          callId: `loop-${Date.now()}`,
+          name: "list_skills",
+          arguments: "{}",
+        },
+      ],
       raw: {},
     };
   }

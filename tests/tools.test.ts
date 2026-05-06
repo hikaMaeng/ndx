@@ -248,6 +248,10 @@ test("registry exposes bootstrapped core capability tools as external tools", as
         [{ layer: "core", kind: "external" }],
       );
     }
+    const schemaText = JSON.stringify(registry.schemas());
+    assert.equal(schemaText.includes("project at /workspace"), true);
+    assert.equal(schemaText.includes("POSIX bash"), true);
+    assert.equal(schemaText.includes("/workspace/workspace"), true);
 
     const context = {
       cwd: root,
