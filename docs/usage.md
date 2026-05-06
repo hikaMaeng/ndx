@@ -82,7 +82,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.37",
+  "version": "0.1.39",
   "model": "local-model",
   "providers": {
     "local": {
@@ -151,6 +151,13 @@ On Windows, ndx starts managed servers and tool worker processes with hidden
 helper windows. Tool output stays in the active ndx terminal instead of opening
 new console windows for each `docker exec`, Node worker, or sandbox probe.
 
+When Docker-backed tools receive host paths, ndx maps both structured path
+arguments and embedded command text from the active host project into the
+container mount. For example, `F:\dev\test2`, `F:/dev/test2/apps`, and
+`F:\dev\test2\tests\reports` execute as `/workspace`,
+`/workspace/apps`, and `/workspace/tests/reports`. Tool commands should not
+create drive-letter folders inside the workspace.
+
 If a turn reaches `maxTurns`, ndx reports a warning and keeps the session open.
 The warning means the current request did not produce a final answer and may be
 incomplete; partial text from a tool-call response is not printed as completion.
@@ -161,9 +168,10 @@ incomplete; partial text from a tool-call response is not printed as completion.
 npm run deploy
 ```
 
-Deploy runs the local TypeScript build and tests, removes prior compose
-resources, rebuilds `ndx-sandbox`, starts it, verifies a file write in
-`/workspace/tmp`, and tears the compose stack down.
+Deploy runs the local TypeScript build and tests, removes prior legacy compose
+resources, uses an isolated compose project for the Docker refresh, rebuilds
+`ndx-sandbox`, starts it, verifies a file write in `/workspace/tmp`, and tears
+the compose stack down.
 
 ## Install Test
 

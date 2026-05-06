@@ -11,7 +11,10 @@ import {
   dockerSandboxState,
   hostPathToSandboxPath,
 } from "../src/session/docker-sandbox.js";
-import { mapHostPathToSandboxPath } from "../src/session/sandbox-paths.js";
+import {
+  mapHostPathsInText,
+  mapHostPathToSandboxPath,
+} from "../src/session/sandbox-paths.js";
 import type { NdxConfig } from "../src/shared/types.js";
 import {
   detachedManagedServerLaunch,
@@ -334,5 +337,30 @@ test("sandbox path mapping accepts Windows host paths for docker exec cwd", () =
       sandboxGlobal: state.containerGlobalDir,
     }),
     "/workspace",
+  );
+});
+
+test("sandbox path mapping rewrites embedded Windows paths in shell commands", () => {
+  const mapping = {
+    hostWorkspace: "F:\\dev\\test2",
+    sandboxWorkspace: "/workspace",
+    sandboxCwd: "/workspace",
+    hostGlobal: "C:\\Users\\hika0\\.ndx",
+    sandboxGlobal: "/home/.ndx",
+  };
+
+  assert.equal(
+    mapHostPathsInText(
+      'mkdir -p F:/dev/test2/apps/marketplace "F:\\dev\\test2\\tests\\reports"',
+      mapping,
+    ),
+    'mkdir -p /workspace/apps/marketplace "/workspace/tests/reports"',
+  );
+  assert.equal(
+    mapHostPathsInText(
+      'cp "C:\\Users\\hika0\\.ndx\\skills\\demo\\SKILL.md" F:\\dev\\test2\\tmp\\skill.md',
+      mapping,
+    ),
+    'cp "/home/.ndx/skills/demo/SKILL.md" /workspace/tmp/skill.md',
   );
 });
