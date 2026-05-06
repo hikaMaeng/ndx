@@ -12,7 +12,7 @@ export function requestUserInputTool(): ToolDefinition {
     supportsParallelToolCalls: false,
     schema: functionTool(
       "request_user_input",
-      "Request user input for one to three short questions and wait for the response.",
+      "Unavailable in this non-interactive TypeScript runtime. Do not call this tool; make a conservative assumption or ask in the final response when input is strictly required.",
       objectSchema(
         {
           questions: arraySchema(

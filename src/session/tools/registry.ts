@@ -6,6 +6,7 @@ import { collaborationTools } from "./collaboration/agents.js";
 import { requestUserInputTool } from "./input/request-user-input.js";
 import { mcpToolDefinitions } from "./mcp/tools.js";
 import { updatePlanTool } from "./planning/update-plan.js";
+import { skillTools } from "./skills.js";
 import { discoverToolDirectory } from "./external/manifest.js";
 import { runExternalTool } from "./external/runner.js";
 import { collectToolRequirements } from "./requirements.js";
@@ -130,6 +131,7 @@ function taskTools(): ToolDefinition[] {
   return [
     markTask(updatePlanTool()),
     markTask(requestUserInputTool()),
+    ...skillTools().map(markTask),
     ...collaborationTools().map(markTask),
     ...agentJobTools().map(markTask),
   ];

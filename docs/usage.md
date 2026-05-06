@@ -82,7 +82,7 @@ Minimal shape:
 
 ```json
 {
-  "version": "0.1.32",
+  "version": "0.1.33",
   "model": "local-model",
   "providers": {
     "local": {
@@ -123,6 +123,11 @@ with `$skill-name`; when names are ambiguous, link the exact path:
 ```text
 [$repo-skill](/path/to/project/.ndx/skills/repo-skill/SKILL.md) run the workflow
 ```
+
+When a task asks to use skills or clearly matches a skill description, the model
+loads the full body through the built-in `load_skill` tool. It should not use
+`shell`, `cat`, Windows `type`, or PowerShell to open `SKILL.md` paths because
+external tools may run inside the Linux sandbox path namespace.
 
 ## Docker Sandbox
 

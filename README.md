@@ -39,7 +39,9 @@ project `AGENTS.md`, project `.ndx/AGENTS.md`, and user-home
 `.ndx/AGENTS.md` in that order. Skill catalogs are discovered from project
 `.ndx/skills`, project `.ndx/plugins/*/skills`, user-home `.ndx/skills`,
 user-home `.ndx/plugins/*/skills`, and user-home `.ndx/system/skills`.
-`skills/.system` is not scanned.
+`skills/.system` is not scanned. When the model needs a skill body at turn
+time, it uses the built-in `load_skill` tool instead of reading host paths
+through shell commands.
 
 ## Verification
 

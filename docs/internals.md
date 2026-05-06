@@ -22,6 +22,9 @@ project `.ndx/plugins/*/skills`, user-home `.ndx/skills`, user-home
 `skills/.system` and `.agents/skills` are not part of the runtime contract.
 Skill catalog entries are included in startup instructions, while the full
 SKILL.md body is still loaded only when the model chooses to use that skill.
+The built-in `list_skills` and `load_skill` tools resolve enabled skill
+metadata on the host side, so models do not need to translate Windows skill
+paths into Docker sandbox paths.
 
 ## Defaults
 
@@ -40,7 +43,8 @@ Before the user prompt is sent, `runAgent` scans the prompt for explicit skill
 mentions. Linked `[$skill](.../SKILL.md)` selections resolve by canonical path.
 Plain `$skill-name` selections resolve only when exactly one enabled skill has
 that name. Selected skills are injected once as model-visible user context ahead
-of the prompt.
+of the prompt. For non-explicit but relevant skills, the model calls
+`load_skill`; those tool results are visible only in the active turn.
 
 `AgentRuntime` wraps the loop with session ids, turn ids, abort handling,
 runtime events, history, and provider error classification.
