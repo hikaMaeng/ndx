@@ -1,0 +1,56 @@
+{
+  "target": {
+    "id": "remove-legacy-tests-tree",
+    "title": "Legacy tests directory is removed",
+    "test": "The tracked tests directory still imports ../src and conflicts with the agenttest-only policy, so it should be removed from the monorepo tree.",
+    "steps": [
+      {
+        "id": "inspect-tracked-tests",
+        "instruction": "Inspect Git-tracked tests paths after cleanup.",
+        "expected": "git ls-files tests returns no files."
+      },
+      {
+        "id": "inspect-agenttest-policy-files",
+        "instruction": "Inspect the active agenttest directory.",
+        "expected": "test/20260507 contains the monorepo cleanup suite and previous strict JSON report artifacts."
+      }
+    ],
+    "passCriteria": "Legacy tests are no longer tracked and the test/ agenttest policy path remains."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-tracked-tests",
+        "instruction": "Inspect Git-tracked tests paths after cleanup.",
+        "expected": "git ls-files tests returns no files."
+      },
+      "result": true,
+      "descript": "No Git-tracked files remain under tests.",
+      "evidence": [
+        "Command: git ls-files tests | wc -l",
+        "Observed output: 0."
+      ]
+    },
+    {
+      "target": {
+        "id": "inspect-agenttest-policy-files",
+        "instruction": "Inspect the active agenttest directory.",
+        "expected": "test/20260507 contains the monorepo cleanup suite and previous strict JSON report artifacts."
+      },
+      "result": true,
+      "descript": "The active test directory contains both previous monorepo evidence and the cleanup suite.",
+      "evidence": [
+        "Command: find test/20260507 -maxdepth 1 -type f -printf '%f\\n' | sort",
+        "Observed: 011454_monorepo-refactor.json, 011454_report.json, 011454_summary.md, 124110_monorepo-cleanup.json."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Legacy tests are staged for removal and agenttest policy files remain.",
+    "evidence": [
+      "git ls-files tests returned zero files after git rm -r tests.",
+      "test/20260507 contains strict agenttest artifacts."
+    ]
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "target": {
+    "id": "remove-generated-root-artifacts",
+    "title": "Root generated artifacts are absent",
+    "test": "The repository should not keep stale root build output, Turbo cache, Yarn install cache, or runtime Docker volume contents as working tree artifacts after the monorepo migration.",
+    "steps": [
+      {
+        "id": "inspect-generated-paths",
+        "instruction": "Inspect root generated paths after cleanup.",
+        "expected": "Root dist, .turbo, .yarn/install-state.gz, .yarn/unplugged, and non-.gitkeep docker/volume files are absent from the working tree."
+      },
+      {
+        "id": "inspect-required-runtime-placeholders",
+        "instruction": "Inspect required runtime placeholders.",
+        "expected": "docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep remain tracked."
+      }
+    ],
+    "passCriteria": "Only required placeholders remain under docker/volume and no generated root artifact directories remain."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-generated-paths",
+        "instruction": "Inspect root generated paths after cleanup.",
+        "expected": "Root dist, .turbo, .yarn/install-state.gz, .yarn/unplugged, and non-.gitkeep docker/volume files are absent from the working tree."
+      },
+      "result": true,
+      "descript": "Generated root artifacts and runtime volume contents were absent after cleanup.",
+      "evidence": [
+        "Command: for p in dist .turbo .yarn/install-state.gz .yarn/unplugged; do test ! -e \"$p\" && echo \"absent $p\"; done",
+        "Observed: absent dist, absent .turbo, absent .yarn/install-state.gz, absent .yarn/unplugged.",
+        "Command: find docker/volume -mindepth 2 -type f -o -type d | sort",
+        "Observed: only docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep."
+      ]
+    },
+    {
+      "target": {
+        "id": "inspect-required-runtime-placeholders",
+        "instruction": "Inspect required runtime placeholders.",
+        "expected": "docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep remain tracked."
+      },
+      "result": true,
+      "descript": "Both Docker volume placeholders remain tracked.",
+      "evidence": [
+        "Command: git ls-files docker/volume/home-ndx/.gitkeep docker/volume/workspace/.gitkeep",
+        "Observed: docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Only required placeholders remain under docker/volume and generated root artifacts were removed.",
+    "evidence": [
+      "Root generated paths were absent before verification rebuild.",
+      "Docker volume contains only the two tracked .gitkeep placeholders."
+    ]
+  }
+}

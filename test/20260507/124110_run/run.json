@@ -1,0 +1,152 @@
+{
+  "runUuid": "run-8b564e9c-03ed-45f8-8f39-24168aa4312d",
+  "suitePath": "/mnt/f/dev/ndx/test/20260507/124110_monorepo-cleanup.json",
+  "suite": {
+    "id": "monorepo-cleanup-20260507",
+    "title": "Remove monorepo transition leftovers",
+    "dependencies": {
+      "ndx": "0.1.39",
+      "turbo": "2.9.9"
+    },
+    "items": {
+      "workspace": [
+        {
+          "id": "remove-generated-root-artifacts",
+          "title": "Root generated artifacts are absent",
+          "test": "The repository should not keep stale root build output, Turbo cache, Yarn install cache, or runtime Docker volume contents as working tree artifacts after the monorepo migration.",
+          "steps": [
+            {
+              "id": "inspect-generated-paths",
+              "instruction": "Inspect root generated paths after cleanup.",
+              "expected": "Root dist, .turbo, .yarn/install-state.gz, .yarn/unplugged, and non-.gitkeep docker/volume files are absent from the working tree."
+            },
+            {
+              "id": "inspect-required-runtime-placeholders",
+              "instruction": "Inspect required runtime placeholders.",
+              "expected": "docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep remain tracked."
+            }
+          ],
+          "passCriteria": "Only required placeholders remain under docker/volume and no generated root artifact directories remain."
+        },
+        {
+          "id": "remove-empty-root-src",
+          "title": "Legacy root src is absent",
+          "test": "The old root src tree should be gone because all source now lives under apps/* and packages/ndx.",
+          "steps": [
+            {
+              "id": "inspect-root-src",
+              "instruction": "Inspect the root src path.",
+              "expected": "src does not exist at repository root."
+            },
+            {
+              "id": "inspect-monorepo-source",
+              "instruction": "Inspect workspace source roots.",
+              "expected": "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist."
+            }
+          ],
+          "passCriteria": "No legacy root source tree remains and workspace source roots exist."
+        }
+      ],
+      "tracked-tests": [
+        {
+          "id": "remove-legacy-tests-tree",
+          "title": "Legacy tests directory is removed",
+          "test": "The tracked tests directory still imports ../src and conflicts with the agenttest-only policy, so it should be removed from the monorepo tree.",
+          "steps": [
+            {
+              "id": "inspect-tracked-tests",
+              "instruction": "Inspect Git-tracked tests paths after cleanup.",
+              "expected": "git ls-files tests returns no files."
+            },
+            {
+              "id": "inspect-agenttest-policy-files",
+              "instruction": "Inspect the active agenttest directory.",
+              "expected": "test/20260507 contains the monorepo cleanup suite and previous strict JSON report artifacts."
+            }
+          ],
+          "passCriteria": "Legacy tests are no longer tracked and the test/ agenttest policy path remains."
+        }
+      ],
+      "documentation": [
+        {
+          "id": "document-cleanup-policy",
+          "title": "Cleanup policy is documented",
+          "test": "Repository documentation should describe the monorepo cleanup boundaries so stale root src, dist, tests, and runtime volume contents do not reappear.",
+          "steps": [
+            {
+              "id": "inspect-testing-doc",
+              "instruction": "Inspect docs/testing.md.",
+              "expected": "docs/testing.md states that test/ is the authoritative path and tests/ must not be used."
+            },
+            {
+              "id": "inspect-internals-doc",
+              "instruction": "Inspect docs/internals.md or docs/architecture.md.",
+              "expected": "Documentation records that source lives under apps/* and packages/ndx and root src/dist are not source-owned paths."
+            }
+          ],
+          "passCriteria": "Docs clearly distinguish source, test policy, and generated cleanup boundaries."
+        }
+      ],
+      "verification": [
+        {
+          "id": "build-after-cleanup",
+          "title": "Workspace builds after cleanup",
+          "test": "Removing leftovers must not break the Turbo monorepo build.",
+          "steps": [
+            {
+              "id": "run-install-build",
+              "instruction": "Run yarn install --immutable and yarn build.",
+              "expected": "Both commands exit successfully and Turbo reports successful package builds."
+            },
+            {
+              "id": "run-bin-smoke",
+              "instruction": "Run the compiled ndx and ndxserver version commands.",
+              "expected": "apps/ndx and apps/ndxserver bins print 0.1.39."
+            }
+          ],
+          "passCriteria": "Install, build, and bin smoke checks all pass after cleanup."
+        }
+      ]
+    }
+  },
+  "runDir": "/mnt/f/dev/ndx/test/20260507/124110_run",
+  "resultPath": "/mnt/f/dev/ndx/test/20260507/124110_report.json",
+  "summaryPath": "/mnt/f/dev/ndx/test/20260507/124110_summary.md",
+  "status": "done",
+  "createdAt": "2026-05-07T03:42:53.343Z",
+  "updatedAt": "2026-05-07T04:00:07.693Z",
+  "categories": {
+    "workspace": {
+      "workerUuid": "worker-f4f39d6b-9c94-4d3f-91f3-166bb47f0ca3",
+      "status": "done",
+      "nextIndex": 2,
+      "resultPath": "/mnt/f/dev/ndx/test/20260507/124110_run/categories/workspace.json",
+      "startedAt": "2026-05-07T03:53:28.589Z",
+      "finishedAt": "2026-05-07T03:53:38.073Z"
+    },
+    "tracked-tests": {
+      "workerUuid": "worker-e59388d8-9fe1-495a-aeb6-78a92a79c219",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/f/dev/ndx/test/20260507/124110_run/categories/tracked-tests.json",
+      "startedAt": "2026-05-07T03:49:32.793Z",
+      "finishedAt": "2026-05-07T04:00:07.558Z"
+    },
+    "documentation": {
+      "workerUuid": "worker-3c0a78f0-23eb-4463-840e-843fd61ec4aa",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/f/dev/ndx/test/20260507/124110_run/categories/documentation.json",
+      "startedAt": "2026-05-07T03:49:32.863Z",
+      "finishedAt": "2026-05-07T04:00:07.693Z"
+    },
+    "verification": {
+      "workerUuid": "worker-d81890ab-5c29-4b63-aa52-752af58c49ee",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/f/dev/ndx/test/20260507/124110_run/categories/verification.json",
+      "startedAt": "2026-05-07T03:49:32.950Z",
+      "finishedAt": "2026-05-07T03:52:06.062Z"
+    }
+  }
+}

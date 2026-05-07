@@ -1,0 +1,186 @@
+{
+  "@meta": {
+    "subagents": [
+      {
+        "target": "workspace",
+        "elapsed": 9484
+      },
+      {
+        "target": "tracked-tests",
+        "elapsed": 634765
+      },
+      {
+        "target": "documentation",
+        "elapsed": 634830
+      },
+      {
+        "target": "verification",
+        "elapsed": 153112
+      }
+    ],
+    "elapsed": 1062167,
+    "result": true,
+    "detail": "5 passed / 0 failed",
+    "started": "2026-05-07T03:42:53.343Z"
+  },
+  "workspace": [
+    {
+      "id": "remove-generated-root-artifacts",
+      "title": "Root generated artifacts are absent",
+      "test": "The repository should not keep stale root build output, Turbo cache, Yarn install cache, or runtime Docker volume contents as working tree artifacts after the monorepo migration.",
+      "steps": [
+        {
+          "id": "inspect-generated-paths",
+          "instruction": "Inspect root generated paths after cleanup.",
+          "expected": "Root dist, .turbo, .yarn/install-state.gz, .yarn/unplugged, and non-.gitkeep docker/volume files are absent from the working tree.",
+          "result": true,
+          "descript": "Generated root artifacts and runtime volume contents were absent after cleanup.",
+          "evidence": [
+            "Command: for p in dist .turbo .yarn/install-state.gz .yarn/unplugged; do test ! -e \"$p\" && echo \"absent $p\"; done",
+            "Observed: absent dist, absent .turbo, absent .yarn/install-state.gz, absent .yarn/unplugged.",
+            "Command: find docker/volume -mindepth 2 -type f -o -type d | sort",
+            "Observed: only docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep."
+          ]
+        },
+        {
+          "id": "inspect-required-runtime-placeholders",
+          "instruction": "Inspect required runtime placeholders.",
+          "expected": "docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep remain tracked.",
+          "result": true,
+          "descript": "Both Docker volume placeholders remain tracked.",
+          "evidence": [
+            "Command: git ls-files docker/volume/home-ndx/.gitkeep docker/volume/workspace/.gitkeep",
+            "Observed: docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remove-empty-root-src",
+      "title": "Legacy root src is absent",
+      "test": "The old root src tree should be gone because all source now lives under apps/* and packages/ndx.",
+      "steps": [
+        {
+          "id": "inspect-root-src",
+          "instruction": "Inspect the root src path.",
+          "expected": "src does not exist at repository root.",
+          "result": true,
+          "descript": "The legacy root src path is absent.",
+          "evidence": [
+            "Command: test -e src && echo exists src || echo absent src",
+            "Observed output: absent src."
+          ]
+        },
+        {
+          "id": "inspect-monorepo-source",
+          "instruction": "Inspect workspace source roots.",
+          "expected": "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist.",
+          "result": true,
+          "descript": "All expected workspace source roots exist.",
+          "evidence": [
+            "Command: for p in apps/ndx/src apps/ndxserver/src packages/ndx/src; do test -e \"$p\" && echo \"exists $p\"; done",
+            "Observed: exists apps/ndx/src, exists apps/ndxserver/src, exists packages/ndx/src."
+          ]
+        }
+      ]
+    }
+  ],
+  "tracked-tests": [
+    {
+      "id": "remove-legacy-tests-tree",
+      "title": "Legacy tests directory is removed",
+      "test": "The tracked tests directory still imports ../src and conflicts with the agenttest-only policy, so it should be removed from the monorepo tree.",
+      "steps": [
+        {
+          "id": "inspect-tracked-tests",
+          "instruction": "Inspect Git-tracked tests paths after cleanup.",
+          "expected": "git ls-files tests returns no files.",
+          "result": true,
+          "descript": "No Git-tracked files remain under tests.",
+          "evidence": [
+            "Command: git ls-files tests | wc -l",
+            "Observed output: 0."
+          ]
+        },
+        {
+          "id": "inspect-agenttest-policy-files",
+          "instruction": "Inspect the active agenttest directory.",
+          "expected": "test/20260507 contains the monorepo cleanup suite and previous strict JSON report artifacts.",
+          "result": true,
+          "descript": "The active test directory contains both previous monorepo evidence and the cleanup suite.",
+          "evidence": [
+            "Command: find test/20260507 -maxdepth 1 -type f -printf '%f\\n' | sort",
+            "Observed: 011454_monorepo-refactor.json, 011454_report.json, 011454_summary.md, 124110_monorepo-cleanup.json."
+          ]
+        }
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "document-cleanup-policy",
+      "title": "Cleanup policy is documented",
+      "test": "Repository documentation should describe the monorepo cleanup boundaries so stale root src, dist, tests, and runtime volume contents do not reappear.",
+      "steps": [
+        {
+          "id": "inspect-testing-doc",
+          "instruction": "Inspect docs/testing.md.",
+          "expected": "docs/testing.md states that test/ is the authoritative path and tests/ must not be used.",
+          "result": true,
+          "descript": "Testing docs now record the test/ policy and generated artifact boundaries.",
+          "evidence": [
+            "docs/testing.md contains: Use test/YYYYMMDD/HHMMSS_*.json for suites.",
+            "docs/testing.md contains: Do not create or restore root tests/, tests/plans, or tests/reports.",
+            "docs/testing.md documents root dist, .turbo, .yarn/unplugged, .yarn/install-state.gz, and Docker volume cleanup boundaries."
+          ]
+        },
+        {
+          "id": "inspect-internals-doc",
+          "instruction": "Inspect docs/internals.md or docs/architecture.md.",
+          "expected": "Documentation records that source lives under apps/* and packages/ndx and root src/dist are not source-owned paths.",
+          "result": true,
+          "descript": "Internals docs now distinguish workspace source roots from stale root paths.",
+          "evidence": [
+            "docs/internals.md states root src, root dist, and root tests are not source-owned monorepo paths.",
+            "docs/internals.md states source belongs under apps/*/src or packages/ndx/src.",
+            "docs/usage.md path-mapping example now uses test/20260507 instead of tests/reports."
+          ]
+        }
+      ]
+    }
+  ],
+  "verification": [
+    {
+      "id": "build-after-cleanup",
+      "title": "Workspace builds after cleanup",
+      "test": "Removing leftovers must not break the Turbo monorepo build.",
+      "steps": [
+        {
+          "id": "run-install-build",
+          "instruction": "Run yarn install --immutable and yarn build.",
+          "expected": "Both commands exit successfully and Turbo reports successful package builds.",
+          "result": true,
+          "descript": "Install and Turbo build succeeded after cleanup.",
+          "evidence": [
+            "Command: yarn install --immutable && yarn build",
+            "Yarn 4.14.1 completed with only the known PnP ESM loader warning.",
+            "Turbo 2.9.9 reported Tasks: 4 successful, 4 total for @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app."
+          ]
+        },
+        {
+          "id": "run-bin-smoke",
+          "instruction": "Run the compiled ndx and ndxserver version commands.",
+          "expected": "apps/ndx and apps/ndxserver bins print 0.1.39.",
+          "result": true,
+          "descript": "Compiled app wrapper bins reported the expected version.",
+          "evidence": [
+            "Command: node apps/ndx/dist/bin/ndx.js --version",
+            "Command: node apps/ndx/dist/bin/ndxserver.js --version",
+            "Command: node apps/ndxserver/dist/bin/ndxserver.js --version",
+            "Observed output: 0.1.39 for all three commands."
+          ]
+        }
+      ]
+    }
+  ]
+}

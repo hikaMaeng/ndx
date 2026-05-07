@@ -1,0 +1,58 @@
+{
+  "target": {
+    "id": "document-cleanup-policy",
+    "title": "Cleanup policy is documented",
+    "test": "Repository documentation should describe the monorepo cleanup boundaries so stale root src, dist, tests, and runtime volume contents do not reappear.",
+    "steps": [
+      {
+        "id": "inspect-testing-doc",
+        "instruction": "Inspect docs/testing.md.",
+        "expected": "docs/testing.md states that test/ is the authoritative path and tests/ must not be used."
+      },
+      {
+        "id": "inspect-internals-doc",
+        "instruction": "Inspect docs/internals.md or docs/architecture.md.",
+        "expected": "Documentation records that source lives under apps/* and packages/ndx and root src/dist are not source-owned paths."
+      }
+    ],
+    "passCriteria": "Docs clearly distinguish source, test policy, and generated cleanup boundaries."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-testing-doc",
+        "instruction": "Inspect docs/testing.md.",
+        "expected": "docs/testing.md states that test/ is the authoritative path and tests/ must not be used."
+      },
+      "result": true,
+      "descript": "Testing docs now record the test/ policy and generated artifact boundaries.",
+      "evidence": [
+        "docs/testing.md contains: Use test/YYYYMMDD/HHMMSS_*.json for suites.",
+        "docs/testing.md contains: Do not create or restore root tests/, tests/plans, or tests/reports.",
+        "docs/testing.md documents root dist, .turbo, .yarn/unplugged, .yarn/install-state.gz, and Docker volume cleanup boundaries."
+      ]
+    },
+    {
+      "target": {
+        "id": "inspect-internals-doc",
+        "instruction": "Inspect docs/internals.md or docs/architecture.md.",
+        "expected": "Documentation records that source lives under apps/* and packages/ndx and root src/dist are not source-owned paths."
+      },
+      "result": true,
+      "descript": "Internals docs now distinguish workspace source roots from stale root paths.",
+      "evidence": [
+        "docs/internals.md states root src, root dist, and root tests are not source-owned monorepo paths.",
+        "docs/internals.md states source belongs under apps/*/src or packages/ndx/src.",
+        "docs/usage.md path-mapping example now uses test/20260507 instead of tests/reports."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Docs distinguish active monorepo source/test paths from removable leftovers.",
+    "evidence": [
+      "docs/testing.md and docs/internals.md were updated with cleanup policy.",
+      "docs/usage.md no longer points examples at tests/reports."
+    ]
+  }
+}

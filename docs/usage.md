@@ -154,8 +154,8 @@ new console windows for each `docker exec`, Node worker, or sandbox probe.
 When Docker-backed tools receive host paths, ndx maps both structured path
 arguments and embedded command text from the active host project into the
 container mount. For example, `F:\dev\test2`, `F:/dev/test2/apps`, and
-`F:\dev\test2\tests\reports` execute as `/workspace`,
-`/workspace/apps`, and `/workspace/tests/reports`. Tool commands should not
+`F:\dev\test2\test\20260507` execute as `/workspace`,
+`/workspace/apps`, and `/workspace/test/20260507`. Tool commands should not
 create drive-letter folders inside the workspace.
 
 If a turn reaches `maxTurns`, ndx reports a warning and keeps the session open.
