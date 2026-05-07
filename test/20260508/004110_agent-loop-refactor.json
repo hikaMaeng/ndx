@@ -1,0 +1,76 @@
+{
+  "id": "agent-loop-refactor",
+  "title": "Agent loop modularization preserves behavior and documents Codex parity",
+  "dependencies": {
+    "ndx": "0.1.39",
+    "typescript": "5.9.2",
+    "node": ">=22"
+  },
+  "items": {
+    "structure": [
+      {
+        "id": "loop-entrypoint-preserved",
+        "title": "Public runAgent entrypoint remains stable",
+        "test": "The agent loop refactor must keep packages/ndx/src/agent/loop.ts as the public runAgent entrypoint while moving implementation pieces into submodules.",
+        "steps": [
+          {
+            "id": "inspect-loop-entrypoint",
+            "instruction": "Inspect packages/ndx/src/agent/loop.ts after implementation.",
+            "expected": "The file exports runAgent and imports orchestration pieces from packages/ndx/src/agent/loop/."
+          },
+          {
+            "id": "inspect-submodules",
+            "instruction": "List packages/ndx/src/agent/loop/ after implementation.",
+            "expected": "The folder contains separate files for events/types, state, skills, sampling, and tool execution responsibilities."
+          }
+        ],
+        "passCriteria": "The public entrypoint is preserved and loop responsibilities are separated into focused files."
+      }
+    ],
+    "behavior": [
+      {
+        "id": "build-preserves-types",
+        "title": "TypeScript build preserves agent loop contracts",
+        "test": "The refactored files must compile under the package TypeScript configuration without changing public types.",
+        "steps": [
+          {
+            "id": "run-package-build",
+            "instruction": "Run yarn build in the repository root after implementation.",
+            "expected": "The command exits successfully."
+          }
+        ],
+        "passCriteria": "The TypeScript build succeeds."
+      }
+    ],
+    "documentation": [
+      {
+        "id": "codex-parity-analysis-documented",
+        "title": "OpenAI Codex loop comparison is documented",
+        "test": "The implementation must include a concise durable analysis of OpenAI Codex Rust loop parity and NDX-specific boundaries.",
+        "steps": [
+          {
+            "id": "inspect-architecture-doc",
+            "instruction": "Inspect packages/ndx/docs/architecture.md and packages/ndx/docs/internals.md after implementation.",
+            "expected": "The docs describe the new agent loop submodules and explain which Codex Rust loop responsibilities are mirrored, deferred, or intentionally owned elsewhere in NDX."
+          }
+        ],
+        "passCriteria": "Docs contain the parity analysis and module ownership contracts."
+      }
+    ],
+    "deployment": [
+      {
+        "id": "deploy-contract",
+        "title": "Deploy verification completes",
+        "test": "The repository deploy contract must still complete after the agent loop refactor.",
+        "steps": [
+          {
+            "id": "run-deploy",
+            "instruction": "Run npm run deploy from the repository root after implementation.",
+            "expected": "The command exits successfully or the failure is recorded with concrete blocker evidence."
+          }
+        ],
+        "passCriteria": "Deploy succeeds, or any failure is recorded with command output and an explicit blocker."
+      }
+    ]
+  }
+}

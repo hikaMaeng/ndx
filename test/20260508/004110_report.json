@@ -1,0 +1,121 @@
+{
+  "@meta": {
+    "subagents": [
+      {
+        "target": "structure",
+        "elapsed": 395833
+      },
+      {
+        "target": "behavior",
+        "elapsed": 0
+      },
+      {
+        "target": "documentation",
+        "elapsed": 0
+      },
+      {
+        "target": "deployment",
+        "elapsed": 0
+      }
+    ],
+    "elapsed": 1030089,
+    "result": true,
+    "detail": "4 passed / 0 failed",
+    "started": "2026-05-07T15:42:40.466Z"
+  },
+  "structure": [
+    {
+      "id": "loop-entrypoint-preserved",
+      "title": "Public runAgent entrypoint remains stable",
+      "test": "The agent loop refactor must keep packages/ndx/src/agent/loop.ts as the public runAgent entrypoint while moving implementation pieces into submodules.",
+      "steps": [
+        {
+          "id": "inspect-loop-entrypoint",
+          "instruction": "Inspect packages/ndx/src/agent/loop.ts after implementation.",
+          "expected": "The file exports runAgent and imports orchestration pieces from packages/ndx/src/agent/loop/.",
+          "result": true,
+          "descript": "The entrypoint exports runAgent and re-exports AgentEvent/AgentRunOptions while importing state and sampling from loop submodules.",
+          "evidence": [
+            "packages/ndx/src/agent/loop.ts imports ./loop/state.js, ./loop/sampling.js, and ./loop/types.js.",
+            "packages/ndx/src/agent/loop.ts contains export async function runAgent(options: AgentRunOptions): Promise<string>."
+          ]
+        },
+        {
+          "id": "inspect-submodules",
+          "instruction": "List packages/ndx/src/agent/loop/ after implementation.",
+          "expected": "The folder contains separate files for events/types, state, skills, sampling, and tool execution responsibilities.",
+          "result": true,
+          "descript": "The loop folder contains focused TypeScript modules for types, state, skills, sampling, and tool execution.",
+          "evidence": [
+            "find packages/ndx/src/agent/loop -maxdepth 1 -type f listed sampling.ts, skills.ts, state.ts, tool-execution.ts, and types.ts.",
+            "Agent events are separated in packages/ndx/src/agent/loop/types.ts."
+          ]
+        }
+      ]
+    }
+  ],
+  "behavior": [
+    {
+      "id": "build-preserves-types",
+      "title": "TypeScript build preserves agent loop contracts",
+      "test": "The refactored files must compile under the package TypeScript configuration without changing public types.",
+      "steps": [
+        {
+          "id": "run-package-build",
+          "instruction": "Run yarn build in the repository root after implementation.",
+          "expected": "The command exits successfully.",
+          "result": true,
+          "descript": "The repository TypeScript build completed successfully after yarn install --immutable prepared PnP state.",
+          "evidence": [
+            "yarn install --immutable exited 0.",
+            "yarn build exited 0.",
+            "Turbo reported 4 successful tasks: @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app."
+          ]
+        }
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "codex-parity-analysis-documented",
+      "title": "OpenAI Codex loop comparison is documented",
+      "test": "The implementation must include a concise durable analysis of OpenAI Codex Rust loop parity and NDX-specific boundaries.",
+      "steps": [
+        {
+          "id": "inspect-architecture-doc",
+          "instruction": "Inspect packages/ndx/docs/architecture.md and packages/ndx/docs/internals.md after implementation.",
+          "expected": "The docs describe the new agent loop submodules and explain which Codex Rust loop responsibilities are mirrored, deferred, or intentionally owned elsewhere in NDX.",
+          "result": true,
+          "descript": "Architecture and internals docs now describe the module split and Codex Rust parity matrix.",
+          "evidence": [
+            "packages/ndx/docs/architecture.md contains an Agent Loop section listing types.ts, state.ts, skills.ts, sampling.ts, and tool-execution.ts.",
+            "packages/ndx/docs/internals.md contains an Agent Loop Parity table mapping Codex Rust responsibilities to NDX owners.",
+            "packages/ndx/docs/testing.md references test/20260508/004110_agent-loop-refactor.json."
+          ]
+        }
+      ]
+    }
+  ],
+  "deployment": [
+    {
+      "id": "deploy-contract",
+      "title": "Deploy verification completes",
+      "test": "The repository deploy contract must still complete after the agent loop refactor.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy from the repository root after implementation.",
+          "expected": "The command exits successfully or the failure is recorded with concrete blocker evidence.",
+          "result": true,
+          "descript": "The deploy script completed build, Docker image build, compose start, and cleanup.",
+          "evidence": [
+            "npm run deploy exited 0.",
+            "Deploy output included: Tasks: 4 successful, 4 total.",
+            "Deploy output included: Image hika00/ndx-sandbox:0.1.1 Built.",
+            "Deploy output included container start, stop, remove, and network removal for ndx-deploy-9468."
+          ]
+        }
+      ]
+    }
+  ]
+}
