@@ -6,7 +6,11 @@
 strict JSON files executed by Codex through the filesystem-backed TypeScript
 runner in the global `agenttest` skill.
 
-Executable unit-test files under `tests/` are not part of the policy.
+Use `test/YYYYMMDD/HHMMSS_*.json` for suites, the sibling
+`HHMMSS_report.json` for strict results, and `HHMMSS_summary.md` only as the
+derived human summary. Do not create or restore root `tests/`, `tests/plans`,
+or `tests/reports`; those paths belonged to the pre-agenttest policy and are
+not authoritative in the monorepo.
 
 ## Commands
 
@@ -20,6 +24,12 @@ npm run deploy
 `npm run deploy` runs the Turbo build, the agenttest policy hook, legacy compose
 cleanup, isolated compose build from `apps/toolcontainer`, compose up, sandbox
 write verification, and final compose down.
+
+Build output and local runtime artifacts are disposable. Root `dist/`,
+`.turbo/`, `.yarn/unplugged/`, `.yarn/install-state.gz`, and non-placeholder
+contents under `docker/volume/` must not be committed. The only tracked Docker
+volume entries are `docker/volume/home-ndx/.gitkeep` and
+`docker/volume/workspace/.gitkeep`.
 
 Install verification, when required:
 

@@ -1,0 +1,62 @@
+[
+  {
+    "target": {
+      "id": "build-after-cleanup",
+      "title": "Workspace builds after cleanup",
+      "test": "Removing leftovers must not break the Turbo monorepo build.",
+      "steps": [
+        {
+          "id": "run-install-build",
+          "instruction": "Run yarn install --immutable and yarn build.",
+          "expected": "Both commands exit successfully and Turbo reports successful package builds."
+        },
+        {
+          "id": "run-bin-smoke",
+          "instruction": "Run the compiled ndx and ndxserver version commands.",
+          "expected": "apps/ndx and apps/ndxserver bins print 0.1.39."
+        }
+      ],
+      "passCriteria": "Install, build, and bin smoke checks all pass after cleanup."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "run-install-build",
+          "instruction": "Run yarn install --immutable and yarn build.",
+          "expected": "Both commands exit successfully and Turbo reports successful package builds."
+        },
+        "result": true,
+        "descript": "Install and Turbo build succeeded after cleanup.",
+        "evidence": [
+          "Command: yarn install --immutable && yarn build",
+          "Yarn 4.14.1 completed with only the known PnP ESM loader warning.",
+          "Turbo 2.9.9 reported Tasks: 4 successful, 4 total for @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app."
+        ]
+      },
+      {
+        "target": {
+          "id": "run-bin-smoke",
+          "instruction": "Run the compiled ndx and ndxserver version commands.",
+          "expected": "apps/ndx and apps/ndxserver bins print 0.1.39."
+        },
+        "result": true,
+        "descript": "Compiled app wrapper bins reported the expected version.",
+        "evidence": [
+          "Command: node apps/ndx/dist/bin/ndx.js --version",
+          "Command: node apps/ndx/dist/bin/ndxserver.js --version",
+          "Command: node apps/ndxserver/dist/bin/ndxserver.js --version",
+          "Observed output: 0.1.39 for all three commands."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Install, build, and bin smoke checks passed after cleanup.",
+      "evidence": [
+        "yarn install --immutable exited 0.",
+        "yarn build exited 0.",
+        "All three compiled bin version checks printed 0.1.39."
+      ]
+    }
+  }
+]

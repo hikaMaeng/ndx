@@ -1,0 +1,56 @@
+{
+  "target": {
+    "id": "remove-empty-root-src",
+    "title": "Legacy root src is absent",
+    "test": "The old root src tree should be gone because all source now lives under apps/* and packages/ndx.",
+    "steps": [
+      {
+        "id": "inspect-root-src",
+        "instruction": "Inspect the root src path.",
+        "expected": "src does not exist at repository root."
+      },
+      {
+        "id": "inspect-monorepo-source",
+        "instruction": "Inspect workspace source roots.",
+        "expected": "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist."
+      }
+    ],
+    "passCriteria": "No legacy root source tree remains and workspace source roots exist."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-root-src",
+        "instruction": "Inspect the root src path.",
+        "expected": "src does not exist at repository root."
+      },
+      "result": true,
+      "descript": "The legacy root src path is absent.",
+      "evidence": [
+        "Command: test -e src && echo exists src || echo absent src",
+        "Observed output: absent src."
+      ]
+    },
+    {
+      "target": {
+        "id": "inspect-monorepo-source",
+        "instruction": "Inspect workspace source roots.",
+        "expected": "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist."
+      },
+      "result": true,
+      "descript": "All expected workspace source roots exist.",
+      "evidence": [
+        "Command: for p in apps/ndx/src apps/ndxserver/src packages/ndx/src; do test -e \"$p\" && echo \"exists $p\"; done",
+        "Observed: exists apps/ndx/src, exists apps/ndxserver/src, exists packages/ndx/src."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "No legacy root source tree remains and workspace source roots exist.",
+    "evidence": [
+      "src is absent at repository root.",
+      "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist."
+    ]
+  }
+}

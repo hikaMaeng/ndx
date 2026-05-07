@@ -1,0 +1,116 @@
+[
+  {
+    "target": {
+      "id": "remove-generated-root-artifacts",
+      "title": "Root generated artifacts are absent",
+      "test": "The repository should not keep stale root build output, Turbo cache, Yarn install cache, or runtime Docker volume contents as working tree artifacts after the monorepo migration.",
+      "steps": [
+        {
+          "id": "inspect-generated-paths",
+          "instruction": "Inspect root generated paths after cleanup.",
+          "expected": "Root dist, .turbo, .yarn/install-state.gz, .yarn/unplugged, and non-.gitkeep docker/volume files are absent from the working tree."
+        },
+        {
+          "id": "inspect-required-runtime-placeholders",
+          "instruction": "Inspect required runtime placeholders.",
+          "expected": "docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep remain tracked."
+        }
+      ],
+      "passCriteria": "Only required placeholders remain under docker/volume and no generated root artifact directories remain."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-generated-paths",
+          "instruction": "Inspect root generated paths after cleanup.",
+          "expected": "Root dist, .turbo, .yarn/install-state.gz, .yarn/unplugged, and non-.gitkeep docker/volume files are absent from the working tree."
+        },
+        "result": true,
+        "descript": "Generated root artifacts and runtime volume contents were absent after cleanup.",
+        "evidence": [
+          "Command: for p in dist .turbo .yarn/install-state.gz .yarn/unplugged; do test ! -e \"$p\" && echo \"absent $p\"; done",
+          "Observed: absent dist, absent .turbo, absent .yarn/install-state.gz, absent .yarn/unplugged.",
+          "Command: find docker/volume -mindepth 2 -type f -o -type d | sort",
+          "Observed: only docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep."
+        ]
+      },
+      {
+        "target": {
+          "id": "inspect-required-runtime-placeholders",
+          "instruction": "Inspect required runtime placeholders.",
+          "expected": "docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep remain tracked."
+        },
+        "result": true,
+        "descript": "Both Docker volume placeholders remain tracked.",
+        "evidence": [
+          "Command: git ls-files docker/volume/home-ndx/.gitkeep docker/volume/workspace/.gitkeep",
+          "Observed: docker/volume/home-ndx/.gitkeep and docker/volume/workspace/.gitkeep."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Only required placeholders remain under docker/volume and generated root artifacts were removed.",
+      "evidence": [
+        "Root generated paths were absent before verification rebuild.",
+        "Docker volume contains only the two tracked .gitkeep placeholders."
+      ]
+    }
+  },
+  {
+    "target": {
+      "id": "remove-empty-root-src",
+      "title": "Legacy root src is absent",
+      "test": "The old root src tree should be gone because all source now lives under apps/* and packages/ndx.",
+      "steps": [
+        {
+          "id": "inspect-root-src",
+          "instruction": "Inspect the root src path.",
+          "expected": "src does not exist at repository root."
+        },
+        {
+          "id": "inspect-monorepo-source",
+          "instruction": "Inspect workspace source roots.",
+          "expected": "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist."
+        }
+      ],
+      "passCriteria": "No legacy root source tree remains and workspace source roots exist."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-root-src",
+          "instruction": "Inspect the root src path.",
+          "expected": "src does not exist at repository root."
+        },
+        "result": true,
+        "descript": "The legacy root src path is absent.",
+        "evidence": [
+          "Command: test -e src && echo exists src || echo absent src",
+          "Observed output: absent src."
+        ]
+      },
+      {
+        "target": {
+          "id": "inspect-monorepo-source",
+          "instruction": "Inspect workspace source roots.",
+          "expected": "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist."
+        },
+        "result": true,
+        "descript": "All expected workspace source roots exist.",
+        "evidence": [
+          "Command: for p in apps/ndx/src apps/ndxserver/src packages/ndx/src; do test -e \"$p\" && echo \"exists $p\"; done",
+          "Observed: exists apps/ndx/src, exists apps/ndxserver/src, exists packages/ndx/src."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "No legacy root source tree remains and workspace source roots exist.",
+      "evidence": [
+        "src is absent at repository root.",
+        "apps/ndx/src, apps/ndxserver/src, and packages/ndx/src exist."
+      ]
+    }
+  }
+]

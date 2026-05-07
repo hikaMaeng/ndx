@@ -168,3 +168,8 @@ The public core exports are `@neurondev/ndx-core`, `@neurondev/ndx-core/cli`,
 `@neurondev/ndx-core/server`, `@neurondev/ndx-core/dashboard`, and
 `@neurondev/ndx-core/shared`. Existing `dist/src/...` paths are not a supported
 API contract.
+
+Root `src/`, root `dist/`, and root `tests/` are not source-owned monorepo
+paths. Source belongs under `apps/*/src` or `packages/ndx/src`; generated output
+belongs under each workspace package `dist/`; strict repository test evidence
+belongs under `test/YYYYMMDD`.
