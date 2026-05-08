@@ -1,0 +1,190 @@
+{
+  "@meta": {
+    "subagents": [
+      {
+        "target": "versioning",
+        "elapsed": 64690
+      },
+      {
+        "target": "publish",
+        "elapsed": 108433
+      },
+      {
+        "target": "acceptance",
+        "elapsed": 108452
+      },
+      {
+        "target": "documentation",
+        "elapsed": 108476
+      },
+      {
+        "target": "deployment",
+        "elapsed": 78608
+      }
+    ],
+    "elapsed": 6688065,
+    "result": false,
+    "detail": "2 passed / 3 failed",
+    "started": "2026-05-08T12:44:10.206Z"
+  },
+  "versioning": [
+    {
+      "id": "version-bump",
+      "title": "Workspace packages use the new publish version",
+      "test": "The monorepo package manifests that carry the release version are updated from 0.1.39 to 0.1.40 before publishing.",
+      "steps": [
+        {
+          "id": "inspect-manifests",
+          "instruction": "Read root, app, package, and private workspace package manifests.",
+          "expected": "Each manifest with a version field reports 0.1.40.",
+          "result": true,
+          "descript": "All release-bearing workspace package manifests report 0.1.40.",
+          "evidence": [
+            "node manifest check output: package.json 0.1.40; apps/ndx/package.json 0.1.40; packages/ndx/package.json 0.1.40; apps/ndxserver/package.json 0.1.40; apps/toolcontainer/package.json 0.1.40.",
+            "yarn install --immutable exited 0 after the version changes.",
+            "yarn build exited 0 across @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app."
+          ]
+        }
+      ]
+    }
+  ],
+  "publish": [
+    {
+      "id": "verdaccio-publish",
+      "title": "New packages are published to Verdaccio",
+      "test": "@neurondev/ndx-core and @neurondev/ndx version 0.1.40 are published to the configured Verdaccio registry.",
+      "steps": [
+        {
+          "id": "publish-core",
+          "instruction": "Publish @neurondev/ndx-core@0.1.40 to Verdaccio after a successful build.",
+          "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run.",
+          "result": false,
+          "descript": "The core package tarball was prepared, but Verdaccio TLS connections reset during publish.",
+          "evidence": [
+            "Windows Node npm publish for @neurondev/ndx-core@0.1.40 reached 'Publishing to https://verdaccio.neurondev.net/' then failed with ECONNRESET.",
+            "npm ping https://verdaccio.neurondev.net/ also failed with ECONNRESET against /-/ping."
+          ]
+        },
+        {
+          "id": "publish-cli",
+          "instruction": "Publish @neurondev/ndx@0.1.40 to Verdaccio after the core package is available.",
+          "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run.",
+          "result": false,
+          "descript": "The CLI package was staged and the workspace dependency issue was fixed, but Verdaccio publish failed with the same TLS reset.",
+          "evidence": [
+            "npm pack from apps/ndx now shows @neurondev/ndx-core dependency as ^0.1.40 instead of workspace:^.",
+            "A bundled local staging tarball was also prepared and validated, but publish to @neurondev/ndx@0.1.40 failed with ECONNRESET."
+          ]
+        },
+        {
+          "id": "query-registry",
+          "instruction": "Query Verdaccio for both published versions.",
+          "expected": "npm view returns 0.1.40 for both packages.",
+          "result": false,
+          "descript": "The registry did not expose the requested 0.1.40 versions during this run.",
+          "evidence": [
+            "npm view @neurondev/ndx@0.1.40 returned E404.",
+            "npm view @neurondev/ndx-core@0.1.40 failed with ECONNRESET."
+          ]
+        }
+      ]
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "sandbox-install-tetris",
+      "title": "Installed ndx can drive a Tetris creation task in an isolated sandbox",
+      "test": "A separate filesystem sandbox installs @neurondev/ndx@0.1.40 from Verdaccio and uses the installed bins to run a simple Tetris project creation acceptance flow.",
+      "steps": [
+        {
+          "id": "create-sandbox",
+          "instruction": "Create a clean temporary sandbox outside the repository and install @neurondev/ndx@0.1.40 from Verdaccio there.",
+          "expected": "The sandbox contains an npm global prefix with ndx and ndxserver bins reporting version 0.1.40.",
+          "result": false,
+          "descript": "Verdaccio install could not run because @neurondev/ndx@0.1.40 was not published; the equivalent local tarball install passed.",
+          "evidence": [
+            "npm install -g @neurondev/ndx@0.1.40 from Verdaccio returned ETARGET.",
+            "Local tarball install into /tmp/ndx-local-acceptance-0.1.40/prefix exited 0.",
+            "/tmp/ndx-local-acceptance-0.1.40/prefix/bin/ndx --version returned 0.1.40.",
+            "/tmp/ndx-local-acceptance-0.1.40/prefix/bin/ndxserver --version returned 0.1.40."
+          ]
+        },
+        {
+          "id": "create-tetris",
+          "instruction": "In the sandbox, create a minimal Tetris game project through the installed Node/npm toolchain and installed ndx availability check.",
+          "expected": "The Tetris project contains HTML, CSS, and JavaScript files with game loop, board, piece movement, rotation, line clearing, score, and next-piece UI.",
+          "result": true,
+          "descript": "The isolated sandbox contains a Tetris project with the required files and gameplay hooks.",
+          "evidence": [
+            "Created /tmp/ndx-local-acceptance-0.1.40/work/tetris/index.html.",
+            "Created /tmp/ndx-local-acceptance-0.1.40/work/tetris/styles.css.",
+            "Created /tmp/ndx-local-acceptance-0.1.40/work/tetris/game.js."
+          ]
+        },
+        {
+          "id": "verify-tetris",
+          "instruction": "Run automated checks against the sandbox Tetris files.",
+          "expected": "Checks confirm required files exist and contain the expected gameplay and UI hooks.",
+          "result": true,
+          "descript": "Automated file checks passed for the generated Tetris project.",
+          "evidence": [
+            "Node verification returned result true for semantic main, next-piece UI, board dimensions, movement, rotation, line clearing, and game loop."
+          ]
+        }
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "publish-docs",
+      "title": "Publish and install-test documentation records the 0.1.40 acceptance",
+      "test": "Repository documentation records the release and the sandbox Tetris acceptance path without generic tutorial prose.",
+      "steps": [
+        {
+          "id": "update-docs",
+          "instruction": "Update package docs for the publish/install-test acceptance contract and current agenttest report.",
+          "expected": "Docs mention the 0.1.40 Verdaccio install-test and point to the strict JSON report.",
+          "result": true,
+          "descript": "Root and package docs record the release acceptance suite path and sandbox install contract.",
+          "evidence": [
+            "docs/testing.md references test/20260508/214231_publish-install-tetris.json.",
+            "docs/usage.md records the clean sandbox prefix acceptance contract.",
+            "apps/ndx/docs/testing.md records release install acceptance for the install-facing CLI package.",
+            "packages/ndx/docs/testing.md references the 0.1.40 release suite."
+          ]
+        }
+      ]
+    }
+  ],
+  "deployment": [
+    {
+      "id": "deploy-and-commit",
+      "title": "Deploy verification and Git commit complete the release task",
+      "test": "The repository deploy path runs after the publish/install-test changes, and the resulting work is committed.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy after changes and acceptance checks.",
+          "expected": "The command exits 0 and refreshes the Docker sandbox compose stack.",
+          "result": true,
+          "descript": "Deploy completed successfully after the version and dependency changes.",
+          "evidence": [
+            "npm run deploy exited 0.",
+            "Turbo build completed for all four packages.",
+            "Docker image hika00/ndx-sandbox:0.1.1 built and compose container ndx-deploy-51389-ndx-sandbox-1 started, stopped, removed, and its network removed."
+          ]
+        },
+        {
+          "id": "commit",
+          "instruction": "Commit the version, docs, and test artifacts.",
+          "expected": "Git contains a new commit for the release task.",
+          "result": false,
+          "descript": "A final commit is intentionally deferred until the failed strict JSON report is finalized and can be included.",
+          "evidence": [
+            "The publish task is blocked by Verdaccio ECONNRESET and the report is being finalized with failures before committing the recorded state."
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -30,6 +30,9 @@ Sub-agent controller, built-in MCP resource tools, and bounded artifact context
 behavior are covered by
 `test/20260508/201728_agent-loop-subsystems.json`.
 
+The 0.1.40 Verdaccio release and isolated install acceptance are covered by
+`test/20260508/214231_publish-install-tetris.json`.
+
 Browser-facing dashboard changes must preserve the root `main` landmark,
 dashboard navigation names, action status semantics, and documented test ids in
 root `docs/constraints.md`.

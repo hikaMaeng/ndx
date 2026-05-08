@@ -40,6 +40,11 @@ ndx --version
 ndxserver --version
 ```
 
+Release install acceptance must use a filesystem sandbox outside this
+repository. The 0.1.40 release suite records Verdaccio publish, dedicated-prefix
+install, and a Tetris project creation smoke in
+`test/20260508/214231_publish-install-tetris.json`.
+
 ## Coverage Areas
 
 - Settings discovery, version normalization, merge precedence, model pools, MCP

@@ -1,0 +1,77 @@
+[
+  {
+    "target": {
+      "id": "verdaccio-publish",
+      "title": "New packages are published to Verdaccio",
+      "test": "@neurondev/ndx-core and @neurondev/ndx version 0.1.40 are published to the configured Verdaccio registry.",
+      "steps": [
+        {
+          "id": "publish-core",
+          "instruction": "Publish @neurondev/ndx-core@0.1.40 to Verdaccio after a successful build.",
+          "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run."
+        },
+        {
+          "id": "publish-cli",
+          "instruction": "Publish @neurondev/ndx@0.1.40 to Verdaccio after the core package is available.",
+          "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run."
+        },
+        {
+          "id": "query-registry",
+          "instruction": "Query Verdaccio for both published versions.",
+          "expected": "npm view returns 0.1.40 for both packages."
+        }
+      ],
+      "passCriteria": "Both publishable packages are retrievable from Verdaccio as version 0.1.40."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "publish-core",
+          "instruction": "Publish @neurondev/ndx-core@0.1.40 to Verdaccio after a successful build.",
+          "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run."
+        },
+        "result": false,
+        "descript": "The core package tarball was prepared, but Verdaccio TLS connections reset during publish.",
+        "evidence": [
+          "Windows Node npm publish for @neurondev/ndx-core@0.1.40 reached 'Publishing to https://verdaccio.neurondev.net/' then failed with ECONNRESET.",
+          "npm ping https://verdaccio.neurondev.net/ also failed with ECONNRESET against /-/ping."
+        ]
+      },
+      {
+        "target": {
+          "id": "publish-cli",
+          "instruction": "Publish @neurondev/ndx@0.1.40 to Verdaccio after the core package is available.",
+          "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run."
+        },
+        "result": false,
+        "descript": "The CLI package was staged and the workspace dependency issue was fixed, but Verdaccio publish failed with the same TLS reset.",
+        "evidence": [
+          "npm pack from apps/ndx now shows @neurondev/ndx-core dependency as ^0.1.40 instead of workspace:^.",
+          "A bundled local staging tarball was also prepared and validated, but publish to @neurondev/ndx@0.1.40 failed with ECONNRESET."
+        ]
+      },
+      {
+        "target": {
+          "id": "query-registry",
+          "instruction": "Query Verdaccio for both published versions.",
+          "expected": "npm view returns 0.1.40 for both packages."
+        },
+        "result": false,
+        "descript": "The registry did not expose the requested 0.1.40 versions during this run.",
+        "evidence": [
+          "npm view @neurondev/ndx@0.1.40 returned E404.",
+          "npm view @neurondev/ndx-core@0.1.40 failed with ECONNRESET."
+        ]
+      }
+    ],
+    "result": {
+      "result": false,
+      "descript": "Verdaccio publish is blocked by registry TLS connection resets, not by the package build or local package shape.",
+      "evidence": [
+        "yarn build exited 0.",
+        "npm ping to https://verdaccio.neurondev.net/ failed with ECONNRESET.",
+        "The install-facing package dependency was corrected from workspace:^ to ^0.1.40 for npm packaging."
+      ]
+    }
+  }
+]
