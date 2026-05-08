@@ -1,0 +1,40 @@
+{
+  "target": {
+    "id": "deploy-after-korean-report",
+    "title": "Deploy still succeeds after adding the Korean report",
+    "test": "The repository deploy contract must still complete after the documentation-only Korean report is added.",
+    "steps": [
+      {
+        "id": "run-deploy",
+        "instruction": "Run npm run deploy from the repository root after implementation.",
+        "expected": "The command exits successfully or records a concrete blocker."
+      }
+    ],
+    "passCriteria": "Deploy succeeds, or any failure is captured with specific command evidence."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "run-deploy",
+        "instruction": "Run npm run deploy from the repository root after implementation.",
+        "expected": "The command exits successfully or records a concrete blocker."
+      },
+      "result": true,
+      "descript": "The deploy contract completed successfully after adding the Korean report.",
+      "evidence": [
+        "npm run deploy exited 0.",
+        "Turbo build output reported: Tasks: 4 successful, 4 total.",
+        "Deploy output included: Image hika00/ndx-sandbox:0.1.1 Built.",
+        "Deploy output created, started, stopped, removed, and cleaned network ndx-deploy-33514."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "The workspace remains deployable after the documentation-only Korean report change.",
+    "evidence": [
+      "npm run deploy completed in /mnt/c/Users/hika0/.codex/worktrees/2032/ndx.",
+      "Docker compose cleanup removed container ndx-deploy-33514-ndx-sandbox-1 and network ndx-deploy-33514_default."
+    ]
+  }
+}

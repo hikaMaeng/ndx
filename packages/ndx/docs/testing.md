@@ -23,6 +23,9 @@ The 2026-05-08 streaming and initial-context contract is covered by
 The Rust-to-NDX loop analysis report is covered by
 `test/20260508/165658_agent-loop-analysis-report.json`.
 
+The Korean translation of the loop analysis report is covered by
+`test/20260508/174826_agent-loop-analysis-ko.json`.
+
 Browser-facing dashboard changes must preserve the root `main` landmark,
 dashboard navigation names, action status semantics, and documented test ids in
 root `docs/constraints.md`.
