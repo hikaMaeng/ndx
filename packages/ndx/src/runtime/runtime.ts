@@ -16,6 +16,23 @@ import type {
 import type { ModelConversationItem } from "../model/types.js";
 
 export type RuntimeAgentEvent =
+  | {
+      type: "item_started";
+      itemId: string;
+      itemType: "message" | "function_call" | "reasoning" | "other";
+      callId?: string;
+      name?: string;
+    }
+  | { type: "agent_message_delta"; itemId: string; delta: string }
+  | { type: "tool_call_delta"; itemId: string; callId?: string; delta: string }
+  | {
+      type: "item_completed";
+      itemId: string;
+      itemType: "message" | "function_call" | "reasoning" | "other";
+      text?: string;
+      callId?: string;
+      name?: string;
+    }
   | { type: "model_text"; text: string }
   | { type: "tool_call"; callId: string; name: string; arguments: string }
   | { type: "tool_result"; callId: string; name: string; output: string }
@@ -234,6 +251,64 @@ export class AgentRuntime {
     event: RuntimeAgentEvent,
     onEvent?: RuntimeEventHandler,
   ): void {
+    if (event.type === "item_started") {
+      this.emit(
+        {
+          type: "item_started",
+          sessionId: this.sessionId,
+          turnId,
+          itemId: event.itemId,
+          itemType: event.itemType,
+          callId: event.callId,
+          name: event.name,
+        },
+        onEvent,
+      );
+      return;
+    }
+    if (event.type === "agent_message_delta") {
+      this.emit(
+        {
+          type: "agent_message_delta",
+          sessionId: this.sessionId,
+          turnId,
+          itemId: event.itemId,
+          delta: event.delta,
+        },
+        onEvent,
+      );
+      return;
+    }
+    if (event.type === "tool_call_delta") {
+      this.emit(
+        {
+          type: "tool_call_delta",
+          sessionId: this.sessionId,
+          turnId,
+          itemId: event.itemId,
+          callId: event.callId,
+          delta: event.delta,
+        },
+        onEvent,
+      );
+      return;
+    }
+    if (event.type === "item_completed") {
+      this.emit(
+        {
+          type: "item_completed",
+          sessionId: this.sessionId,
+          turnId,
+          itemId: event.itemId,
+          itemType: event.itemType,
+          text: event.text,
+          callId: event.callId,
+          name: event.name,
+        },
+        onEvent,
+      );
+      return;
+    }
     if (event.type === "model_text") {
       if (event.text.length > 0) {
         this.history.push({

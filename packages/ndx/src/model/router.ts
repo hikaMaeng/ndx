@@ -1,8 +1,16 @@
-import type { ModelClient, ModelResponse, NdxConfig } from "../shared/types.js";
+import type {
+  ModelClient,
+  ModelResponse,
+  ModelStreamEvent,
+  NdxConfig,
+} from "../shared/types.js";
 import type { ModelConversationItem, ModelInput } from "./types.js";
 
 export type ProviderClientFactory = (config: NdxConfig) => ModelClient;
-export type ModelConfigResolver = (config: NdxConfig, model: string) => NdxConfig;
+export type ModelConfigResolver = (
+  config: NdxConfig,
+  model: string,
+) => NdxConfig;
 
 export class RoundRobinModelRouter implements ModelClient {
   private readonly cursors = new Map<string, number>();
@@ -24,6 +32,22 @@ export class RoundRobinModelRouter implements ModelClient {
     const model = this.boundModel(this.activePoolKey);
     const client = this.clientForModel(model);
     return await client.create(input, tools);
+  }
+
+  async *stream(
+    input: ModelInput,
+    tools: unknown[] = [],
+    signal?: AbortSignal,
+  ): AsyncIterable<ModelStreamEvent> {
+    this.activePoolKey = this.poolKeyForInput(input) ?? this.activePoolKey;
+    const model = this.boundModel(this.activePoolKey);
+    const client = this.clientForModel(model);
+    if (client.stream === undefined) {
+      const response = await client.create(input, tools);
+      yield* streamFromResponse(response);
+      return;
+    }
+    yield* client.stream(input, tools, signal);
   }
 
   private poolKeyForInput(input: ModelInput): string | undefined {
@@ -126,4 +150,47 @@ function isUserMessage(
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function* streamFromResponse(
+  response: ModelResponse,
+): AsyncIterable<ModelStreamEvent> {
+  yield { type: "response_started", responseId: response.id };
+  if (response.text.length > 0) {
+    const itemId =
+      response.id === undefined ? "message" : `${response.id}:message`;
+    yield { type: "item_started", itemId, itemType: "message" };
+    yield { type: "text_delta", itemId, delta: response.text };
+    yield {
+      type: "item_completed",
+      itemId,
+      itemType: "message",
+      text: response.text,
+    };
+  }
+  for (const call of response.toolCalls) {
+    yield {
+      type: "item_started",
+      itemId: call.callId,
+      itemType: "function_call",
+      callId: call.callId,
+      name: call.name,
+      arguments: call.arguments,
+    };
+    yield {
+      type: "tool_call_delta",
+      itemId: call.callId,
+      callId: call.callId,
+      delta: call.arguments,
+    };
+    yield {
+      type: "item_completed",
+      itemId: call.callId,
+      itemType: "function_call",
+      callId: call.callId,
+      name: call.name,
+      arguments: call.arguments,
+    };
+  }
+  yield { type: "response_completed", response };
 }

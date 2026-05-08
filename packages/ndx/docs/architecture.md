@@ -26,6 +26,7 @@ split by responsibility:
 | File | Contract |
 | ---- | -------- |
 | `src/agent/loop/types.ts` | Run options, event protocol, sampling result types. |
+| `src/agent/loop/initial-context.ts` | Per-turn AGENTS.md and environment context snapshot. |
 | `src/agent/loop/state.ts` | Conversation input state, history merge, model response recording. |
 | `src/agent/loop/skills.ts` | Prompt-time skill mention resolution and skill content injection. |
 | `src/agent/loop/sampling.ts` | One model sampling request, follow-up detection, tool-output continuation. |

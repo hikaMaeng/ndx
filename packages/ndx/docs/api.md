@@ -12,3 +12,28 @@ Package exports:
 
 The install-facing bins stay in `apps/ndx`, not this package.
 
+## Runtime Events
+
+Agent turns separate final return value from in-turn progress events.
+
+| Event | Contract |
+| ----- | -------- |
+| `item_started` | A model-visible item began, such as assistant message or function call. |
+| `agent_message_delta` | Incremental assistant text for an active message item. Not persisted as final history by itself. |
+| `tool_call_delta` | Incremental function-call argument text for an active tool-call item. |
+| `item_completed` | A model-visible item ended. |
+| `agent_message` | Final assistant text for compatibility and history persistence. |
+| `tool_call` / `tool_result` | Tool execution request and result used for follow-up model input. |
+| `turn_complete` | Turn lifecycle completion with final text. |
+
+`ModelClient.stream` is optional. When present, the agent loop consumes
+provider stream events directly; otherwise the loop adapts a completed
+`ModelResponse` into the same item lifecycle shape.
+
+## Turn Context Input
+
+`runAgent` builds a per-turn input snapshot before the user prompt. The snapshot
+contains AGENTS.md instructions read from the configured context sources and an
+`<environment_context>` block with current `cwd`, shell, date, timezone,
+permission mode, and ndx runtime paths. This mirrors Codex Rust's separation
+between API-level base instructions and input-level contextual user fragments.

@@ -1,0 +1,69 @@
+{
+  "runUuid": "run-e942b045-a7cf-47aa-a9cd-0120c5e95533",
+  "suitePath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/165658_agent-loop-analysis-report.json",
+  "suite": {
+    "id": "agent-loop-analysis-report",
+    "title": "Agent loop analysis report records code-grounded findings",
+    "dependencies": {
+      "ndx": "0.1.39",
+      "typescript": "5.9.2",
+      "node": ">=22"
+    },
+    "items": {
+      "documentation": [
+        {
+          "id": "analysis-report-covers-requested-questions",
+          "title": "Analysis report covers the requested loop questions",
+          "test": "The handoff document must answer the requested questions about streamed intermediate outputs, tool-result follow-up blocking, sub-agent and agent-job behavior, and initial instruction assembly.",
+          "steps": [
+            {
+              "id": "inspect-report-sections",
+              "instruction": "Inspect the new package documentation report after implementation.",
+              "expected": "The report has explicit sections for response stream handling, tool follow-up accumulation, collaboration placeholder behavior, and startup/context instruction construction."
+            }
+          ],
+          "passCriteria": "The report answers every requested question with concrete file-path evidence."
+        }
+      ],
+      "verification": [
+        {
+          "id": "workspace-verification",
+          "title": "Documentation-only continuation remains deployable",
+          "test": "The existing branch changes plus the added analysis report must still satisfy the repository verification contract.",
+          "steps": [
+            {
+              "id": "run-deploy",
+              "instruction": "Run npm run deploy from the repository root after the report is added.",
+              "expected": "The command exits successfully or records a concrete blocker."
+            }
+          ],
+          "passCriteria": "Deploy succeeds, or any failure is captured with specific command evidence."
+        }
+      ]
+    }
+  },
+  "runDir": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/165658_run",
+  "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/165658_report.json",
+  "summaryPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/165658_summary.md",
+  "status": "done",
+  "createdAt": "2026-05-08T07:58:44.717Z",
+  "updatedAt": "2026-05-08T08:13:52.234Z",
+  "categories": {
+    "documentation": {
+      "workerUuid": "worker-cc81e485-ea2f-46f3-be35-42b1051555bd",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/165658_run/categories/documentation.json",
+      "startedAt": "2026-05-08T08:08:04.764Z",
+      "finishedAt": "2026-05-08T08:09:13.920Z"
+    },
+    "verification": {
+      "workerUuid": "worker-1742ea89-bc1b-4157-8541-b343c789f03d",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/165658_run/categories/verification.json",
+      "startedAt": "2026-05-08T08:09:42.310Z",
+      "finishedAt": "2026-05-08T08:13:52.234Z"
+    }
+  }
+}

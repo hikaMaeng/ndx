@@ -1,0 +1,42 @@
+[
+  {
+    "target": {
+      "id": "workspace-verification",
+      "title": "Documentation-only continuation remains deployable",
+      "test": "The existing branch changes plus the added analysis report must still satisfy the repository verification contract.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy from the repository root after the report is added.",
+          "expected": "The command exits successfully or records a concrete blocker."
+        }
+      ],
+      "passCriteria": "Deploy succeeds, or any failure is captured with specific command evidence."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy from the repository root after the report is added.",
+          "expected": "The command exits successfully or records a concrete blocker."
+        },
+        "result": true,
+        "descript": "The repository deploy contract completed successfully after the analysis report was added.",
+        "evidence": [
+          "npm run deploy exited 0.",
+          "Turbo build output reported: Tasks: 4 successful, 4 total.",
+          "Deploy output included: Image hika00/ndx-sandbox:0.1.1 Built.",
+          "Deploy output created, started, stopped, removed, and cleaned network ndx-deploy-31100."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "The branch remains deployable after the documentation continuation.",
+      "evidence": [
+        "npm run deploy completed in /mnt/c/Users/hika0/.codex/worktrees/2032/ndx.",
+        "Docker compose cleanup removed container ndx-deploy-31100-ndx-sandbox-1 and network ndx-deploy-31100_default."
+      ]
+    }
+  }
+]

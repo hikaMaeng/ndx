@@ -112,7 +112,7 @@ export class AnthropicMessagesAdapter {
           });
         } else if (isMessage(item)) {
           this.messages.push({
-            role: item.role,
+            role: item.role === "assistant" ? "assistant" : "user",
             content: item.content,
           });
         } else if (isAssistantToolCalls(item)) {
@@ -156,7 +156,9 @@ function isMessage(
     typeof input === "object" &&
     input !== null &&
     (input as { type?: unknown }).type === "message" &&
-    ((input as { role?: unknown }).role === "user" ||
+    ((input as { role?: unknown }).role === "system" ||
+      (input as { role?: unknown }).role === "developer" ||
+      (input as { role?: unknown }).role === "user" ||
       (input as { role?: unknown }).role === "assistant") &&
     typeof (input as { content?: unknown }).content === "string"
   );

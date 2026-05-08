@@ -1,0 +1,40 @@
+{
+  "target": {
+    "id": "analysis-report-covers-requested-questions",
+    "title": "Analysis report covers the requested loop questions",
+    "test": "The handoff document must answer the requested questions about streamed intermediate outputs, tool-result follow-up blocking, sub-agent and agent-job behavior, and initial instruction assembly.",
+    "steps": [
+      {
+        "id": "inspect-report-sections",
+        "instruction": "Inspect the new package documentation report after implementation.",
+        "expected": "The report has explicit sections for response stream handling, tool follow-up accumulation, collaboration placeholder behavior, and startup/context instruction construction."
+      }
+    ],
+    "passCriteria": "The report answers every requested question with concrete file-path evidence."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-report-sections",
+        "instruction": "Inspect the new package documentation report after implementation.",
+        "expected": "The report has explicit sections for response stream handling, tool follow-up accumulation, collaboration placeholder behavior, and startup/context instruction construction."
+      },
+      "result": true,
+      "descript": "The report has explicit sections for response stream handling, tool follow-up blocking, sub-agent and agent-job placeholder behavior, queue/concurrency boundaries, and initial instruction assembly.",
+      "evidence": [
+        "packages/ndx/docs/agent-loop-analysis.md contains Response Stream, Tool Follow-Up, Sub-Agents And Agent Jobs, Queues And Concurrency, and Initial Instructions sections.",
+        "packages/ndx/docs/agent-loop-analysis.md lists Rust evidence paths from codex-rs/core and current NDX evidence paths under packages/ndx/src.",
+        "packages/ndx/README.md links docs/agent-loop-analysis.md from the package navigation table.",
+        "packages/ndx/docs/internals.md points readers to docs/agent-loop-analysis.md for the code-grounded comparison."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "The requested code-grounded MD report is present and linked from the package docs.",
+    "evidence": [
+      "packages/ndx/docs/agent-loop-analysis.md answers all four requested analysis questions with concrete file-path evidence.",
+      "packages/ndx/docs/testing.md records test/20260508/165658_agent-loop-analysis-report.json as the report verification suite."
+    ]
+  }
+}

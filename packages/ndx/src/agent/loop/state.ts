@@ -1,4 +1,5 @@
 import { selectedSkillMessages } from "./skills.js";
+import { buildInitialContext } from "./initial-context.js";
 import type { ModelConversationItem } from "../../model/types.js";
 import type { ModelResponse, NdxConfig } from "../../shared/types.js";
 import type { AgentRunOptions } from "./types.js";
@@ -13,9 +14,11 @@ export function createInitialState(
   config: NdxConfig,
   cwd: string,
 ): AgentLoopState {
+  const initialContext = buildInitialContext(config, cwd);
   const skillMessages = selectedSkillMessages(prompt, config, cwd);
   return {
     input: [
+      ...initialContext,
       ...skillMessages,
       { type: "message", role: "user", content: prompt },
     ],

@@ -221,8 +221,36 @@ export interface ModelResponse {
   raw: unknown;
 }
 
+export type ModelStreamEvent =
+  | { type: "response_started"; responseId?: string }
+  | {
+      type: "item_started";
+      itemId: string;
+      itemType: "message" | "function_call" | "reasoning" | "other";
+      callId?: string;
+      name?: string;
+      arguments?: string;
+    }
+  | { type: "text_delta"; itemId: string; delta: string }
+  | { type: "tool_call_delta"; itemId: string; callId?: string; delta: string }
+  | {
+      type: "item_completed";
+      itemId: string;
+      itemType: "message" | "function_call" | "reasoning" | "other";
+      text?: string;
+      callId?: string;
+      name?: string;
+      arguments?: string;
+    }
+  | { type: "response_completed"; response: ModelResponse };
+
 export interface ModelClient {
   create(input: unknown, tools?: unknown[]): Promise<ModelResponse>;
+  stream?(
+    input: unknown,
+    tools?: unknown[],
+    signal?: AbortSignal,
+  ): AsyncIterable<ModelStreamEvent>;
 }
 
 export interface TokenUsage {

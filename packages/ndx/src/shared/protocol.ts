@@ -21,6 +21,10 @@ export interface RuntimeEvent {
 export type RuntimeEventMsg =
   | SessionConfiguredEvent
   | TurnStartedEvent
+  | ItemStartedEvent
+  | AgentMessageDeltaEvent
+  | ToolCallDeltaEvent
+  | ItemCompletedEvent
   | AgentMessageEvent
   | ToolCallEvent
   | ToolResultEvent
@@ -55,6 +59,44 @@ export interface AgentMessageEvent {
   sessionId: string;
   turnId: string;
   text: string;
+}
+
+export interface ItemStartedEvent {
+  type: "item_started";
+  sessionId: string;
+  turnId: string;
+  itemId: string;
+  itemType: "message" | "function_call" | "reasoning" | "other";
+  callId?: string;
+  name?: string;
+}
+
+export interface AgentMessageDeltaEvent {
+  type: "agent_message_delta";
+  sessionId: string;
+  turnId: string;
+  itemId: string;
+  delta: string;
+}
+
+export interface ToolCallDeltaEvent {
+  type: "tool_call_delta";
+  sessionId: string;
+  turnId: string;
+  itemId: string;
+  callId?: string;
+  delta: string;
+}
+
+export interface ItemCompletedEvent {
+  type: "item_completed";
+  sessionId: string;
+  turnId: string;
+  itemId: string;
+  itemType: "message" | "function_call" | "reasoning" | "other";
+  text?: string;
+  callId?: string;
+  name?: string;
 }
 
 export interface ToolCallEvent {
