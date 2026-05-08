@@ -28,7 +28,12 @@ export async function runSamplingRequest(
   if (!modelNeedsFollowUp(response)) {
     return { needsFollowUp: false };
   }
-  const outputs = await executeToolCalls(response.toolCalls, options);
+  const outputs = await executeToolCalls(
+    response.toolCalls,
+    registry,
+    options,
+    input,
+  );
   state.input.push(...outputs);
   return {
     needsFollowUp: true,

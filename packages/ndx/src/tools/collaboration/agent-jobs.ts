@@ -9,7 +9,7 @@ import type { ToolDefinition } from "../types.js";
 
 export function agentJobTools(): ToolDefinition[] {
   return [
-    placeholder(
+    controllerTool(
       "spawn_agents_on_csv",
       "Process a CSV by spawning one worker sub-agent per row. The instruction string is a template where {column} placeholders are replaced with row values.",
       {
@@ -34,7 +34,7 @@ export function agentJobTools(): ToolDefinition[] {
       },
       ["csv_path", "instruction"],
     ),
-    placeholder(
+    controllerTool(
       "report_agent_job_result",
       "Worker-only tool to report a result for an agent job item. Main agents should not call this.",
       {
@@ -50,7 +50,7 @@ export function agentJobTools(): ToolDefinition[] {
   ];
 }
 
-function placeholder(
+function controllerTool(
   name: string,
   description: string,
   properties: Record<string, Record<string, unknown>>,
@@ -60,11 +60,21 @@ function placeholder(
     name,
     supportsParallelToolCalls: false,
     schema: functionTool(name, description, objectSchema(properties, required)),
-    execute: async () => ({
-      output: JSON.stringify({
-        status: "unavailable",
-        message: `${name} requires a TypeScript agent-job backend that is not configured.`,
-      }),
-    }),
+    execute: async (args, context, signal) => {
+      const controller = context.agentController;
+      if (controller === undefined) {
+        return {
+          output: JSON.stringify({
+            status: "unavailable",
+            message: `${name} requires an agent controller in ToolContext.`,
+          }),
+        };
+      }
+      const result =
+        name === "spawn_agents_on_csv"
+          ? await controller.spawnAgentsOnCsv(args, context, signal)
+          : await controller.reportAgentJobResult(args);
+      return { output: JSON.stringify(result) };
+    },
   };
 }

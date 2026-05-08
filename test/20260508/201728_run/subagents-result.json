@@ -1,0 +1,58 @@
+{
+  "target": {
+    "id": "subagent-tools-use-controller",
+    "title": "Collaboration tools use a TypeScript sub-agent controller",
+    "test": "Collaboration tools must no longer return placeholder unavailable output; spawn_agent, send_input, wait_agent, close_agent, resume_agent, and list_agents should call a real in-process controller.",
+    "steps": [
+      {
+        "id": "inspect-controller",
+        "instruction": "Inspect collaboration tool implementations and the agent runtime wiring.",
+        "expected": "The tools call a shared controller through ToolContext, and AgentRuntime passes the controller into runAgent."
+      },
+      {
+        "id": "run-subagent-smoke",
+        "instruction": "Run a small built output script that spawns a mock child agent, waits for it, lists it, and closes it.",
+        "expected": "The script observes JSON outputs with real agent ids and terminal child status rather than status=unavailable."
+      }
+    ],
+    "passCriteria": "A child agent can be spawned and waited on through the built collaboration tool path."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-controller",
+        "instruction": "Inspect collaboration tool implementations and the agent runtime wiring.",
+        "expected": "The tools call a shared controller through ToolContext, and AgentRuntime passes the controller into runAgent."
+      },
+      "result": true,
+      "descript": "Collaboration tools dispatch to ToolContext.agentController and runtime passes a shared controller into runAgent.",
+      "evidence": [
+        "packages/ndx/src/tools/collaboration/agents.ts dispatches spawn_agent, send_input, resume_agent, wait_agent, close_agent, and list_agents to context.agentController.",
+        "packages/ndx/src/tools/collaboration/agent-jobs.ts dispatches spawn_agents_on_csv and report_agent_job_result to context.agentController.",
+        "packages/ndx/src/runtime/runtime.ts creates a sub-agent controller and passes agentController into the injected runAgent call.",
+        "packages/ndx/src/agent/subagents.ts implements createSubAgentController."
+      ]
+    },
+    {
+      "target": {
+        "id": "run-subagent-smoke",
+        "instruction": "Run a small built output script that spawns a mock child agent, waits for it, lists it, and closes it.",
+        "expected": "The script observes JSON outputs with real agent ids and terminal child status rather than status=unavailable."
+      },
+      "result": true,
+      "descript": "The smoke script spawned, waited, listed, and closed a mock child agent.",
+      "evidence": [
+        "Smoke output: spawnStatus=running, waitStatus=completed, finalText=mock agent completed, listedCount=1, closeStatus=closed.",
+        "The smoke script imported packages/ndx/dist/agent/subagents.js and used MockModelClient plus runAgent."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Collaboration tools use the implemented sub-agent controller and the built path works.",
+    "evidence": [
+      "No collaboration tool path returned the prior TypeScript multi-agent backend unavailable placeholder during the smoke.",
+      "The child agent reached completed status through waitAgent."
+    ]
+  }
+}

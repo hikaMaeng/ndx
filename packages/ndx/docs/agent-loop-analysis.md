@@ -9,26 +9,27 @@ this package.
 
 Historical Rust sources inspected through `git show 936da925^:<path>`:
 
-| Question | Rust evidence |
-| -------- | ------------- |
-| Regular task and repeated pending-input turns | `codex-rs/core/src/tasks/regular.rs` |
-| Sampling loop, response stream handling, follow-up decision | `codex-rs/core/src/session/turn.rs` |
-| AGENTS.md instruction assembly | `codex-rs/core/src/agents_md.rs` |
-| `<environment_context>` user fragment | `codex-rs/core/src/context/environment_context.rs` |
-| Sub-agent spawning, status, and parent notifications | `codex-rs/core/src/agent/control.rs` |
+| Question                                                    | Rust evidence                                      |
+| ----------------------------------------------------------- | -------------------------------------------------- |
+| Regular task and repeated pending-input turns               | `codex-rs/core/src/tasks/regular.rs`               |
+| Sampling loop, response stream handling, follow-up decision | `codex-rs/core/src/session/turn.rs`                |
+| AGENTS.md instruction assembly                              | `codex-rs/core/src/agents_md.rs`                   |
+| `<environment_context>` user fragment                       | `codex-rs/core/src/context/environment_context.rs` |
+| Sub-agent spawning, status, and parent notifications        | `codex-rs/core/src/agent/control.rs`               |
 
 Current TypeScript sources:
 
-| Question | NDX evidence |
-| -------- | ------------ |
-| Public agent loop and max-turn budget | `src/agent/loop.ts` |
-| Per-turn AGENTS.md and environment context snapshot | `src/agent/loop/initial-context.ts` |
-| Conversation state and final-message persistence | `src/agent/loop/state.ts` |
-| Streaming collection and follow-up decision | `src/agent/loop/sampling.ts` |
-| Tool execution and output accumulation | `src/agent/loop/tool-execution.ts` |
-| Provider stream event mapping | `src/model/openai-responses.ts`, `src/model/openai.ts`, `src/model/router.ts` |
-| Runtime and JSON-RPC progress events | `src/runtime/runtime.ts`, `src/shared/protocol.ts`, `src/session/server/notifications.ts` |
-| Collaboration and agent-job tool availability | `src/tools/collaboration/agents.ts`, `src/tools/collaboration/agent-jobs.ts`, `src/tools/registry.ts` |
+| Question                                            | NDX evidence                                                                                          |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Public agent loop and max-turn budget               | `src/agent/loop.ts`                                                                                   |
+| Per-turn AGENTS.md and environment context snapshot | `src/agent/loop/initial-context.ts`                                                                   |
+| Conversation state and final-message persistence    | `src/agent/loop/state.ts`                                                                             |
+| Streaming collection and follow-up decision         | `src/agent/loop/sampling.ts`                                                                          |
+| Tool execution and output accumulation              | `src/agent/loop/tool-execution.ts`                                                                    |
+| Provider stream event mapping                       | `src/model/openai-responses.ts`, `src/model/openai.ts`, `src/model/router.ts`                         |
+| Runtime and JSON-RPC progress events                | `src/runtime/runtime.ts`, `src/shared/protocol.ts`, `src/session/server/notifications.ts`             |
+| Collaboration and agent-job tool availability       | `src/tools/collaboration/agents.ts`, `src/tools/collaboration/agent-jobs.ts`, `src/tools/registry.ts` |
+| Artifact/resource context boundary                  | `src/agent/loop/artifacts.ts`, `src/tools/mcp/resources.ts`                                           |
 
 ## Response Stream
 
@@ -99,10 +100,32 @@ backend:
   collected by `executeToolCalls` and fed back to the model like any other tool
   result.
 
-Conclusion: in this branch, sub-agent and agent-job tools cannot create
-background work in NDX. They also cannot keep the parent loop alive on their own.
-They only affect the loop by returning an unavailable tool output that may cause
-the model to choose another follow-up step.
+Conclusion: NDX now has a TypeScript sub-agent controller behind the
+collaboration tools. The controller can spawn child `runAgent` executions, send
+follow-up input, wait for terminal state, close/resume records, list known
+agents, and start CSV worker jobs. It is still smaller than Rust's session-wide
+mailbox/watch topology, but the tools no longer return placeholder unavailable
+output when a controller is present.
+
+## Artifact And Resource Context
+
+Rust separates renderable UI artifacts from model-visible resource content. The
+app server reconstructs UI `ThreadItem` values from rollout events, while the
+model input receives resources only through explicit `UserInput` variants,
+`ContextualUserFragment` injections, hook context, or explicit MCP resource
+reads. It does not blindly include every UI artifact panel entry in the next
+prompt.
+
+NDX mirrors that conservative rule. `src/agent/loop/artifacts.ts` scans prior
+model-visible history and the current prompt for concrete local file references.
+Only files that exist under the active `cwd` are added as a bounded
+`# Referenced Artifacts` user context message. Text files receive a short
+excerpt; non-text files receive metadata only. MCP resources stay explicit
+through `list_mcp_resources`, `list_mcp_resource_templates`, and
+`read_mcp_resource`.
+
+See `docs/agent-artifact-context.md` for the Rust evidence paths and the exact
+NDX contract.
 
 ## Queues And Concurrency
 
@@ -154,8 +177,9 @@ mutating persisted assistant history.
 
 ## Branch Outcome
 
-The branch implements streaming item lifecycle events and initial context
-injection, but it intentionally does not port Rust's full session task graph,
-sub-agent backend, hook continuations, or compaction machinery into the package
-loop. Those remain separate future work unless session/runtime modules adopt the
-larger Rust topology.
+The branch implements streaming item lifecycle events, initial context
+injection, a bounded artifact context pass, a TypeScript sub-agent controller,
+and explicit MCP resource tools. It still does not port Rust's full session task
+graph, hook continuations, or compaction machinery into the package loop. Those
+remain separate future work unless session/runtime modules adopt the larger
+Rust topology.

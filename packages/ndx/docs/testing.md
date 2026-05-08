@@ -26,6 +26,10 @@ The Rust-to-NDX loop analysis report is covered by
 The Korean translation of the loop analysis report is covered by
 `test/20260508/174826_agent-loop-analysis-ko.json`.
 
+Sub-agent controller, built-in MCP resource tools, and bounded artifact context
+behavior are covered by
+`test/20260508/201728_agent-loop-subsystems.json`.
+
 Browser-facing dashboard changes must preserve the root `main` landmark,
 dashboard navigation names, action status semantics, and documented test ids in
 root `docs/constraints.md`.

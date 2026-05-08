@@ -1,0 +1,59 @@
+[
+  {
+    "target": {
+      "id": "artifact-context-contract",
+      "title": "Artifact classification is documented and reflected in loop context",
+      "test": "The package must document how historical Codex Rust differentiated model-visible resources from UI artifacts, and the NDX loop must inject only concrete local artifact references into turn context.",
+      "steps": [
+        {
+          "id": "inspect-rust-analysis-doc",
+          "instruction": "Inspect the new artifact analysis markdown document.",
+          "expected": "The document cites Rust paths for UserInput, contextual fragments, thread history items, MCP resource reads, and explains that UI artifacts are not blindly injected into model context."
+        },
+        {
+          "id": "inspect-loop-code",
+          "instruction": "Inspect the NDX agent loop context code.",
+          "expected": "The loop scans model-visible history and the prompt for existing local artifact references and adds a bounded user context message before the prompt."
+        }
+      ],
+      "passCriteria": "Artifact context behavior is code-backed and documented with Rust evidence."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-rust-analysis-doc",
+          "instruction": "Inspect the new artifact analysis markdown document.",
+          "expected": "The document cites Rust paths for UserInput, contextual fragments, thread history items, MCP resource reads, and explains that UI artifacts are not blindly injected into model context."
+        },
+        "result": true,
+        "descript": "The new artifact document records the Rust resource boundary and NDX contract.",
+        "evidence": [
+          "packages/ndx/docs/agent-artifact-context.md cites codex-rs/protocol/src/user_input.rs, codex-rs/protocol/src/models.rs, codex-rs/core/src/context/fragment.rs, app-server-protocol/src/protocol/thread_history.rs, and MCP resource read paths.",
+          "packages/ndx/docs/agent-artifact-context.md states that UI thread artifacts are not a blanket future prompt inclusion rule."
+        ]
+      },
+      {
+        "target": {
+          "id": "inspect-loop-code",
+          "instruction": "Inspect the NDX agent loop context code.",
+          "expected": "The loop scans model-visible history and the prompt for existing local artifact references and adds a bounded user context message before the prompt."
+        },
+        "result": true,
+        "descript": "The loop adds bounded referenced artifact context for existing local files under cwd.",
+        "evidence": [
+          "packages/ndx/src/agent/loop/artifacts.ts limits artifacts to existing files under cwd and caps the list at 8 with 1200-character text excerpts.",
+          "packages/ndx/src/agent/loop/state.ts inserts artifactContextMessages before skill messages and the user prompt.",
+          "Artifact smoke emitted a # Referenced Artifacts message for packages/ndx/docs/agent-artifact-context.md with path, size, modified_at, and excerpt."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Artifact classification is documented and implemented as bounded local context.",
+      "evidence": [
+        "The Rust evidence document and the TypeScript loop code agree on explicit resource inclusion.",
+        "The built smoke observed the expected artifact context message."
+      ]
+    }
+  }
+]

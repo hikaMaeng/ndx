@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createSubAgentController } from "../agent/subagents.js";
 import { isAgentAbortError } from "./abort.js";
 import { classifyModelError } from "./errors.js";
 import type {
@@ -14,6 +15,7 @@ import type {
   SessionContextKindUsage,
 } from "../shared/types.js";
 import type { ModelConversationItem } from "../model/types.js";
+import type { CollaborationAgentController } from "../tools/collaboration/controller.js";
 
 export type RuntimeAgentEvent =
   | {
@@ -53,6 +55,7 @@ export interface RuntimeAgentRunOptions {
   prompt: string;
   history?: ModelConversationItem[];
   signal?: AbortSignal;
+  agentController?: CollaborationAgentController;
   onEvent?: (event: RuntimeAgentEvent) => void;
 }
 
@@ -82,6 +85,7 @@ export class AgentRuntime {
   private readonly runAgent: RuntimeAgentRunner;
   private readonly sources: string[];
   private readonly bootstrap: NdxBootstrapReport;
+  private readonly agentController: CollaborationAgentController;
   private history: ModelConversationItem[];
   private readonly context: SessionContextSummary;
   private configured = false;
@@ -98,6 +102,12 @@ export class AgentRuntime {
     this.history = options.history ?? [];
     this.sources = options.sources ?? [];
     this.bootstrap = options.bootstrap;
+    this.agentController = createSubAgentController({
+      cwd: this.cwd,
+      config: this.config,
+      client: this.client,
+      runAgent: this.runAgent,
+    });
     this.context = summarizeContext(this.history, this.config);
   }
 
@@ -149,6 +159,7 @@ export class AgentRuntime {
         prompt: submission.op.prompt,
         history: historyBeforeTurn,
         signal: activeTurn.controller.signal,
+        agentController: this.agentController,
         onEvent: (event) => this.forwardAgentEvent(turnId, event, onEvent),
       });
 

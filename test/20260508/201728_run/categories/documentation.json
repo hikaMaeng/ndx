@@ -1,0 +1,43 @@
+[
+  {
+    "target": {
+      "id": "docs-updated",
+      "title": "Package docs record new loop subsystem contracts",
+      "test": "Package docs must describe the new built-in tools, sub-agent controller, artifact context behavior, and the verification suite.",
+      "steps": [
+        {
+          "id": "inspect-docs",
+          "instruction": "Inspect packages/ndx README and docs pages after implementation.",
+          "expected": "README navigation links the new artifact analysis doc, architecture/internals/api/testing docs describe the new contracts, and testing docs reference this suite."
+        }
+      ],
+      "passCriteria": "Documentation matches the implemented subsystem contracts."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-docs",
+          "instruction": "Inspect packages/ndx README and docs pages after implementation.",
+          "expected": "README navigation links the new artifact analysis doc, architecture/internals/api/testing docs describe the new contracts, and testing docs reference this suite."
+        },
+        "result": true,
+        "descript": "Package documentation records the new agent loop subsystem contracts.",
+        "evidence": [
+          "packages/ndx/README.md links docs/agent-artifact-context.md.",
+          "packages/ndx/docs/architecture.md lists artifacts.ts and subagents.ts.",
+          "packages/ndx/docs/internals.md records explicit resource/artifact context and sub-agent control plane ownership.",
+          "packages/ndx/docs/api.md documents built-in MCP resource tools, collaboration controller behavior, and Referenced Artifacts context.",
+          "packages/ndx/docs/testing.md references test/20260508/201728_agent-loop-subsystems.json."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Documentation matches the implemented changes.",
+      "evidence": [
+        "The new doc and package docs were formatted by yarn prettier.",
+        "The verification suite is recorded in package testing docs."
+      ]
+    }
+  }
+]

@@ -1,0 +1,171 @@
+{
+  "@meta": {
+    "subagents": [
+      {
+        "target": "tools",
+        "elapsed": 161491
+      },
+      {
+        "target": "subagents",
+        "elapsed": 161478
+      },
+      {
+        "target": "artifacts",
+        "elapsed": 308612
+      },
+      {
+        "target": "documentation",
+        "elapsed": 126491
+      },
+      {
+        "target": "deployment",
+        "elapsed": 699253
+      }
+    ],
+    "elapsed": 2026087,
+    "result": true,
+    "detail": "5 passed / 0 failed",
+    "started": "2026-05-08T11:19:15.212Z"
+  },
+  "tools": [
+    {
+      "id": "builtin-tool-registration",
+      "title": "Built-in tool registry exposes context and input tools",
+      "test": "The task tool layer must expose request_user_input plus MCP resource list/template/read tools without removing the existing planning, skill, collaboration, and agent-job tools.",
+      "steps": [
+        {
+          "id": "inspect-registry",
+          "instruction": "Inspect the TypeScript task tool registry and MCP tool modules after implementation.",
+          "expected": "ToolRegistry task tools include request_user_input, list_mcp_resources, list_mcp_resource_templates, and read_mcp_resource.",
+          "result": true,
+          "descript": "The task layer registers request_user_input and the MCP resource tools.",
+          "evidence": [
+            "packages/ndx/src/tools/registry.ts imports requestUserInputTool and mcpResourceTools and adds them in taskTools().",
+            "packages/ndx/src/tools/mcp/resources.ts defines list_mcp_resources, list_mcp_resource_templates, and read_mcp_resource.",
+            "Built registry smoke printed request_user_input, list_mcp_resources, list_mcp_resource_templates, read_mcp_resource, and spawn_agent."
+          ]
+        },
+        {
+          "id": "build-types",
+          "instruction": "Run the package TypeScript build.",
+          "expected": "The build completes with the new tool definitions typed correctly.",
+          "result": true,
+          "descript": "The package TypeScript build completed.",
+          "evidence": [
+            "Command completed with exit code 0: yarn workspace @neurondev/ndx-core build"
+          ]
+        }
+      ]
+    }
+  ],
+  "subagents": [
+    {
+      "id": "subagent-tools-use-controller",
+      "title": "Collaboration tools use a TypeScript sub-agent controller",
+      "test": "Collaboration tools must no longer return placeholder unavailable output; spawn_agent, send_input, wait_agent, close_agent, resume_agent, and list_agents should call a real in-process controller.",
+      "steps": [
+        {
+          "id": "inspect-controller",
+          "instruction": "Inspect collaboration tool implementations and the agent runtime wiring.",
+          "expected": "The tools call a shared controller through ToolContext, and AgentRuntime passes the controller into runAgent.",
+          "result": true,
+          "descript": "Collaboration tools dispatch to ToolContext.agentController and runtime passes a shared controller into runAgent.",
+          "evidence": [
+            "packages/ndx/src/tools/collaboration/agents.ts dispatches spawn_agent, send_input, resume_agent, wait_agent, close_agent, and list_agents to context.agentController.",
+            "packages/ndx/src/tools/collaboration/agent-jobs.ts dispatches spawn_agents_on_csv and report_agent_job_result to context.agentController.",
+            "packages/ndx/src/runtime/runtime.ts creates a sub-agent controller and passes agentController into the injected runAgent call.",
+            "packages/ndx/src/agent/subagents.ts implements createSubAgentController."
+          ]
+        },
+        {
+          "id": "run-subagent-smoke",
+          "instruction": "Run a small built output script that spawns a mock child agent, waits for it, lists it, and closes it.",
+          "expected": "The script observes JSON outputs with real agent ids and terminal child status rather than status=unavailable.",
+          "result": true,
+          "descript": "The smoke script spawned, waited, listed, and closed a mock child agent.",
+          "evidence": [
+            "Smoke output: spawnStatus=running, waitStatus=completed, finalText=mock agent completed, listedCount=1, closeStatus=closed.",
+            "The smoke script imported packages/ndx/dist/agent/subagents.js and used MockModelClient plus runAgent."
+          ]
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-context-contract",
+      "title": "Artifact classification is documented and reflected in loop context",
+      "test": "The package must document how historical Codex Rust differentiated model-visible resources from UI artifacts, and the NDX loop must inject only concrete local artifact references into turn context.",
+      "steps": [
+        {
+          "id": "inspect-rust-analysis-doc",
+          "instruction": "Inspect the new artifact analysis markdown document.",
+          "expected": "The document cites Rust paths for UserInput, contextual fragments, thread history items, MCP resource reads, and explains that UI artifacts are not blindly injected into model context.",
+          "result": true,
+          "descript": "The new artifact document records the Rust resource boundary and NDX contract.",
+          "evidence": [
+            "packages/ndx/docs/agent-artifact-context.md cites codex-rs/protocol/src/user_input.rs, codex-rs/protocol/src/models.rs, codex-rs/core/src/context/fragment.rs, app-server-protocol/src/protocol/thread_history.rs, and MCP resource read paths.",
+            "packages/ndx/docs/agent-artifact-context.md states that UI thread artifacts are not a blanket future prompt inclusion rule."
+          ]
+        },
+        {
+          "id": "inspect-loop-code",
+          "instruction": "Inspect the NDX agent loop context code.",
+          "expected": "The loop scans model-visible history and the prompt for existing local artifact references and adds a bounded user context message before the prompt.",
+          "result": true,
+          "descript": "The loop adds bounded referenced artifact context for existing local files under cwd.",
+          "evidence": [
+            "packages/ndx/src/agent/loop/artifacts.ts limits artifacts to existing files under cwd and caps the list at 8 with 1200-character text excerpts.",
+            "packages/ndx/src/agent/loop/state.ts inserts artifactContextMessages before skill messages and the user prompt.",
+            "Artifact smoke emitted a # Referenced Artifacts message for packages/ndx/docs/agent-artifact-context.md with path, size, modified_at, and excerpt."
+          ]
+        }
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "docs-updated",
+      "title": "Package docs record new loop subsystem contracts",
+      "test": "Package docs must describe the new built-in tools, sub-agent controller, artifact context behavior, and the verification suite.",
+      "steps": [
+        {
+          "id": "inspect-docs",
+          "instruction": "Inspect packages/ndx README and docs pages after implementation.",
+          "expected": "README navigation links the new artifact analysis doc, architecture/internals/api/testing docs describe the new contracts, and testing docs reference this suite.",
+          "result": true,
+          "descript": "Package documentation records the new agent loop subsystem contracts.",
+          "evidence": [
+            "packages/ndx/README.md links docs/agent-artifact-context.md.",
+            "packages/ndx/docs/architecture.md lists artifacts.ts and subagents.ts.",
+            "packages/ndx/docs/internals.md records explicit resource/artifact context and sub-agent control plane ownership.",
+            "packages/ndx/docs/api.md documents built-in MCP resource tools, collaboration controller behavior, and Referenced Artifacts context.",
+            "packages/ndx/docs/testing.md references test/20260508/201728_agent-loop-subsystems.json."
+          ]
+        }
+      ]
+    }
+  ],
+  "deployment": [
+    {
+      "id": "deploy-contract",
+      "title": "Repository deploy contract still passes",
+      "test": "The standard repository deploy command must complete after the agent loop subsystem changes.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy from the repository root.",
+          "expected": "The deploy script completes successfully, including build, agenttest policy hook, Docker compose refresh, sandbox write verification, and teardown.",
+          "result": true,
+          "descript": "The deploy script completed successfully.",
+          "evidence": [
+            "Command completed with exit code 0: npm run deploy.",
+            "Deploy output ran Turbo build for @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app.",
+            "Deploy output ran the agenttest policy hook: agenttest policy: strict JSON results under test/YYYYMMDD.",
+            "Deploy output built hika00/ndx-sandbox:0.1.1, created and started ndx-deploy-40288-ndx-sandbox-1, then stopped and removed the container and network."
+          ]
+        }
+      ]
+    }
+  ]
+}
