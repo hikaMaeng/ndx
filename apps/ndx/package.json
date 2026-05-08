@@ -1,6 +1,6 @@
 {
   "name": "@neurondev/ndx",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "type": "module",
   "description": "Install-facing ndx CLI package.",
   "files": [
@@ -17,7 +17,7 @@
     "test": "node -e \"console.log('agenttest app policy: strict JSON results under test/YYYYMMDD')\""
   },
   "dependencies": {
-    "@neurondev/ndx-core": "^0.1.40"
+    "@neurondev/ndx-core": "^0.1.41"
   },
   "devDependencies": {
     "@types/node": "^20.19.18",

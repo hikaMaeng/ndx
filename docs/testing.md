@@ -45,6 +45,10 @@ repository. The 0.1.40 release suite records Verdaccio publish, dedicated-prefix
 install, and a Tetris project creation smoke in
 `test/20260508/214231_publish-install-tetris.json`.
 
+Tool failures from task tools must remain inside the active turn as tool output
+unless an abort signal is active. The 0.1.41 missing MCP resource regression is
+recorded in `test/20260509/013818_mcp-resource-cli-error.json`.
+
 ## Coverage Areas
 
 - Settings discovery, version normalization, merge precedence, model pools, MCP

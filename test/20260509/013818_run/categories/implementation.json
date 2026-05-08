@@ -1,0 +1,57 @@
+[
+  {
+    "target": {
+      "id": "tool-error-containment",
+      "title": "Agent loop converts tool exceptions into model-visible tool results",
+      "test": "A throwing tool call must not reject the whole turn; it must produce a tool output item containing the error.",
+      "steps": [
+        {
+          "id": "inspect-tool-execution",
+          "instruction": "Patch the agent loop tool execution path so registry.execute exceptions are caught per tool call.",
+          "expected": "executeToolCalls returns a tool output item for failed tools and continues processing later calls."
+        },
+        {
+          "id": "run-focused-regression",
+          "instruction": "Run a focused Node regression that registers a throwing task tool and invokes executeToolCalls.",
+          "expected": "The process exits 0 and prints a tool output containing an error object instead of throwing."
+        }
+      ],
+      "passCriteria": "Tool execution failures are represented as model-visible tool outputs."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-tool-execution",
+          "instruction": "Patch the agent loop tool execution path so registry.execute exceptions are caught per tool call.",
+          "expected": "executeToolCalls returns a tool output item for failed tools and continues processing later calls."
+        },
+        "result": true,
+        "descript": "executeToolCall now wraps registry.execute through executeRegistryTool and returns JSON error output for non-abort exceptions.",
+        "evidence": [
+          "packages/ndx/src/agent/loop/tool-execution.ts catches registry.execute errors, calls throwIfAborted(options.signal), and returns { error: { tool, message } } JSON."
+        ]
+      },
+      {
+        "target": {
+          "id": "run-focused-regression",
+          "instruction": "Run a focused Node regression that registers a throwing task tool and invokes executeToolCalls.",
+          "expected": "The process exits 0 and prints a tool output containing an error object instead of throwing."
+        },
+        "result": true,
+        "descript": "The focused regression returns a function_call_output item and a tool_result event instead of throwing.",
+        "evidence": [
+          "Node regression against packages/ndx/dist/agent/loop/tool-execution.js exited 0.",
+          "Regression output contained call_id call-regression and JSON error.tool read_mcp_resource.",
+          "Regression tool_result event output contained the MCP server local missing-resource message."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Tool execution failures are now model-visible tool outputs.",
+      "evidence": [
+        "Focused regression produced function_call_output with the original missing-resource message."
+      ]
+    }
+  }
+]

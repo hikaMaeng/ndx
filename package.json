@@ -1,7 +1,7 @@
 {
   "name": "ndx-monorepo",
   "private": true,
-  "version": "0.1.40",
+  "version": "0.1.41",
   "type": "module",
   "description": "TypeScript-first local coding agent monorepo.",
   "workspaces": [

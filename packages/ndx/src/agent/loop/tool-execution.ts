@@ -65,13 +65,13 @@ async function executeToolCall(
     historySnapshot,
     agentController: options.agentController,
   };
-  const result = await registry.execute(
-    call.name,
+  const output = await executeRegistryTool(
+    call,
     args,
+    registry,
+    options,
     context,
-    options.signal,
   );
-  const output = result.output;
   return {
     name: call.name,
     output,
@@ -96,4 +96,34 @@ async function executeToolCallsSequentially(
     );
   }
   return outputs;
+}
+
+async function executeRegistryTool(
+  call: ModelToolCall,
+  args: Record<string, unknown>,
+  registry: ToolRegistry,
+  options: AgentRunOptions,
+  context: Parameters<ToolRegistry["execute"]>[2],
+): Promise<string> {
+  try {
+    const result = await registry.execute(
+      call.name,
+      args,
+      context,
+      options.signal,
+    );
+    return result.output;
+  } catch (error) {
+    throwIfAborted(options.signal);
+    return JSON.stringify({
+      error: {
+        tool: call.name,
+        message: errorMessage(error),
+      },
+    });
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

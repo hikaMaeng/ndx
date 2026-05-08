@@ -5,7 +5,7 @@ __metadata:
   version: 9
   cacheKey: 10c0
 
-"@neurondev/ndx-core@npm:^0.1.40, @neurondev/ndx-core@workspace:packages/ndx":
+"@neurondev/ndx-core@npm:^0.1.41, @neurondev/ndx-core@workspace:packages/ndx":
   version: 0.0.0-use.local
   resolution: "@neurondev/ndx-core@workspace:packages/ndx"
   dependencies:
@@ -24,7 +24,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@neurondev/ndx@workspace:apps/ndx"
   dependencies:
-    "@neurondev/ndx-core": "npm:^0.1.40"
+    "@neurondev/ndx-core": "npm:^0.1.41"
     "@types/node": "npm:^20.19.18"
     typescript: "npm:^5.9.2"
   bin:
@@ -37,7 +37,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@neurondev/ndxserver-app@workspace:apps/ndxserver"
   dependencies:
-    "@neurondev/ndx-core": "npm:^0.1.40"
+    "@neurondev/ndx-core": "npm:^0.1.41"
     "@types/node": "npm:^20.19.18"
     typescript: "npm:^5.9.2"
   languageName: unknown

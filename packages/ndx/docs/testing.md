@@ -33,6 +33,11 @@ behavior are covered by
 The 0.1.40 Verdaccio release and isolated install acceptance are covered by
 `test/20260508/214231_publish-install-tetris.json`.
 
+Tool execution must contain task-tool exceptions as model-visible
+`function_call_output` items unless the turn is aborted. The 0.1.41
+missing-MCP-resource regression is covered by
+`test/20260509/013818_mcp-resource-cli-error.json`.
+
 Browser-facing dashboard changes must preserve the root `main` landmark,
 dashboard navigation names, action status semantics, and documented test ids in
 root `docs/constraints.md`.

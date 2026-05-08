@@ -1,6 +1,6 @@
 {
   "name": "@neurondev/ndx-core",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "type": "module",
   "description": "Core ndx domain logic for CLI, server, dashboard, tools, models, and runtime.",
   "files": [

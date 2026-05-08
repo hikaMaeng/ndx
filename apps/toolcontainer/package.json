@@ -1,7 +1,7 @@
 {
   "name": "@neurondev/ndx-toolcontainer",
   "private": true,
-  "version": "0.1.40",
+  "version": "0.1.41",
   "type": "module",
   "description": "Docker build context for the ndx workspace tool sandbox.",
   "scripts": {
