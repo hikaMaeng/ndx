@@ -3,6 +3,8 @@ import { join } from "node:path";
 import type { NdxConfig } from "../shared/types.js";
 import { agentJobTools } from "./collaboration/agent-jobs.js";
 import { collaborationTools } from "./collaboration/agents.js";
+import { requestUserInputTool } from "./input/request-user-input.js";
+import { mcpResourceTools } from "./mcp/resources.js";
 import { mcpToolDefinitions } from "./mcp/tools.js";
 import { updatePlanTool } from "./planning/update-plan.js";
 import { skillTools } from "./skills.js";
@@ -57,6 +59,10 @@ export class ToolRegistry {
       layer: tool.layer ?? "unknown",
       kind: tool.kind ?? "task",
     }));
+  }
+
+  supportsParallelToolCalls(name: string): boolean {
+    return this.byName.get(name)?.supportsParallelToolCalls !== false;
   }
 
   requirements(options: { includeCore?: boolean } = {}): ToolRequirementSet {
@@ -129,6 +135,8 @@ export function filesystemToolRequirements(
 function taskTools(): ToolDefinition[] {
   return [
     markTask(updatePlanTool()),
+    markTask(requestUserInputTool()),
+    ...mcpResourceTools().map(markTask),
     ...skillTools().map(markTask),
     ...collaborationTools().map(markTask),
     ...agentJobTools().map(markTask),

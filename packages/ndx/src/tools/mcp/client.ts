@@ -95,6 +95,102 @@ export async function listMcpServerTools(
   return [];
 }
 
+export async function listConfiguredMcpResources(
+  config: NdxConfig,
+  serverName?: string,
+): Promise<Array<McpResourceSettings & { server: string }>> {
+  const resources = [...listStaticMcpResources(config, serverName)];
+  for (const [server, settings] of Object.entries(
+    selectServers(config, serverName),
+  )) {
+    if (settings.command === undefined) {
+      continue;
+    }
+    const result = await callJsonRpc(config, settings, "resources/list", {});
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      Array.isArray((result as { resources?: unknown }).resources)
+    ) {
+      resources.push(
+        ...(result as { resources: unknown[] }).resources.flatMap((resource) =>
+          normalizeResource(server, resource),
+        ),
+      );
+    }
+  }
+  return uniqueByServerUri(resources);
+}
+
+export async function listConfiguredMcpResourceTemplates(
+  config: NdxConfig,
+  serverName?: string,
+): Promise<Array<McpResourceTemplateSettings & { server: string }>> {
+  const templates = [...listStaticMcpResourceTemplates(config, serverName)];
+  for (const [server, settings] of Object.entries(
+    selectServers(config, serverName),
+  )) {
+    if (settings.command === undefined) {
+      continue;
+    }
+    const result = await callJsonRpc(
+      config,
+      settings,
+      "resources/templates/list",
+      {},
+    );
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      Array.isArray(
+        (result as { resourceTemplates?: unknown }).resourceTemplates,
+      )
+    ) {
+      templates.push(
+        ...(
+          result as { resourceTemplates: unknown[] }
+        ).resourceTemplates.flatMap((template) =>
+          normalizeResourceTemplate(server, template),
+        ),
+      );
+    }
+  }
+  return uniqueByServerTemplate(templates);
+}
+
+export async function readConfiguredMcpResource(
+  config: NdxConfig,
+  serverName: string,
+  uri: string,
+): Promise<unknown[]> {
+  const staticResource = readStaticMcpResource(config, serverName, uri);
+  if (staticResource !== undefined) {
+    if (staticResource.text !== undefined) {
+      return [
+        {
+          uri: staticResource.uri,
+          mimeType: staticResource.mimeType,
+          text: staticResource.text,
+        },
+      ];
+    }
+    return [{ ...staticResource }];
+  }
+  const server = config.mcp[serverName];
+  if (server?.command === undefined) {
+    throw new Error(`MCP server ${serverName} has no readable resource ${uri}`);
+  }
+  const result = await callJsonRpc(config, server, "resources/read", { uri });
+  if (
+    typeof result === "object" &&
+    result !== null &&
+    Array.isArray((result as { contents?: unknown }).contents)
+  ) {
+    return (result as { contents: unknown[] }).contents;
+  }
+  return [];
+}
+
 export function listStaticMcpResources(
   config: NdxConfig,
   serverName?: string,
@@ -137,6 +233,92 @@ function selectServers(
   }
   const server = config.mcp[serverName];
   return server === undefined ? {} : { [serverName]: server };
+}
+
+function normalizeResource(
+  server: string,
+  resource: unknown,
+): Array<McpResourceSettings & { server: string }> {
+  if (typeof resource !== "object" || resource === null) {
+    return [];
+  }
+  const entry = resource as {
+    uri?: unknown;
+    name?: unknown;
+    description?: unknown;
+    mimeType?: unknown;
+    text?: unknown;
+  };
+  if (typeof entry.uri !== "string") {
+    return [];
+  }
+  return [
+    {
+      server,
+      uri: entry.uri,
+      name: typeof entry.name === "string" ? entry.name : undefined,
+      description:
+        typeof entry.description === "string" ? entry.description : undefined,
+      mimeType: typeof entry.mimeType === "string" ? entry.mimeType : undefined,
+      text: typeof entry.text === "string" ? entry.text : undefined,
+    },
+  ];
+}
+
+function normalizeResourceTemplate(
+  server: string,
+  template: unknown,
+): Array<McpResourceTemplateSettings & { server: string }> {
+  if (typeof template !== "object" || template === null) {
+    return [];
+  }
+  const entry = template as {
+    uriTemplate?: unknown;
+    name?: unknown;
+    description?: unknown;
+    mimeType?: unknown;
+  };
+  if (typeof entry.uriTemplate !== "string") {
+    return [];
+  }
+  return [
+    {
+      server,
+      uriTemplate: entry.uriTemplate,
+      name: typeof entry.name === "string" ? entry.name : undefined,
+      description:
+        typeof entry.description === "string" ? entry.description : undefined,
+      mimeType: typeof entry.mimeType === "string" ? entry.mimeType : undefined,
+    },
+  ];
+}
+
+function uniqueByServerUri<T extends { server: string; uri: string }>(
+  resources: T[],
+): T[] {
+  const seen = new Set<string>();
+  return resources.filter((resource) => {
+    const key = `${resource.server}\0${resource.uri}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function uniqueByServerTemplate<
+  T extends { server: string; uriTemplate: string },
+>(templates: T[]): T[] {
+  const seen = new Set<string>();
+  return templates.filter((template) => {
+    const key = `${template.server}\0${template.uriTemplate}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 async function callJsonRpc(

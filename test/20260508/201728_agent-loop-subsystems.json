@@ -1,0 +1,101 @@
+{
+  "id": "agent-loop-subsystems",
+  "title": "Agent loop subsystem parity and artifact context",
+  "dependencies": {
+    "ndx": "0.1.39",
+    "node": ">=22",
+    "yarn": ">=4.14.1"
+  },
+  "items": {
+    "tools": [
+      {
+        "id": "builtin-tool-registration",
+        "title": "Built-in tool registry exposes context and input tools",
+        "test": "The task tool layer must expose request_user_input plus MCP resource list/template/read tools without removing the existing planning, skill, collaboration, and agent-job tools.",
+        "steps": [
+          {
+            "id": "inspect-registry",
+            "instruction": "Inspect the TypeScript task tool registry and MCP tool modules after implementation.",
+            "expected": "ToolRegistry task tools include request_user_input, list_mcp_resources, list_mcp_resource_templates, and read_mcp_resource."
+          },
+          {
+            "id": "build-types",
+            "instruction": "Run the package TypeScript build.",
+            "expected": "The build completes with the new tool definitions typed correctly."
+          }
+        ],
+        "passCriteria": "All required built-in tools are registered and the package build succeeds."
+      }
+    ],
+    "subagents": [
+      {
+        "id": "subagent-tools-use-controller",
+        "title": "Collaboration tools use a TypeScript sub-agent controller",
+        "test": "Collaboration tools must no longer return placeholder unavailable output; spawn_agent, send_input, wait_agent, close_agent, resume_agent, and list_agents should call a real in-process controller.",
+        "steps": [
+          {
+            "id": "inspect-controller",
+            "instruction": "Inspect collaboration tool implementations and the agent runtime wiring.",
+            "expected": "The tools call a shared controller through ToolContext, and AgentRuntime passes the controller into runAgent."
+          },
+          {
+            "id": "run-subagent-smoke",
+            "instruction": "Run a small built output script that spawns a mock child agent, waits for it, lists it, and closes it.",
+            "expected": "The script observes JSON outputs with real agent ids and terminal child status rather than status=unavailable."
+          }
+        ],
+        "passCriteria": "A child agent can be spawned and waited on through the built collaboration tool path."
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "artifact-context-contract",
+        "title": "Artifact classification is documented and reflected in loop context",
+        "test": "The package must document how historical Codex Rust differentiated model-visible resources from UI artifacts, and the NDX loop must inject only concrete local artifact references into turn context.",
+        "steps": [
+          {
+            "id": "inspect-rust-analysis-doc",
+            "instruction": "Inspect the new artifact analysis markdown document.",
+            "expected": "The document cites Rust paths for UserInput, contextual fragments, thread history items, MCP resource reads, and explains that UI artifacts are not blindly injected into model context."
+          },
+          {
+            "id": "inspect-loop-code",
+            "instruction": "Inspect the NDX agent loop context code.",
+            "expected": "The loop scans model-visible history and the prompt for existing local artifact references and adds a bounded user context message before the prompt."
+          }
+        ],
+        "passCriteria": "Artifact context behavior is code-backed and documented with Rust evidence."
+      }
+    ],
+    "documentation": [
+      {
+        "id": "docs-updated",
+        "title": "Package docs record new loop subsystem contracts",
+        "test": "Package docs must describe the new built-in tools, sub-agent controller, artifact context behavior, and the verification suite.",
+        "steps": [
+          {
+            "id": "inspect-docs",
+            "instruction": "Inspect packages/ndx README and docs pages after implementation.",
+            "expected": "README navigation links the new artifact analysis doc, architecture/internals/api/testing docs describe the new contracts, and testing docs reference this suite."
+          }
+        ],
+        "passCriteria": "Documentation matches the implemented subsystem contracts."
+      }
+    ],
+    "deployment": [
+      {
+        "id": "deploy-contract",
+        "title": "Repository deploy contract still passes",
+        "test": "The standard repository deploy command must complete after the agent loop subsystem changes.",
+        "steps": [
+          {
+            "id": "run-deploy",
+            "instruction": "Run npm run deploy from the repository root.",
+            "expected": "The deploy script completes successfully, including build, agenttest policy hook, Docker compose refresh, sandbox write verification, and teardown."
+          }
+        ],
+        "passCriteria": "npm run deploy exits successfully."
+      }
+    ]
+  }
+}

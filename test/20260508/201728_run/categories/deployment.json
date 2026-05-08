@@ -1,0 +1,41 @@
+[
+  {
+    "target": {
+      "id": "deploy-contract",
+      "title": "Repository deploy contract still passes",
+      "test": "The standard repository deploy command must complete after the agent loop subsystem changes.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy from the repository root.",
+          "expected": "The deploy script completes successfully, including build, agenttest policy hook, Docker compose refresh, sandbox write verification, and teardown."
+        }
+      ],
+      "passCriteria": "npm run deploy exits successfully."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy from the repository root.",
+          "expected": "The deploy script completes successfully, including build, agenttest policy hook, Docker compose refresh, sandbox write verification, and teardown."
+        },
+        "result": true,
+        "descript": "The deploy script completed successfully.",
+        "evidence": [
+          "Command completed with exit code 0: npm run deploy.",
+          "Deploy output ran Turbo build for @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app.",
+          "Deploy output ran the agenttest policy hook: agenttest policy: strict JSON results under test/YYYYMMDD.",
+          "Deploy output built hika00/ndx-sandbox:0.1.1, created and started ndx-deploy-40288-ndx-sandbox-1, then stopped and removed the container and network."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "The repository deploy contract passed.",
+      "evidence": [
+        "npm run deploy exited 0 after build, policy hook, Docker image build, compose start, and teardown."
+      ]
+    }
+  }
+]

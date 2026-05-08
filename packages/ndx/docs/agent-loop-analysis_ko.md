@@ -8,26 +8,26 @@ Rust 런타임과 이 패키지의 TypeScript NDX 런타임을 비교한다.
 
 `git show 936da925^:<path>`로 확인한 과거 Rust 소스:
 
-| 질문 | Rust 근거 |
-| ---- | --------- |
-| Regular task와 반복 pending input turn | `codex-rs/core/src/tasks/regular.rs` |
-| Sampling loop, response stream 처리, follow-up 판단 | `codex-rs/core/src/session/turn.rs` |
-| AGENTS.md instruction 조립 | `codex-rs/core/src/agents_md.rs` |
-| `<environment_context>` user fragment | `codex-rs/core/src/context/environment_context.rs` |
-| Sub-agent 생성, 상태, parent notification | `codex-rs/core/src/agent/control.rs` |
+| 질문                                                | Rust 근거                                          |
+| --------------------------------------------------- | -------------------------------------------------- |
+| Regular task와 반복 pending input turn              | `codex-rs/core/src/tasks/regular.rs`               |
+| Sampling loop, response stream 처리, follow-up 판단 | `codex-rs/core/src/session/turn.rs`                |
+| AGENTS.md instruction 조립                          | `codex-rs/core/src/agents_md.rs`                   |
+| `<environment_context>` user fragment               | `codex-rs/core/src/context/environment_context.rs` |
+| Sub-agent 생성, 상태, parent notification           | `codex-rs/core/src/agent/control.rs`               |
 
 현재 TypeScript 소스:
 
-| 질문 | NDX 근거 |
-| ---- | -------- |
-| Public agent loop와 max-turn budget | `src/agent/loop.ts` |
-| Turn별 AGENTS.md와 environment context snapshot | `src/agent/loop/initial-context.ts` |
-| Conversation state와 final-message persistence | `src/agent/loop/state.ts` |
-| Streaming collection과 follow-up 판단 | `src/agent/loop/sampling.ts` |
-| Tool execution과 output accumulation | `src/agent/loop/tool-execution.ts` |
-| Provider stream event mapping | `src/model/openai-responses.ts`, `src/model/openai.ts`, `src/model/router.ts` |
-| Runtime 및 JSON-RPC progress event | `src/runtime/runtime.ts`, `src/shared/protocol.ts`, `src/session/server/notifications.ts` |
-| Collaboration 및 agent-job tool availability | `src/tools/collaboration/agents.ts`, `src/tools/collaboration/agent-jobs.ts`, `src/tools/registry.ts` |
+| 질문                                            | NDX 근거                                                                                              |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Public agent loop와 max-turn budget             | `src/agent/loop.ts`                                                                                   |
+| Turn별 AGENTS.md와 environment context snapshot | `src/agent/loop/initial-context.ts`                                                                   |
+| Conversation state와 final-message persistence  | `src/agent/loop/state.ts`                                                                             |
+| Streaming collection과 follow-up 판단           | `src/agent/loop/sampling.ts`                                                                          |
+| Tool execution과 output accumulation            | `src/agent/loop/tool-execution.ts`                                                                    |
+| Provider stream event mapping                   | `src/model/openai-responses.ts`, `src/model/openai.ts`, `src/model/router.ts`                         |
+| Runtime 및 JSON-RPC progress event              | `src/runtime/runtime.ts`, `src/shared/protocol.ts`, `src/session/server/notifications.ts`             |
+| Collaboration 및 agent-job tool availability    | `src/tools/collaboration/agents.ts`, `src/tools/collaboration/agent-jobs.ts`, `src/tools/registry.ts` |
 
 ## 응답 스트림
 
@@ -84,23 +84,41 @@ live thread metadata, mailbox delivery, watch receiver를 통해 상태를 보�
 environment context에 렌더링할 수 있다. 완료 notification은 반드시 새 parent
 turn을 trigger하지 않고도 parent에 주입될 수 있다.
 
-현재 NDX TypeScript 패키지는 collaboration schema만 노출하고 backend는
-구현하지 않는다.
+현재 NDX TypeScript 패키지는 collaboration schema 뒤에 TypeScript
+sub-agent controller를 연결한다.
 
 - `collaborationTools()`는 `spawn_agent`, `send_input`, `resume_agent`,
   `wait_agent`, `close_agent`, `list_agents`를 등록한다.
 - `agentJobTools()`는 `spawn_agents_on_csv`, `report_agent_job_result`를
   등록한다.
-- 모든 구현은 `unavailable` JSON output을 반환하는 placeholder다.
+- 구현은 `ToolContext.agentController`를 통해 spawn, input 전송, wait,
+  close/resume/list, CSV worker spawn을 수행한다.
 - 해당 task tool definition의 `supportsParallelToolCalls`는 false다.
 - agent loop는 이 tool들도 일반 tool call처럼 취급한다. output은
   `executeToolCalls`로 수집되어 다른 tool result와 동일하게 model에
   되돌아간다.
 
-결론: 이 브랜치에서 sub-agent와 agent-job tool은 NDX 안에서 background work를
-만들 수 없다. parent loop를 자체적으로 계속 살려 두지도 못한다. 이들은
-unavailable tool output을 반환해 model이 다른 follow-up step을 선택하게 할
-수 있을 뿐이다.
+결론: 이 브랜치의 sub-agent와 agent-job tool은 더 이상 placeholder
+unavailable output만 반환하지 않는다. 다만 Rust의 mailbox/watch receiver와
+동일한 전체 session task graph는 아니며, parent loop는 wait tool output을
+통해 child 상태를 다시 model에 전달한다.
+
+## Artifact와 Resource Context
+
+Rust는 UI에 렌더링되는 artifact와 model-visible resource content를 분리한다.
+app-server는 rollout event에서 `ThreadItem`을 재구성하지만, 다음 prompt에
+들어가는 resource는 `UserInput`, `ContextualUserFragment`, hook context, 명시적
+MCP resource read처럼 별도 경로를 거친다. UI artifact panel의 모든 항목이
+자동으로 model context가 되는 구조는 아니다.
+
+NDX도 이 보수적 경계를 따른다. `src/agent/loop/artifacts.ts`는 기존
+model-visible history와 현재 prompt에서 실제 로컬 파일 참조를 찾고, active
+`cwd` 아래에 존재하는 파일만 제한된 `# Referenced Artifacts` user context로
+넣는다. text file은 짧은 excerpt를 포함하고, non-text file은 metadata만
+포함한다. MCP resource는 `list_mcp_resources`,
+`list_mcp_resource_templates`, `read_mcp_resource`로 명시적으로 다룬다.
+
+자세한 Rust 근거와 NDX contract는 `docs/agent-artifact-context.md`를 본다.
 
 ## Queue와 Concurrency
 
@@ -112,10 +130,13 @@ reservation이 분리되어 있다.
 NDX의 현재 model/tool loop는 단순하다.
 
 - 공개 budget은 `runAgent`의 `config.maxTurns`다.
-- 하나의 model response에서 나온 tool call들은 `Promise.all`로 동시에 실행된다.
-- tool execution은 `executeToolInWorker`를 통해 child Node worker에 위임된다.
+- 하나의 model response에서 나온 parallel-safe tool call들은 동시에 실행된다.
+- `supportsParallelToolCalls: false`인 task tool이 포함되면 response 순서대로
+  실행된다.
+- external tool runtime은 registry를 통해 process boundary로 실행된다.
 - `src/agent/loop/*` 안에는 loop-local semaphore가 없다.
-- collaboration 및 agent-job tool은 현재 background work를 queue에 넣지 않는다.
+- collaboration 및 agent-job tool은 TypeScript controller에 child work를
+  등록한다.
 
 결론: 활성 NDX loop에는 max-turn guard와 모든 tool call 완료 후 다음 sample을
 진행하는 동작이 있지만, Rust의 전체 task, mailbox, status-watch, child-agent

@@ -1,0 +1,58 @@
+[
+  {
+    "target": {
+      "id": "builtin-tool-registration",
+      "title": "Built-in tool registry exposes context and input tools",
+      "test": "The task tool layer must expose request_user_input plus MCP resource list/template/read tools without removing the existing planning, skill, collaboration, and agent-job tools.",
+      "steps": [
+        {
+          "id": "inspect-registry",
+          "instruction": "Inspect the TypeScript task tool registry and MCP tool modules after implementation.",
+          "expected": "ToolRegistry task tools include request_user_input, list_mcp_resources, list_mcp_resource_templates, and read_mcp_resource."
+        },
+        {
+          "id": "build-types",
+          "instruction": "Run the package TypeScript build.",
+          "expected": "The build completes with the new tool definitions typed correctly."
+        }
+      ],
+      "passCriteria": "All required built-in tools are registered and the package build succeeds."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-registry",
+          "instruction": "Inspect the TypeScript task tool registry and MCP tool modules after implementation.",
+          "expected": "ToolRegistry task tools include request_user_input, list_mcp_resources, list_mcp_resource_templates, and read_mcp_resource."
+        },
+        "result": true,
+        "descript": "The task layer registers request_user_input and the MCP resource tools.",
+        "evidence": [
+          "packages/ndx/src/tools/registry.ts imports requestUserInputTool and mcpResourceTools and adds them in taskTools().",
+          "packages/ndx/src/tools/mcp/resources.ts defines list_mcp_resources, list_mcp_resource_templates, and read_mcp_resource.",
+          "Built registry smoke printed request_user_input, list_mcp_resources, list_mcp_resource_templates, read_mcp_resource, and spawn_agent."
+        ]
+      },
+      {
+        "target": {
+          "id": "build-types",
+          "instruction": "Run the package TypeScript build.",
+          "expected": "The build completes with the new tool definitions typed correctly."
+        },
+        "result": true,
+        "descript": "The package TypeScript build completed.",
+        "evidence": [
+          "Command completed with exit code 0: yarn workspace @neurondev/ndx-core build"
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Required built-in tools are registered and typed.",
+      "evidence": [
+        "Tool registry smoke returned true for required tool names.",
+        "yarn workspace @neurondev/ndx-core build exited 0."
+      ]
+    }
+  }
+]

@@ -4,6 +4,8 @@ import type {
   NdxConfig,
   ShellResult,
 } from "../shared/types.js";
+import type { ModelConversationItem } from "../model/types.js";
+import type { CollaborationAgentController } from "./collaboration/controller.js";
 
 export type ToolArguments = Record<string, unknown>;
 
@@ -21,6 +23,8 @@ export interface ToolContext {
   config: NdxConfig;
   env: EnvMap;
   timeoutMs: number;
+  historySnapshot?: ModelConversationItem[];
+  agentController?: CollaborationAgentController;
 }
 
 export interface ToolExecutionResult {

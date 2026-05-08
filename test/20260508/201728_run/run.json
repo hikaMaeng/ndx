@@ -1,0 +1,153 @@
+{
+  "runUuid": "run-44a77731-c688-4ef8-bdeb-24a897781e01",
+  "suitePath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_agent-loop-subsystems.json",
+  "suite": {
+    "id": "agent-loop-subsystems",
+    "title": "Agent loop subsystem parity and artifact context",
+    "dependencies": {
+      "ndx": "0.1.39",
+      "node": ">=22",
+      "yarn": ">=4.14.1"
+    },
+    "items": {
+      "tools": [
+        {
+          "id": "builtin-tool-registration",
+          "title": "Built-in tool registry exposes context and input tools",
+          "test": "The task tool layer must expose request_user_input plus MCP resource list/template/read tools without removing the existing planning, skill, collaboration, and agent-job tools.",
+          "steps": [
+            {
+              "id": "inspect-registry",
+              "instruction": "Inspect the TypeScript task tool registry and MCP tool modules after implementation.",
+              "expected": "ToolRegistry task tools include request_user_input, list_mcp_resources, list_mcp_resource_templates, and read_mcp_resource."
+            },
+            {
+              "id": "build-types",
+              "instruction": "Run the package TypeScript build.",
+              "expected": "The build completes with the new tool definitions typed correctly."
+            }
+          ],
+          "passCriteria": "All required built-in tools are registered and the package build succeeds."
+        }
+      ],
+      "subagents": [
+        {
+          "id": "subagent-tools-use-controller",
+          "title": "Collaboration tools use a TypeScript sub-agent controller",
+          "test": "Collaboration tools must no longer return placeholder unavailable output; spawn_agent, send_input, wait_agent, close_agent, resume_agent, and list_agents should call a real in-process controller.",
+          "steps": [
+            {
+              "id": "inspect-controller",
+              "instruction": "Inspect collaboration tool implementations and the agent runtime wiring.",
+              "expected": "The tools call a shared controller through ToolContext, and AgentRuntime passes the controller into runAgent."
+            },
+            {
+              "id": "run-subagent-smoke",
+              "instruction": "Run a small built output script that spawns a mock child agent, waits for it, lists it, and closes it.",
+              "expected": "The script observes JSON outputs with real agent ids and terminal child status rather than status=unavailable."
+            }
+          ],
+          "passCriteria": "A child agent can be spawned and waited on through the built collaboration tool path."
+        }
+      ],
+      "artifacts": [
+        {
+          "id": "artifact-context-contract",
+          "title": "Artifact classification is documented and reflected in loop context",
+          "test": "The package must document how historical Codex Rust differentiated model-visible resources from UI artifacts, and the NDX loop must inject only concrete local artifact references into turn context.",
+          "steps": [
+            {
+              "id": "inspect-rust-analysis-doc",
+              "instruction": "Inspect the new artifact analysis markdown document.",
+              "expected": "The document cites Rust paths for UserInput, contextual fragments, thread history items, MCP resource reads, and explains that UI artifacts are not blindly injected into model context."
+            },
+            {
+              "id": "inspect-loop-code",
+              "instruction": "Inspect the NDX agent loop context code.",
+              "expected": "The loop scans model-visible history and the prompt for existing local artifact references and adds a bounded user context message before the prompt."
+            }
+          ],
+          "passCriteria": "Artifact context behavior is code-backed and documented with Rust evidence."
+        }
+      ],
+      "documentation": [
+        {
+          "id": "docs-updated",
+          "title": "Package docs record new loop subsystem contracts",
+          "test": "Package docs must describe the new built-in tools, sub-agent controller, artifact context behavior, and the verification suite.",
+          "steps": [
+            {
+              "id": "inspect-docs",
+              "instruction": "Inspect packages/ndx README and docs pages after implementation.",
+              "expected": "README navigation links the new artifact analysis doc, architecture/internals/api/testing docs describe the new contracts, and testing docs reference this suite."
+            }
+          ],
+          "passCriteria": "Documentation matches the implemented subsystem contracts."
+        }
+      ],
+      "deployment": [
+        {
+          "id": "deploy-contract",
+          "title": "Repository deploy contract still passes",
+          "test": "The standard repository deploy command must complete after the agent loop subsystem changes.",
+          "steps": [
+            {
+              "id": "run-deploy",
+              "instruction": "Run npm run deploy from the repository root.",
+              "expected": "The deploy script completes successfully, including build, agenttest policy hook, Docker compose refresh, sandbox write verification, and teardown."
+            }
+          ],
+          "passCriteria": "npm run deploy exits successfully."
+        }
+      ]
+    }
+  },
+  "runDir": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_run",
+  "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_report.json",
+  "summaryPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_summary.md",
+  "status": "done",
+  "createdAt": "2026-05-08T11:19:15.212Z",
+  "updatedAt": "2026-05-08T11:52:25.944Z",
+  "categories": {
+    "tools": {
+      "workerUuid": "worker-fed8fa4d-e2e6-499f-b9cf-85868e87c809",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_run/categories/tools.json",
+      "startedAt": "2026-05-08T11:40:11.506Z",
+      "finishedAt": "2026-05-08T11:42:52.997Z"
+    },
+    "subagents": {
+      "workerUuid": "worker-447e2ea8-d768-48da-971a-3821bd7e470d",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_run/categories/subagents.json",
+      "startedAt": "2026-05-08T11:40:11.546Z",
+      "finishedAt": "2026-05-08T11:42:53.024Z"
+    },
+    "artifacts": {
+      "workerUuid": "worker-06e9ed65-efda-44fc-a9c9-6ff2c82bbd78",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_run/categories/artifacts.json",
+      "startedAt": "2026-05-08T11:40:11.572Z",
+      "finishedAt": "2026-05-08T11:45:20.184Z"
+    },
+    "documentation": {
+      "workerUuid": "worker-6bab0da5-f512-4117-ab14-eab13214aaf5",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_run/categories/documentation.json",
+      "startedAt": "2026-05-08T11:40:46.658Z",
+      "finishedAt": "2026-05-08T11:42:53.149Z"
+    },
+    "deployment": {
+      "workerUuid": "worker-eca43b32-73bb-4c5b-b178-0995b6b60444",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/201728_run/categories/deployment.json",
+      "startedAt": "2026-05-08T11:40:46.691Z",
+      "finishedAt": "2026-05-08T11:52:25.944Z"
+    }
+  }
+}

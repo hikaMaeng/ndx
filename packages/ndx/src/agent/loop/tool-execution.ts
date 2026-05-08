@@ -1,8 +1,8 @@
 import { throwIfAborted } from "../../runtime/abort.js";
-import { executeToolInWorker } from "../../tools/process-runner.js";
 import { unknownArgs } from "../../tools/schema.js";
 import type { ModelConversationItem } from "../../model/types.js";
 import type { ModelToolCall } from "../../shared/types.js";
+import type { ToolRegistry } from "../../tools/registry.js";
 import type { AgentRunOptions } from "./types.js";
 
 type ToolOutput = {
@@ -13,12 +13,25 @@ type ToolOutput = {
 
 export async function executeToolCalls(
   calls: ModelToolCall[],
+  registry: ToolRegistry,
   options: AgentRunOptions,
+  historySnapshot: ModelConversationItem[],
 ): Promise<ModelConversationItem[]> {
   throwIfAborted(options.signal);
-  const outputs = await Promise.all(
-    calls.map((call) => executeToolCall(call, options)),
-  );
+  const outputs = calls.every((call) =>
+    registry.supportsParallelToolCalls(call.name),
+  )
+    ? await Promise.all(
+        calls.map((call) =>
+          executeToolCall(call, registry, options, historySnapshot),
+        ),
+      )
+    : await executeToolCallsSequentially(
+        calls,
+        registry,
+        options,
+        historySnapshot,
+      );
   throwIfAborted(options.signal);
   for (const output of outputs) {
     options.onEvent?.({
@@ -33,7 +46,9 @@ export async function executeToolCalls(
 
 async function executeToolCall(
   call: ModelToolCall,
+  registry: ToolRegistry,
   options: AgentRunOptions,
+  historySnapshot: ModelConversationItem[],
 ): Promise<ToolOutput> {
   options.onEvent?.({
     type: "tool_call",
@@ -47,8 +62,10 @@ async function executeToolCall(
     config: options.config,
     env: options.config.env,
     timeoutMs: options.config.shellTimeoutMs,
+    historySnapshot,
+    agentController: options.agentController,
   };
-  const result = await executeToolInWorker(
+  const result = await registry.execute(
     call.name,
     args,
     context,
@@ -64,4 +81,19 @@ async function executeToolCall(
       output,
     },
   };
+}
+
+async function executeToolCallsSequentially(
+  calls: ModelToolCall[],
+  registry: ToolRegistry,
+  options: AgentRunOptions,
+  historySnapshot: ModelConversationItem[],
+): Promise<ToolOutput[]> {
+  const outputs: ToolOutput[] = [];
+  for (const call of calls) {
+    outputs.push(
+      await executeToolCall(call, registry, options, historySnapshot),
+    );
+  }
+  return outputs;
 }

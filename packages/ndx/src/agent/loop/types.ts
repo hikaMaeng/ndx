@@ -1,5 +1,6 @@
 import type { ModelClient, NdxConfig, TokenUsage } from "../../shared/types.js";
 import type { ModelConversationItem } from "../../model/types.js";
+import type { CollaborationAgentController } from "../../tools/collaboration/controller.js";
 
 export interface AgentRunOptions {
   cwd: string;
@@ -8,6 +9,7 @@ export interface AgentRunOptions {
   prompt: string;
   history?: ModelConversationItem[];
   signal?: AbortSignal;
+  agentController?: CollaborationAgentController;
   onEvent?: (event: AgentEvent) => void;
 }
 
