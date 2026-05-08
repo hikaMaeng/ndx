@@ -1,0 +1,39 @@
+{
+  "target": {
+    "id": "publish-docs",
+    "title": "Publish and install-test documentation records the 0.1.40 acceptance",
+    "test": "Repository documentation records the release and the sandbox Tetris acceptance path without generic tutorial prose.",
+    "steps": [
+      {
+        "id": "update-docs",
+        "instruction": "Update package docs for the publish/install-test acceptance contract and current agenttest report.",
+        "expected": "Docs mention the 0.1.40 Verdaccio install-test and point to the strict JSON report."
+      }
+    ],
+    "passCriteria": "Docs contain durable release verification notes for this task."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "update-docs",
+        "instruction": "Update package docs for the publish/install-test acceptance contract and current agenttest report.",
+        "expected": "Docs mention the 0.1.40 Verdaccio install-test and point to the strict JSON report."
+      },
+      "result": true,
+      "descript": "Root and package docs record the release acceptance suite path and sandbox install contract.",
+      "evidence": [
+        "docs/testing.md references test/20260508/214231_publish-install-tetris.json.",
+        "docs/usage.md records the clean sandbox prefix acceptance contract.",
+        "apps/ndx/docs/testing.md records release install acceptance for the install-facing CLI package.",
+        "packages/ndx/docs/testing.md references the 0.1.40 release suite."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Documentation was updated for the release acceptance path.",
+    "evidence": [
+      "Documentation changes are present in docs/testing.md, docs/usage.md, apps/ndx/docs/testing.md, and packages/ndx/docs/testing.md."
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "target": {
+    "id": "mcp-resource-error-repro",
+    "title": "Missing MCP resource currently reproduces a request-level failure",
+    "test": "Exercise read_mcp_resource with an unreadable local resource URI and capture the pre-fix behavior.",
+    "steps": [
+      {
+        "id": "call-resource-tool",
+        "instruction": "Run a focused tool execution against read_mcp_resource using server=local and a missing file URI.",
+        "expected": "Before the fix, the tool throws a readable error matching the user-observed failure path."
+      }
+    ],
+    "passCriteria": "The failing resource path is reproducible without requiring an interactive user session."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "call-resource-tool",
+        "instruction": "Run a focused tool execution against read_mcp_resource using server=local and a missing file URI.",
+        "expected": "Before the fix, the tool throws a readable error matching the user-observed failure path."
+      },
+      "result": true,
+      "descript": "The current tool execution path rejects the whole call when a resource read throws.",
+      "evidence": [
+        "Focused Node reproduction against packages/ndx/dist/agent/loop/tool-execution.js exited 0 after catching the thrown error.",
+        "Observed error text: MCP server local has no readable resource file:///C:/Users/hika0/.ndx/skills/web-service-scaffold/references/checklist.md."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "The user-observed missing-resource failure is reproducible as a request-level throw.",
+    "evidence": [
+      "executeToolCalls rejected instead of returning a function_call_output item."
+    ]
+  }
+}

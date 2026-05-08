@@ -1,7 +1,7 @@
 {
   "name": "@neurondev/ndxserver-app",
   "private": true,
-  "version": "0.1.39",
+  "version": "0.1.41",
   "type": "module",
   "description": "Private ndx server app wrapper.",
   "scripts": {
@@ -9,7 +9,7 @@
     "test": "node -e \"console.log('agenttest app policy: strict JSON results under test/YYYYMMDD')\""
   },
   "dependencies": {
-    "@neurondev/ndx-core": "workspace:^"
+    "@neurondev/ndx-core": "^0.1.41"
   },
   "devDependencies": {
     "@types/node": "^20.19.18",

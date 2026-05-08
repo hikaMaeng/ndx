@@ -1,0 +1,80 @@
+{
+  "id": "mcp-resource-cli-error-0.1.41",
+  "title": "MCP resource read failures stay inside the ndx turn instead of crashing the CLI",
+  "dependencies": {
+    "ndx": "0.1.41",
+    "previous": "0.1.40"
+  },
+  "items": {
+    "reproduction": [
+      {
+        "id": "mcp-resource-error-repro",
+        "title": "Missing MCP resource currently reproduces a request-level failure",
+        "test": "Exercise read_mcp_resource with an unreadable local resource URI and capture the pre-fix behavior.",
+        "steps": [
+          {
+            "id": "call-resource-tool",
+            "instruction": "Run a focused tool execution against read_mcp_resource using server=local and a missing file URI.",
+            "expected": "Before the fix, the tool throws a readable error matching the user-observed failure path."
+          }
+        ],
+        "passCriteria": "The failing resource path is reproducible without requiring an interactive user session."
+      }
+    ],
+    "implementation": [
+      {
+        "id": "tool-error-containment",
+        "title": "Agent loop converts tool exceptions into model-visible tool results",
+        "test": "A throwing tool call must not reject the whole turn; it must produce a tool output item containing the error.",
+        "steps": [
+          {
+            "id": "inspect-tool-execution",
+            "instruction": "Patch the agent loop tool execution path so registry.execute exceptions are caught per tool call.",
+            "expected": "executeToolCalls returns a tool output item for failed tools and continues processing later calls."
+          },
+          {
+            "id": "run-focused-regression",
+            "instruction": "Run a focused Node regression that registers a throwing task tool and invokes executeToolCalls.",
+            "expected": "The process exits 0 and prints a tool output containing an error object instead of throwing."
+          }
+        ],
+        "passCriteria": "Tool execution failures are represented as model-visible tool outputs."
+      }
+    ],
+    "documentation": [
+      {
+        "id": "tool-error-docs",
+        "title": "Docs record the tool failure containment contract",
+        "test": "Package docs describe that task tool exceptions are contained as tool results.",
+        "steps": [
+          {
+            "id": "update-testing-doc",
+            "instruction": "Update package testing docs with the new regression suite path and the tool error containment contract.",
+            "expected": "Docs mention test/20260509/013818_mcp-resource-cli-error.json."
+          }
+        ],
+        "passCriteria": "Docs point to the strict JSON regression record."
+      }
+    ],
+    "release": [
+      {
+        "id": "build-deploy-publish",
+        "title": "Build, deploy, publish, and install the fixed version",
+        "test": "The fixed package builds, deploys, publishes as 0.1.41, and installs from Verdaccio.",
+        "steps": [
+          {
+            "id": "build-deploy",
+            "instruction": "Run yarn install --immutable, yarn build, and npm run deploy.",
+            "expected": "All commands exit 0 and Docker compose refresh completes."
+          },
+          {
+            "id": "publish-install",
+            "instruction": "Publish @neurondev/ndx-core@0.1.41 and @neurondev/ndx@0.1.41 to Verdaccio, then install @neurondev/ndx@0.1.41 into a clean prefix.",
+            "expected": "npm view returns 0.1.41 for both packages and installed ndx/ndxserver bins report 0.1.41."
+          }
+        ],
+        "passCriteria": "The fixed version is available from Verdaccio and install verification passes."
+      }
+    ]
+  }
+}

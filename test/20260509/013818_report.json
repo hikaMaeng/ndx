@@ -1,0 +1,136 @@
+{
+  "@meta": {
+    "subagents": [
+      {
+        "target": "reproduction",
+        "elapsed": 165824
+      },
+      {
+        "target": "implementation",
+        "elapsed": 371768
+      },
+      {
+        "target": "documentation",
+        "elapsed": 0
+      },
+      {
+        "target": "release",
+        "elapsed": 612661
+      }
+    ],
+    "elapsed": 1236589,
+    "result": true,
+    "detail": "4 passed / 0 failed",
+    "started": "2026-05-08T16:40:07.737Z"
+  },
+  "reproduction": [
+    {
+      "id": "mcp-resource-error-repro",
+      "title": "Missing MCP resource currently reproduces a request-level failure",
+      "test": "Exercise read_mcp_resource with an unreadable local resource URI and capture the pre-fix behavior.",
+      "steps": [
+        {
+          "id": "call-resource-tool",
+          "instruction": "Run a focused tool execution against read_mcp_resource using server=local and a missing file URI.",
+          "expected": "Before the fix, the tool throws a readable error matching the user-observed failure path.",
+          "result": true,
+          "descript": "The current tool execution path rejects the whole call when a resource read throws.",
+          "evidence": [
+            "Focused Node reproduction against packages/ndx/dist/agent/loop/tool-execution.js exited 0 after catching the thrown error.",
+            "Observed error text: MCP server local has no readable resource file:///C:/Users/hika0/.ndx/skills/web-service-scaffold/references/checklist.md."
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation": [
+    {
+      "id": "tool-error-containment",
+      "title": "Agent loop converts tool exceptions into model-visible tool results",
+      "test": "A throwing tool call must not reject the whole turn; it must produce a tool output item containing the error.",
+      "steps": [
+        {
+          "id": "inspect-tool-execution",
+          "instruction": "Patch the agent loop tool execution path so registry.execute exceptions are caught per tool call.",
+          "expected": "executeToolCalls returns a tool output item for failed tools and continues processing later calls.",
+          "result": true,
+          "descript": "executeToolCall now wraps registry.execute through executeRegistryTool and returns JSON error output for non-abort exceptions.",
+          "evidence": [
+            "packages/ndx/src/agent/loop/tool-execution.ts catches registry.execute errors, calls throwIfAborted(options.signal), and returns { error: { tool, message } } JSON."
+          ]
+        },
+        {
+          "id": "run-focused-regression",
+          "instruction": "Run a focused Node regression that registers a throwing task tool and invokes executeToolCalls.",
+          "expected": "The process exits 0 and prints a tool output containing an error object instead of throwing.",
+          "result": true,
+          "descript": "The focused regression returns a function_call_output item and a tool_result event instead of throwing.",
+          "evidence": [
+            "Node regression against packages/ndx/dist/agent/loop/tool-execution.js exited 0.",
+            "Regression output contained call_id call-regression and JSON error.tool read_mcp_resource.",
+            "Regression tool_result event output contained the MCP server local missing-resource message."
+          ]
+        }
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "tool-error-docs",
+      "title": "Docs record the tool failure containment contract",
+      "test": "Package docs describe that task tool exceptions are contained as tool results.",
+      "steps": [
+        {
+          "id": "update-testing-doc",
+          "instruction": "Update package testing docs with the new regression suite path and the tool error containment contract.",
+          "expected": "Docs mention test/20260509/013818_mcp-resource-cli-error.json.",
+          "result": true,
+          "descript": "Root and package testing docs record the missing-MCP-resource regression suite.",
+          "evidence": [
+            "docs/testing.md mentions test/20260509/013818_mcp-resource-cli-error.json.",
+            "packages/ndx/docs/testing.md mentions test/20260509/013818_mcp-resource-cli-error.json and the function_call_output containment contract."
+          ]
+        }
+      ]
+    }
+  ],
+  "release": [
+    {
+      "id": "build-deploy-publish",
+      "title": "Build, deploy, publish, and install the fixed version",
+      "test": "The fixed package builds, deploys, publishes as 0.1.41, and installs from Verdaccio.",
+      "steps": [
+        {
+          "id": "build-deploy",
+          "instruction": "Run yarn install --immutable, yarn build, and npm run deploy.",
+          "expected": "All commands exit 0 and Docker compose refresh completes.",
+          "result": true,
+          "descript": "Build and deploy verification completed successfully.",
+          "evidence": [
+            "yarn install --immutable exited 0.",
+            "yarn build exited 0 across all four packages.",
+            "npm run deploy exited 0.",
+            "Deploy built hika00/ndx-sandbox:0.1.1 and started/stopped/removed compose container ndx-deploy-56648-ndx-sandbox-1."
+          ]
+        },
+        {
+          "id": "publish-install",
+          "instruction": "Publish @neurondev/ndx-core@0.1.41 and @neurondev/ndx@0.1.41 to Verdaccio, then install @neurondev/ndx@0.1.41 into a clean prefix.",
+          "expected": "npm view returns 0.1.41 for both packages and installed ndx/ndxserver bins report 0.1.41.",
+          "result": true,
+          "descript": "The fixed version was published and installed from Verdaccio.",
+          "evidence": [
+            "npm publish for @neurondev/ndx-core@0.1.41 exited 0.",
+            "npm publish for @neurondev/ndx@0.1.41 exited 0.",
+            "npm view @neurondev/ndx-core@0.1.41 returned 0.1.41.",
+            "npm view @neurondev/ndx@0.1.41 returned 0.1.41.",
+            "Clean prefix install from Verdaccio added 2 packages.",
+            "/tmp/ndx-publish-check-0.1.41/prefix/bin/ndx --version returned 0.1.41.",
+            "/tmp/ndx-publish-check-0.1.41/prefix/bin/ndxserver --version returned 0.1.41.",
+            "Installed package regression returned a JSON tool error output for read_mcp_resource instead of throwing."
+          ]
+        }
+      ]
+    }
+  ]
+}

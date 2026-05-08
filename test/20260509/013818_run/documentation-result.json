@@ -1,0 +1,37 @@
+{
+  "target": {
+    "id": "tool-error-docs",
+    "title": "Docs record the tool failure containment contract",
+    "test": "Package docs describe that task tool exceptions are contained as tool results.",
+    "steps": [
+      {
+        "id": "update-testing-doc",
+        "instruction": "Update package testing docs with the new regression suite path and the tool error containment contract.",
+        "expected": "Docs mention test/20260509/013818_mcp-resource-cli-error.json."
+      }
+    ],
+    "passCriteria": "Docs point to the strict JSON regression record."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "update-testing-doc",
+        "instruction": "Update package testing docs with the new regression suite path and the tool error containment contract.",
+        "expected": "Docs mention test/20260509/013818_mcp-resource-cli-error.json."
+      },
+      "result": true,
+      "descript": "Root and package testing docs record the missing-MCP-resource regression suite.",
+      "evidence": [
+        "docs/testing.md mentions test/20260509/013818_mcp-resource-cli-error.json.",
+        "packages/ndx/docs/testing.md mentions test/20260509/013818_mcp-resource-cli-error.json and the function_call_output containment contract."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "The documentation points to the strict JSON regression record.",
+    "evidence": [
+      "Both testing docs were updated before release verification."
+    ]
+  }
+}

@@ -1,0 +1,58 @@
+[
+  {
+    "target": {
+      "id": "deploy-and-commit",
+      "title": "Deploy verification and Git commit complete the release task",
+      "test": "The repository deploy path runs after the publish/install-test changes, and the resulting work is committed.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy after changes and acceptance checks.",
+          "expected": "The command exits 0 and refreshes the Docker sandbox compose stack."
+        },
+        {
+          "id": "commit",
+          "instruction": "Commit the version, docs, and test artifacts.",
+          "expected": "Git contains a new commit for the release task."
+        }
+      ],
+      "passCriteria": "Deploy passes and a release task commit exists."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy after changes and acceptance checks.",
+          "expected": "The command exits 0 and refreshes the Docker sandbox compose stack."
+        },
+        "result": true,
+        "descript": "Deploy completed successfully after the version and dependency changes.",
+        "evidence": [
+          "npm run deploy exited 0.",
+          "Turbo build completed for all four packages.",
+          "Docker image hika00/ndx-sandbox:0.1.1 built and compose container ndx-deploy-51389-ndx-sandbox-1 started, stopped, removed, and its network removed."
+        ]
+      },
+      {
+        "target": {
+          "id": "commit",
+          "instruction": "Commit the version, docs, and test artifacts.",
+          "expected": "Git contains a new commit for the release task."
+        },
+        "result": false,
+        "descript": "A final commit is intentionally deferred until the failed strict JSON report is finalized and can be included.",
+        "evidence": [
+          "The publish task is blocked by Verdaccio ECONNRESET and the report is being finalized with failures before committing the recorded state."
+        ]
+      }
+    ],
+    "result": {
+      "result": false,
+      "descript": "Deploy passed, but the release task is not complete because publish/install failed and commit occurs after report finalization.",
+      "evidence": [
+        "npm run deploy exited 0.",
+        "Verdaccio publish and install criteria are failed in sibling categories."
+      ]
+    }
+  }
+]

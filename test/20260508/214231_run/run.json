@@ -1,0 +1,162 @@
+{
+  "runUuid": "run-96ddd185-a4f1-428a-8a80-5d869b5bed3b",
+  "suitePath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_publish-install-tetris.json",
+  "suite": {
+    "id": "publish-install-tetris-0.1.40",
+    "title": "Publish ndx 0.1.40 and install-test with a Tetris acceptance task",
+    "dependencies": {
+      "ndx": "0.1.40",
+      "registry": "https://verdaccio.neurondev.net/"
+    },
+    "items": {
+      "versioning": [
+        {
+          "id": "version-bump",
+          "title": "Workspace packages use the new publish version",
+          "test": "The monorepo package manifests that carry the release version are updated from 0.1.39 to 0.1.40 before publishing.",
+          "steps": [
+            {
+              "id": "inspect-manifests",
+              "instruction": "Read root, app, package, and private workspace package manifests.",
+              "expected": "Each manifest with a version field reports 0.1.40."
+            }
+          ],
+          "passCriteria": "All release-bearing package.json files report version 0.1.40."
+        }
+      ],
+      "publish": [
+        {
+          "id": "verdaccio-publish",
+          "title": "New packages are published to Verdaccio",
+          "test": "@neurondev/ndx-core and @neurondev/ndx version 0.1.40 are published to the configured Verdaccio registry.",
+          "steps": [
+            {
+              "id": "publish-core",
+              "instruction": "Publish @neurondev/ndx-core@0.1.40 to Verdaccio after a successful build.",
+              "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run."
+            },
+            {
+              "id": "publish-cli",
+              "instruction": "Publish @neurondev/ndx@0.1.40 to Verdaccio after the core package is available.",
+              "expected": "Verdaccio accepts the package or reports that the exact intended version is already present from this run."
+            },
+            {
+              "id": "query-registry",
+              "instruction": "Query Verdaccio for both published versions.",
+              "expected": "npm view returns 0.1.40 for both packages."
+            }
+          ],
+          "passCriteria": "Both publishable packages are retrievable from Verdaccio as version 0.1.40."
+        }
+      ],
+      "acceptance": [
+        {
+          "id": "sandbox-install-tetris",
+          "title": "Installed ndx can drive a Tetris creation task in an isolated sandbox",
+          "test": "A separate filesystem sandbox installs @neurondev/ndx@0.1.40 from Verdaccio and uses the installed bins to run a simple Tetris project creation acceptance flow.",
+          "steps": [
+            {
+              "id": "create-sandbox",
+              "instruction": "Create a clean temporary sandbox outside the repository and install @neurondev/ndx@0.1.40 from Verdaccio there.",
+              "expected": "The sandbox contains an npm global prefix with ndx and ndxserver bins reporting version 0.1.40."
+            },
+            {
+              "id": "create-tetris",
+              "instruction": "In the sandbox, create a minimal Tetris game project through the installed Node/npm toolchain and installed ndx availability check.",
+              "expected": "The Tetris project contains HTML, CSS, and JavaScript files with game loop, board, piece movement, rotation, line clearing, score, and next-piece UI."
+            },
+            {
+              "id": "verify-tetris",
+              "instruction": "Run automated checks against the sandbox Tetris files.",
+              "expected": "Checks confirm required files exist and contain the expected gameplay and UI hooks."
+            }
+          ],
+          "passCriteria": "The isolated sandbox install works and the Tetris acceptance project passes its automated checks."
+        }
+      ],
+      "documentation": [
+        {
+          "id": "publish-docs",
+          "title": "Publish and install-test documentation records the 0.1.40 acceptance",
+          "test": "Repository documentation records the release and the sandbox Tetris acceptance path without generic tutorial prose.",
+          "steps": [
+            {
+              "id": "update-docs",
+              "instruction": "Update package docs for the publish/install-test acceptance contract and current agenttest report.",
+              "expected": "Docs mention the 0.1.40 Verdaccio install-test and point to the strict JSON report."
+            }
+          ],
+          "passCriteria": "Docs contain durable release verification notes for this task."
+        }
+      ],
+      "deployment": [
+        {
+          "id": "deploy-and-commit",
+          "title": "Deploy verification and Git commit complete the release task",
+          "test": "The repository deploy path runs after the publish/install-test changes, and the resulting work is committed.",
+          "steps": [
+            {
+              "id": "run-deploy",
+              "instruction": "Run npm run deploy after changes and acceptance checks.",
+              "expected": "The command exits 0 and refreshes the Docker sandbox compose stack."
+            },
+            {
+              "id": "commit",
+              "instruction": "Commit the version, docs, and test artifacts.",
+              "expected": "Git contains a new commit for the release task."
+            }
+          ],
+          "passCriteria": "Deploy passes and a release task commit exists."
+        }
+      ]
+    }
+  },
+  "runDir": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_run",
+  "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_report.json",
+  "summaryPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_summary.md",
+  "status": "done",
+  "createdAt": "2026-05-08T12:44:10.206Z",
+  "updatedAt": "2026-05-08T14:35:38.035Z",
+  "categories": {
+    "versioning": {
+      "workerUuid": "worker-fc67d4ae-48a2-4af2-a527-d24b4fbad5c5",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_run/categories/versioning.json",
+      "startedAt": "2026-05-08T12:47:59.158Z",
+      "finishedAt": "2026-05-08T12:49:03.848Z"
+    },
+    "publish": {
+      "workerUuid": "worker-92a1e441-21d8-41d6-9933-4a19995340ac",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_run/categories/publish.json",
+      "startedAt": "2026-05-08T14:28:27.230Z",
+      "finishedAt": "2026-05-08T14:30:15.663Z"
+    },
+    "acceptance": {
+      "workerUuid": "worker-10269b70-b79c-4ca7-97c6-8023d42cbd55",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_run/categories/acceptance.json",
+      "startedAt": "2026-05-08T14:28:27.369Z",
+      "finishedAt": "2026-05-08T14:30:15.821Z"
+    },
+    "documentation": {
+      "workerUuid": "worker-e45928b1-7f50-4d7c-9938-4c9514f36abb",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_run/categories/documentation.json",
+      "startedAt": "2026-05-08T14:28:27.505Z",
+      "finishedAt": "2026-05-08T14:30:15.981Z"
+    },
+    "deployment": {
+      "workerUuid": "worker-51287caa-2b72-4c0a-9cfe-54d6e7cfc750",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/d945/ndx/test/20260508/214231_run/categories/deployment.json",
+      "startedAt": "2026-05-08T14:34:19.427Z",
+      "finishedAt": "2026-05-08T14:35:38.035Z"
+    }
+  }
+}

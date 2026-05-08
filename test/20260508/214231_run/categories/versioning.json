@@ -1,0 +1,40 @@
+[
+  {
+    "target": {
+      "id": "version-bump",
+      "title": "Workspace packages use the new publish version",
+      "test": "The monorepo package manifests that carry the release version are updated from 0.1.39 to 0.1.40 before publishing.",
+      "steps": [
+        {
+          "id": "inspect-manifests",
+          "instruction": "Read root, app, package, and private workspace package manifests.",
+          "expected": "Each manifest with a version field reports 0.1.40."
+        }
+      ],
+      "passCriteria": "All release-bearing package.json files report version 0.1.40."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-manifests",
+          "instruction": "Read root, app, package, and private workspace package manifests.",
+          "expected": "Each manifest with a version field reports 0.1.40."
+        },
+        "result": true,
+        "descript": "All release-bearing workspace package manifests report 0.1.40.",
+        "evidence": [
+          "node manifest check output: package.json 0.1.40; apps/ndx/package.json 0.1.40; packages/ndx/package.json 0.1.40; apps/ndxserver/package.json 0.1.40; apps/toolcontainer/package.json 0.1.40.",
+          "yarn install --immutable exited 0 after the version changes.",
+          "yarn build exited 0 across @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "The workspace is consistently bumped to 0.1.40.",
+      "evidence": [
+        "All five package manifests with version fields report 0.1.40."
+      ]
+    }
+  }
+]

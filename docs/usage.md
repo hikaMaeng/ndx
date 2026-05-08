@@ -182,5 +182,10 @@ ndx --version
 ndxserver --version
 ```
 
+For release acceptance, install into a clean sandbox prefix outside the
+repository and run a small generated-project task with the installed bins
+available on `PATH`. The 0.1.40 release suite uses a Tetris project smoke and is
+recorded under `test/20260508/214231_publish-install-tetris.json`.
+
 Public npm publishing is not part of normal completion unless explicitly
 requested.

@@ -1,0 +1,78 @@
+[
+  {
+    "target": {
+      "id": "sandbox-install-tetris",
+      "title": "Installed ndx can drive a Tetris creation task in an isolated sandbox",
+      "test": "A separate filesystem sandbox installs @neurondev/ndx@0.1.40 from Verdaccio and uses the installed bins to run a simple Tetris project creation acceptance flow.",
+      "steps": [
+        {
+          "id": "create-sandbox",
+          "instruction": "Create a clean temporary sandbox outside the repository and install @neurondev/ndx@0.1.40 from Verdaccio there.",
+          "expected": "The sandbox contains an npm global prefix with ndx and ndxserver bins reporting version 0.1.40."
+        },
+        {
+          "id": "create-tetris",
+          "instruction": "In the sandbox, create a minimal Tetris game project through the installed Node/npm toolchain and installed ndx availability check.",
+          "expected": "The Tetris project contains HTML, CSS, and JavaScript files with game loop, board, piece movement, rotation, line clearing, score, and next-piece UI."
+        },
+        {
+          "id": "verify-tetris",
+          "instruction": "Run automated checks against the sandbox Tetris files.",
+          "expected": "Checks confirm required files exist and contain the expected gameplay and UI hooks."
+        }
+      ],
+      "passCriteria": "The isolated sandbox install works and the Tetris acceptance project passes its automated checks."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "create-sandbox",
+          "instruction": "Create a clean temporary sandbox outside the repository and install @neurondev/ndx@0.1.40 from Verdaccio there.",
+          "expected": "The sandbox contains an npm global prefix with ndx and ndxserver bins reporting version 0.1.40."
+        },
+        "result": false,
+        "descript": "Verdaccio install could not run because @neurondev/ndx@0.1.40 was not published; the equivalent local tarball install passed.",
+        "evidence": [
+          "npm install -g @neurondev/ndx@0.1.40 from Verdaccio returned ETARGET.",
+          "Local tarball install into /tmp/ndx-local-acceptance-0.1.40/prefix exited 0.",
+          "/tmp/ndx-local-acceptance-0.1.40/prefix/bin/ndx --version returned 0.1.40.",
+          "/tmp/ndx-local-acceptance-0.1.40/prefix/bin/ndxserver --version returned 0.1.40."
+        ]
+      },
+      {
+        "target": {
+          "id": "create-tetris",
+          "instruction": "In the sandbox, create a minimal Tetris game project through the installed Node/npm toolchain and installed ndx availability check.",
+          "expected": "The Tetris project contains HTML, CSS, and JavaScript files with game loop, board, piece movement, rotation, line clearing, score, and next-piece UI."
+        },
+        "result": true,
+        "descript": "The isolated sandbox contains a Tetris project with the required files and gameplay hooks.",
+        "evidence": [
+          "Created /tmp/ndx-local-acceptance-0.1.40/work/tetris/index.html.",
+          "Created /tmp/ndx-local-acceptance-0.1.40/work/tetris/styles.css.",
+          "Created /tmp/ndx-local-acceptance-0.1.40/work/tetris/game.js."
+        ]
+      },
+      {
+        "target": {
+          "id": "verify-tetris",
+          "instruction": "Run automated checks against the sandbox Tetris files.",
+          "expected": "Checks confirm required files exist and contain the expected gameplay and UI hooks."
+        },
+        "result": true,
+        "descript": "Automated file checks passed for the generated Tetris project.",
+        "evidence": [
+          "Node verification returned result true for semantic main, next-piece UI, board dimensions, movement, rotation, line clearing, and game loop."
+        ]
+      }
+    ],
+    "result": {
+      "result": false,
+      "descript": "Tetris acceptance passes for the corrected local package tarball, but the required Verdaccio install cannot pass until the registry accepts 0.1.40.",
+      "evidence": [
+        "Local tarball install and Tetris checks passed.",
+        "Verdaccio install failed because @neurondev/ndx@0.1.40 is not available in the registry."
+      ]
+    }
+  }
+]
