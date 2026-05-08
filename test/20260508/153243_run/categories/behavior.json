@@ -1,0 +1,100 @@
+[
+  {
+    "target": {
+      "id": "stream-deltas-before-final",
+      "title": "Assistant deltas are emitted before final text",
+      "test": "The agent loop must emit item lifecycle and text delta events while the model response is still active instead of only emitting final model_text.",
+      "steps": [
+        {
+          "id": "inspect-stream-types",
+          "instruction": "Inspect model and agent loop stream event types after implementation.",
+          "expected": "ModelClient supports an optional stream method and AgentEvent contains item_started, agent_message_delta, and item_completed event types."
+        },
+        {
+          "id": "inspect-runtime-forwarding",
+          "instruction": "Inspect runtime event forwarding after implementation.",
+          "expected": "AgentRuntime forwards item lifecycle and delta events to RuntimeEvent messages without treating every delta as persisted final history."
+        }
+      ],
+      "passCriteria": "The loop can surface streaming progress before the final assistant message is returned."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-stream-types",
+          "instruction": "Inspect model and agent loop stream event types after implementation.",
+          "expected": "ModelClient supports an optional stream method and AgentEvent contains item_started, agent_message_delta, and item_completed event types."
+        },
+        "result": true,
+        "descript": "ModelClient now exposes optional stream events and AgentEvent includes item lifecycle, assistant delta, and tool-call delta variants.",
+        "evidence": [
+          "packages/ndx/src/shared/types.ts defines ModelStreamEvent and optional ModelClient.stream.",
+          "packages/ndx/src/agent/loop/types.ts defines item_started, agent_message_delta, tool_call_delta, and item_completed AgentEvent variants.",
+          "packages/ndx/src/agent/loop/sampling.ts consumes ModelStreamEvent before final ModelResponse handling."
+        ]
+      },
+      {
+        "target": {
+          "id": "inspect-runtime-forwarding",
+          "instruction": "Inspect runtime event forwarding after implementation.",
+          "expected": "AgentRuntime forwards item lifecycle and delta events to RuntimeEvent messages without treating every delta as persisted final history."
+        },
+        "result": true,
+        "descript": "AgentRuntime forwards streaming progress as protocol events and keeps persisted assistant history tied to final model_text.",
+        "evidence": [
+          "packages/ndx/src/runtime/runtime.ts forwards item_started, agent_message_delta, tool_call_delta, and item_completed before model_text handling.",
+          "packages/ndx/src/shared/protocol.ts defines matching runtime event message variants.",
+          "packages/ndx/src/session/server/notifications.ts maps streaming progress to item/* notification methods."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "The loop can surface in-turn streaming progress before final assistant text while preserving final text as the persisted compatibility event.",
+      "evidence": [
+        "Command: rg -n \"buildInitialContext|environment_context|AGENTS.md instructions|tool_call_delta|agent_message_delta|ModelStreamEvent|stream\\\\?\" packages/ndx/src packages/ndx/docs",
+        "Command: yarn build",
+        "Build output included: Tasks: 4 successful, 4 total."
+      ]
+    }
+  },
+  {
+    "target": {
+      "id": "tool-followup-preserved",
+      "title": "Tool call follow-up behavior is preserved",
+      "test": "Streaming support must not break the existing model tool call -> worker execution -> function_call_output -> follow-up sampling cycle.",
+      "steps": [
+        {
+          "id": "run-build",
+          "instruction": "Run yarn build from the repository root after implementation.",
+          "expected": "The command exits successfully."
+        }
+      ],
+      "passCriteria": "The TypeScript build succeeds with existing tool-call contracts intact."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "run-build",
+          "instruction": "Run yarn build from the repository root after implementation.",
+          "expected": "The command exits successfully."
+        },
+        "result": true,
+        "descript": "The workspace build completed after stream events and initial context injection were added.",
+        "evidence": [
+          "yarn build exited 0.",
+          "Turbo reported 4 successful tasks.",
+          "TypeScript accepted ModelClient.stream, runtime protocol events, provider adapters, and initial-context input construction."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Tool follow-up contracts still compile with streaming support.",
+      "evidence": [
+        "Command: yarn build",
+        "Output included: Tasks: 4 successful, 4 total."
+      ]
+    }
+  }
+]

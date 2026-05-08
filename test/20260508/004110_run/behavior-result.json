@@ -1,0 +1,39 @@
+{
+  "target": {
+    "id": "build-preserves-types",
+    "title": "TypeScript build preserves agent loop contracts",
+    "test": "The refactored files must compile under the package TypeScript configuration without changing public types.",
+    "steps": [
+      {
+        "id": "run-package-build",
+        "instruction": "Run yarn build in the repository root after implementation.",
+        "expected": "The command exits successfully."
+      }
+    ],
+    "passCriteria": "The TypeScript build succeeds."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "run-package-build",
+        "instruction": "Run yarn build in the repository root after implementation.",
+        "expected": "The command exits successfully."
+      },
+      "result": true,
+      "descript": "The repository TypeScript build completed successfully after yarn install --immutable prepared PnP state.",
+      "evidence": [
+        "yarn install --immutable exited 0.",
+        "yarn build exited 0.",
+        "Turbo reported 4 successful tasks: @neurondev/ndx, @neurondev/ndx-core, @neurondev/ndx-toolcontainer, and @neurondev/ndxserver-app."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "The refactored loop compiles under the workspace TypeScript build.",
+    "evidence": [
+      "Command: yarn build",
+      "Output included: Tasks: 4 successful, 4 total."
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 import type {
   ModelResponse,
+  ModelStreamEvent,
   ModelToolCall,
   TokenUsage,
 } from "../shared/types.js";
@@ -55,6 +56,50 @@ export class OpenAiResponsesAdapter {
     return normalizeResponsesPayload(
       (await response.json()) as ResponsesPayload,
     );
+  }
+
+  async *stream(
+    input: ModelInput,
+    tools: unknown[] = [],
+    signal?: AbortSignal,
+  ): AsyncIterable<ModelStreamEvent> {
+    const response = await postJson(
+      `${this.options.baseUrl}/responses`,
+      providerHeaders(this.options.apiKey, { Accept: "text/event-stream" }),
+      {
+        model: this.options.model,
+        instructions: this.options.instructions,
+        input: responsesInput(input),
+        tools: responsesTools(tools),
+        tool_choice: "auto",
+        stream: true,
+        ...optionalProviderParameters(this.options),
+      },
+      signal,
+    );
+    if (!response.ok) {
+      throw new Error(`OpenAI responses failed: ${await errorText(response)}`);
+    }
+    if (response.body === null) {
+      throw new Error("OpenAI responses stream failed: empty response body");
+    }
+
+    const items = new Map<string, ResponsesOutputItem>();
+    let completed: ModelResponse | undefined;
+    for await (const event of parseServerSentEvents(response.body)) {
+      const mapped = mapResponsesStreamEvent(event, items);
+      if (mapped !== undefined) {
+        if (mapped.type === "response_completed") {
+          completed = mapped.response;
+        }
+        yield mapped;
+      }
+    }
+    if (completed === undefined) {
+      throw new Error(
+        "OpenAI responses stream ended before response.completed",
+      );
+    }
   }
 }
 
@@ -196,6 +241,147 @@ function normalizeResponsesUsage(
       };
 }
 
+async function* parseServerSentEvents(
+  body: ReadableStream<Uint8Array>,
+): AsyncIterable<Record<string, unknown>> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let splitIndex = buffer.search(/\r?\n\r?\n/);
+      while (splitIndex >= 0) {
+        const chunk = buffer.slice(0, splitIndex);
+        buffer = buffer.slice(
+          buffer[splitIndex] === "\r" ? splitIndex + 4 : splitIndex + 2,
+        );
+        const data = chunk
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).trimStart())
+          .join("\n");
+        if (data.length > 0 && data !== "[DONE]") {
+          yield JSON.parse(data) as Record<string, unknown>;
+        }
+        splitIndex = buffer.search(/\r?\n\r?\n/);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function mapResponsesStreamEvent(
+  event: Record<string, unknown>,
+  items: Map<string, ResponsesOutputItem>,
+): ModelStreamEvent | undefined {
+  const type = typeof event.type === "string" ? event.type : "";
+  if (type === "response.created") {
+    const response = objectValue(event.response);
+    return {
+      type: "response_started",
+      responseId: stringValue(response?.id),
+    };
+  }
+  if (type === "response.output_item.added") {
+    const item = objectValue(event.item) as ResponsesOutputItem | undefined;
+    if (item === undefined) {
+      return undefined;
+    }
+    const itemId = item.id ?? item.call_id ?? stringValue(event.item_id);
+    if (itemId === undefined || itemId.length === 0) {
+      return undefined;
+    }
+    items.set(itemId, { ...item });
+    return {
+      type: "item_started",
+      itemId,
+      itemType: streamItemType(item.type),
+      callId: item.call_id,
+      name: item.name,
+      arguments: item.arguments,
+    };
+  }
+  if (type === "response.output_text.delta") {
+    const itemId = stringValue(event.item_id);
+    const delta = stringValue(event.delta);
+    return itemId === undefined || delta === undefined
+      ? undefined
+      : { type: "text_delta", itemId, delta };
+  }
+  if (type === "response.function_call_arguments.delta") {
+    const itemId = stringValue(event.item_id);
+    const delta = stringValue(event.delta);
+    const callId = stringValue(event.call_id);
+    return itemId === undefined || delta === undefined
+      ? undefined
+      : { type: "tool_call_delta", itemId, callId, delta };
+  }
+  if (type === "response.output_item.done") {
+    const item = objectValue(event.item) as ResponsesOutputItem | undefined;
+    if (item === undefined) {
+      return undefined;
+    }
+    const itemId = item.id ?? item.call_id ?? stringValue(event.item_id);
+    if (itemId === undefined || itemId.length === 0) {
+      return undefined;
+    }
+    const previous = items.get(itemId) ?? {};
+    const completedItem = { ...previous, ...item };
+    items.set(itemId, completedItem);
+    return {
+      type: "item_completed",
+      itemId,
+      itemType: streamItemType(completedItem.type),
+      text:
+        completedItem.type === "message"
+          ? outputText([completedItem])
+          : undefined,
+      callId: completedItem.call_id,
+      name: completedItem.name,
+      arguments: completedItem.arguments,
+    };
+  }
+  if (type === "response.completed") {
+    const response = objectValue(event.response) as
+      | ResponsesPayload
+      | undefined;
+    return response === undefined
+      ? undefined
+      : {
+          type: "response_completed",
+          response: normalizeResponsesPayload(response),
+        };
+  }
+  return undefined;
+}
+
+function streamItemType(
+  value: string | undefined,
+): "message" | "function_call" | "reasoning" | "other" {
+  if (
+    value === "message" ||
+    value === "function_call" ||
+    value === "reasoning"
+  ) {
+    return value;
+  }
+  return "other";
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return isObject(value) ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -206,7 +392,10 @@ function isMessage(
   return (
     isObject(input) &&
     input.type === "message" &&
-    (input.role === "user" || input.role === "assistant") &&
+    (input.role === "system" ||
+      input.role === "developer" ||
+      input.role === "user" ||
+      input.role === "assistant") &&
     typeof input.content === "string"
   );
 }

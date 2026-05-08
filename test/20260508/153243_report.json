@@ -1,0 +1,117 @@
+{
+  "@meta": {
+    "subagents": [
+      {
+        "target": "behavior",
+        "elapsed": 1368722
+      },
+      {
+        "target": "documentation",
+        "elapsed": 1441408
+      },
+      {
+        "target": "deployment",
+        "elapsed": 1724640
+      }
+    ],
+    "elapsed": 2122432,
+    "result": true,
+    "detail": "4 passed / 0 failed",
+    "started": "2026-05-08T06:34:19.578Z"
+  },
+  "behavior": [
+    {
+      "id": "stream-deltas-before-final",
+      "title": "Assistant deltas are emitted before final text",
+      "test": "The agent loop must emit item lifecycle and text delta events while the model response is still active instead of only emitting final model_text.",
+      "steps": [
+        {
+          "id": "inspect-stream-types",
+          "instruction": "Inspect model and agent loop stream event types after implementation.",
+          "expected": "ModelClient supports an optional stream method and AgentEvent contains item_started, agent_message_delta, and item_completed event types.",
+          "result": true,
+          "descript": "ModelClient now exposes optional stream events and AgentEvent includes item lifecycle, assistant delta, and tool-call delta variants.",
+          "evidence": [
+            "packages/ndx/src/shared/types.ts defines ModelStreamEvent and optional ModelClient.stream.",
+            "packages/ndx/src/agent/loop/types.ts defines item_started, agent_message_delta, tool_call_delta, and item_completed AgentEvent variants.",
+            "packages/ndx/src/agent/loop/sampling.ts consumes ModelStreamEvent before final ModelResponse handling."
+          ]
+        },
+        {
+          "id": "inspect-runtime-forwarding",
+          "instruction": "Inspect runtime event forwarding after implementation.",
+          "expected": "AgentRuntime forwards item lifecycle and delta events to RuntimeEvent messages without treating every delta as persisted final history.",
+          "result": true,
+          "descript": "AgentRuntime forwards streaming progress as protocol events and keeps persisted assistant history tied to final model_text.",
+          "evidence": [
+            "packages/ndx/src/runtime/runtime.ts forwards item_started, agent_message_delta, tool_call_delta, and item_completed before model_text handling.",
+            "packages/ndx/src/shared/protocol.ts defines matching runtime event message variants.",
+            "packages/ndx/src/session/server/notifications.ts maps streaming progress to item/* notification methods."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tool-followup-preserved",
+      "title": "Tool call follow-up behavior is preserved",
+      "test": "Streaming support must not break the existing model tool call -> worker execution -> function_call_output -> follow-up sampling cycle.",
+      "steps": [
+        {
+          "id": "run-build",
+          "instruction": "Run yarn build from the repository root after implementation.",
+          "expected": "The command exits successfully.",
+          "result": true,
+          "descript": "The workspace build completed after stream events and initial context injection were added.",
+          "evidence": [
+            "yarn build exited 0.",
+            "Turbo reported 4 successful tasks.",
+            "TypeScript accepted ModelClient.stream, runtime protocol events, provider adapters, and initial-context input construction."
+          ]
+        }
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "streaming-contract-documented",
+      "title": "Streaming event contract is documented",
+      "test": "Package docs must explain that final return value and in-turn event stream are separate contracts.",
+      "steps": [
+        {
+          "id": "inspect-docs",
+          "instruction": "Inspect packages/ndx/docs/api.md, internals.md, and testing.md after implementation.",
+          "expected": "Docs describe model stream events, runtime item lifecycle events, final return semantics, and the agenttest suite.",
+          "result": true,
+          "descript": "Docs now describe streaming runtime events, initial turn context snapshots, final text compatibility, and the verification suite.",
+          "evidence": [
+            "packages/ndx/docs/api.md documents item_started, agent_message_delta, tool_call_delta, item_completed, and Turn Context Input.",
+            "packages/ndx/docs/internals.md maps Codex Rust turn/context files to NDX initial-context, sampling, runtime, and provider owners.",
+            "packages/ndx/docs/testing.md references test/20260508/153243_agent-loop-stream-events.json and the initial-context contract."
+          ]
+        }
+      ]
+    }
+  ],
+  "deployment": [
+    {
+      "id": "deploy-contract",
+      "title": "Deploy verification completes",
+      "test": "The repository deploy contract must still complete after streaming event changes.",
+      "steps": [
+        {
+          "id": "run-deploy",
+          "instruction": "Run npm run deploy from the repository root after implementation.",
+          "expected": "The command exits successfully or the failure is recorded with concrete blocker evidence.",
+          "result": true,
+          "descript": "The deploy script completed build, test policy output, Docker image build, compose start, and cleanup.",
+          "evidence": [
+            "npm run deploy exited 0.",
+            "Deploy output included: Tasks: 4 successful, 4 total.",
+            "Deploy output included: Image hika00/ndx-sandbox:0.1.1 Built.",
+            "Deploy output included container start, stop, removal, and network removal for ndx-deploy-24651."
+          ]
+        }
+      ]
+    }
+  ]
+}

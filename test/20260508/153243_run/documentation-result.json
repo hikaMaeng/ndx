@@ -1,0 +1,40 @@
+{
+  "target": {
+    "id": "streaming-contract-documented",
+    "title": "Streaming event contract is documented",
+    "test": "Package docs must explain that final return value and in-turn event stream are separate contracts.",
+    "steps": [
+      {
+        "id": "inspect-docs",
+        "instruction": "Inspect packages/ndx/docs/api.md, internals.md, and testing.md after implementation.",
+        "expected": "Docs describe model stream events, runtime item lifecycle events, final return semantics, and the agenttest suite."
+      }
+    ],
+    "passCriteria": "Docs contain the streaming event contract and verification reference."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "inspect-docs",
+        "instruction": "Inspect packages/ndx/docs/api.md, internals.md, and testing.md after implementation.",
+        "expected": "Docs describe model stream events, runtime item lifecycle events, final return semantics, and the agenttest suite."
+      },
+      "result": true,
+      "descript": "Docs now describe streaming runtime events, initial turn context snapshots, final text compatibility, and the verification suite.",
+      "evidence": [
+        "packages/ndx/docs/api.md documents item_started, agent_message_delta, tool_call_delta, item_completed, and Turn Context Input.",
+        "packages/ndx/docs/internals.md maps Codex Rust turn/context files to NDX initial-context, sampling, runtime, and provider owners.",
+        "packages/ndx/docs/testing.md references test/20260508/153243_agent-loop-stream-events.json and the initial-context contract."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Documentation records both streaming progress semantics and Codex-style input context construction.",
+    "evidence": [
+      "packages/ndx/docs/api.md",
+      "packages/ndx/docs/internals.md",
+      "packages/ndx/docs/testing.md"
+    ]
+  }
+}

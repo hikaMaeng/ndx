@@ -16,11 +16,13 @@ export async function postJson(
   url: string,
   headers: Record<string, string>,
   body: unknown,
+  signal?: AbortSignal,
 ): Promise<Response> {
   return await fetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
+    signal,
   });
 }
 

@@ -15,6 +15,14 @@ export function runtimeNotification(
       return { method: "session/configured", params };
     case "turn_started":
       return { method: "turn/started", params };
+    case "item_started":
+      return { method: "item/started", params };
+    case "agent_message_delta":
+      return { method: "item/agentMessage/delta", params };
+    case "tool_call_delta":
+      return { method: "item/toolCall/delta", params };
+    case "item_completed":
+      return { method: "item/completed", params };
     case "agent_message":
       return { method: "item/agentMessage", params };
     case "tool_call":

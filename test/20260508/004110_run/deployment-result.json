@@ -1,0 +1,41 @@
+{
+  "target": {
+    "id": "deploy-contract",
+    "title": "Deploy verification completes",
+    "test": "The repository deploy contract must still complete after the agent loop refactor.",
+    "steps": [
+      {
+        "id": "run-deploy",
+        "instruction": "Run npm run deploy from the repository root after implementation.",
+        "expected": "The command exits successfully or the failure is recorded with concrete blocker evidence."
+      }
+    ],
+    "passCriteria": "Deploy succeeds, or any failure is recorded with command output and an explicit blocker."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "run-deploy",
+        "instruction": "Run npm run deploy from the repository root after implementation.",
+        "expected": "The command exits successfully or the failure is recorded with concrete blocker evidence."
+      },
+      "result": true,
+      "descript": "The deploy script completed build, Docker image build, compose start, and cleanup.",
+      "evidence": [
+        "npm run deploy exited 0.",
+        "Deploy output included: Tasks: 4 successful, 4 total.",
+        "Deploy output included: Image hika00/ndx-sandbox:0.1.1 Built.",
+        "Deploy output included container start, stop, remove, and network removal for ndx-deploy-9468."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "The repository deploy contract completed successfully.",
+    "evidence": [
+      "Command: npm run deploy",
+      "Docker image: hika00/ndx-sandbox:0.1.1",
+      "Compose project: ndx-deploy-9468"
+    ]
+  }
+}

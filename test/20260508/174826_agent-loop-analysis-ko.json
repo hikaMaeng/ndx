@@ -1,0 +1,46 @@
+{
+  "id": "agent-loop-analysis-ko",
+  "title": "Agent loop analysis Korean report",
+  "dependencies": {
+    "ndx": "0.1.39",
+    "typescript": "5.9.2",
+    "node": ">=22"
+  },
+  "items": {
+    "documentation": [
+      {
+        "id": "korean-report-created",
+        "title": "Korean report mirrors the English analysis",
+        "test": "The package docs must include a Korean version of agent-loop-analysis.md with the same durable sections and code evidence.",
+        "steps": [
+          {
+            "id": "inspect-korean-report",
+            "instruction": "Inspect packages/ndx/docs/agent-loop-analysis_ko.md after implementation.",
+            "expected": "The Korean report exists and contains translated sections for evidence, response stream, tool follow-up, sub-agents and agent jobs, queues and concurrency, initial instructions, and branch outcome."
+          },
+          {
+            "id": "inspect-doc-index",
+            "instruction": "Inspect package docs indexes after implementation.",
+            "expected": "The Korean report is discoverable from the package README or related internals/testing docs."
+          }
+        ],
+        "passCriteria": "The Korean document is present, faithful to the English report, and discoverable from package docs."
+      }
+    ],
+    "verification": [
+      {
+        "id": "deploy-after-korean-report",
+        "title": "Deploy still succeeds after adding the Korean report",
+        "test": "The repository deploy contract must still complete after the documentation-only Korean report is added.",
+        "steps": [
+          {
+            "id": "run-deploy",
+            "instruction": "Run npm run deploy from the repository root after implementation.",
+            "expected": "The command exits successfully or records a concrete blocker."
+          }
+        ],
+        "passCriteria": "Deploy succeeds, or any failure is captured with specific command evidence."
+      }
+    ]
+  }
+}

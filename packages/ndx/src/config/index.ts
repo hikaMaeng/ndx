@@ -79,8 +79,6 @@ const DEFAULT_PROJECT_DOC_MAX_BYTES = 32 * 1024;
 const DEFAULT_PROJECT_ROOT_MARKERS = [".git"];
 const SKILL_FILENAME = "SKILL.md";
 const SKILLS_DIR_NAME = "skills";
-const PROJECT_DOC_SEPARATOR = "\n\n--- project-doc ---\n\n";
-
 /** Return the single global ndx configuration directory. */
 export function resolveGlobalNdxDir(options: ConfigLoadOptions = {}): string {
   return resolve(options.globalDir ?? NDX_DEFAULTS.globalDir);
@@ -147,10 +145,6 @@ export function loadConfig(
 
   const agents = loadAgentsInstructions(cwd, globalDir, merged);
   if (agents.instructions !== undefined) {
-    merged.instructions = [
-      expectString(merged.instructions, "instructions"),
-      agents.instructions,
-    ].join(PROJECT_DOC_SEPARATOR);
     sources.push(...agents.sources);
   }
 

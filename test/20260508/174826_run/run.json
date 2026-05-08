@@ -1,0 +1,74 @@
+{
+  "runUuid": "run-40d8c523-5446-4ad4-a3bf-7e031331e04f",
+  "suitePath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/174826_agent-loop-analysis-ko.json",
+  "suite": {
+    "id": "agent-loop-analysis-ko",
+    "title": "Agent loop analysis Korean report",
+    "dependencies": {
+      "ndx": "0.1.39",
+      "typescript": "5.9.2",
+      "node": ">=22"
+    },
+    "items": {
+      "documentation": [
+        {
+          "id": "korean-report-created",
+          "title": "Korean report mirrors the English analysis",
+          "test": "The package docs must include a Korean version of agent-loop-analysis.md with the same durable sections and code evidence.",
+          "steps": [
+            {
+              "id": "inspect-korean-report",
+              "instruction": "Inspect packages/ndx/docs/agent-loop-analysis_ko.md after implementation.",
+              "expected": "The Korean report exists and contains translated sections for evidence, response stream, tool follow-up, sub-agents and agent jobs, queues and concurrency, initial instructions, and branch outcome."
+            },
+            {
+              "id": "inspect-doc-index",
+              "instruction": "Inspect package docs indexes after implementation.",
+              "expected": "The Korean report is discoverable from the package README or related internals/testing docs."
+            }
+          ],
+          "passCriteria": "The Korean document is present, faithful to the English report, and discoverable from package docs."
+        }
+      ],
+      "verification": [
+        {
+          "id": "deploy-after-korean-report",
+          "title": "Deploy still succeeds after adding the Korean report",
+          "test": "The repository deploy contract must still complete after the documentation-only Korean report is added.",
+          "steps": [
+            {
+              "id": "run-deploy",
+              "instruction": "Run npm run deploy from the repository root after implementation.",
+              "expected": "The command exits successfully or records a concrete blocker."
+            }
+          ],
+          "passCriteria": "Deploy succeeds, or any failure is captured with specific command evidence."
+        }
+      ]
+    }
+  },
+  "runDir": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/174826_run",
+  "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/174826_report.json",
+  "summaryPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/174826_summary.md",
+  "status": "done",
+  "createdAt": "2026-05-08T08:49:24.232Z",
+  "updatedAt": "2026-05-08T08:58:07.231Z",
+  "categories": {
+    "documentation": {
+      "workerUuid": "worker-ec715ecc-bcdd-47c1-b095-b76c44c26bc1",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/174826_run/categories/documentation.json",
+      "startedAt": "2026-05-08T08:51:21.340Z",
+      "finishedAt": "2026-05-08T08:53:09.552Z"
+    },
+    "verification": {
+      "workerUuid": "worker-8fdd151b-adb7-4ef2-94ab-9da9819958fc",
+      "status": "done",
+      "nextIndex": 1,
+      "resultPath": "/mnt/c/Users/hika0/.codex/worktrees/2032/ndx/test/20260508/174826_run/categories/verification.json",
+      "startedAt": "2026-05-08T08:53:43.945Z",
+      "finishedAt": "2026-05-08T08:58:07.231Z"
+    }
+  }
+}

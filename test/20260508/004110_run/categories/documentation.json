@@ -1,0 +1,42 @@
+[
+  {
+    "target": {
+      "id": "codex-parity-analysis-documented",
+      "title": "OpenAI Codex loop comparison is documented",
+      "test": "The implementation must include a concise durable analysis of OpenAI Codex Rust loop parity and NDX-specific boundaries.",
+      "steps": [
+        {
+          "id": "inspect-architecture-doc",
+          "instruction": "Inspect packages/ndx/docs/architecture.md and packages/ndx/docs/internals.md after implementation.",
+          "expected": "The docs describe the new agent loop submodules and explain which Codex Rust loop responsibilities are mirrored, deferred, or intentionally owned elsewhere in NDX."
+        }
+      ],
+      "passCriteria": "Docs contain the parity analysis and module ownership contracts."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-architecture-doc",
+          "instruction": "Inspect packages/ndx/docs/architecture.md and packages/ndx/docs/internals.md after implementation.",
+          "expected": "The docs describe the new agent loop submodules and explain which Codex Rust loop responsibilities are mirrored, deferred, or intentionally owned elsewhere in NDX."
+        },
+        "result": true,
+        "descript": "Architecture and internals docs now describe the module split and Codex Rust parity matrix.",
+        "evidence": [
+          "packages/ndx/docs/architecture.md contains an Agent Loop section listing types.ts, state.ts, skills.ts, sampling.ts, and tool-execution.ts.",
+          "packages/ndx/docs/internals.md contains an Agent Loop Parity table mapping Codex Rust responsibilities to NDX owners.",
+          "packages/ndx/docs/testing.md references test/20260508/004110_agent-loop-refactor.json."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "Documentation records the OpenAI Codex comparison and NDX-specific loop ownership boundaries.",
+      "evidence": [
+        "packages/ndx/docs/architecture.md",
+        "packages/ndx/docs/internals.md",
+        "packages/ndx/docs/testing.md"
+      ]
+    }
+  }
+]

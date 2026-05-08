@@ -1,0 +1,59 @@
+[
+  {
+    "target": {
+      "id": "korean-report-created",
+      "title": "Korean report mirrors the English analysis",
+      "test": "The package docs must include a Korean version of agent-loop-analysis.md with the same durable sections and code evidence.",
+      "steps": [
+        {
+          "id": "inspect-korean-report",
+          "instruction": "Inspect packages/ndx/docs/agent-loop-analysis_ko.md after implementation.",
+          "expected": "The Korean report exists and contains translated sections for evidence, response stream, tool follow-up, sub-agents and agent jobs, queues and concurrency, initial instructions, and branch outcome."
+        },
+        {
+          "id": "inspect-doc-index",
+          "instruction": "Inspect package docs indexes after implementation.",
+          "expected": "The Korean report is discoverable from the package README or related internals/testing docs."
+        }
+      ],
+      "passCriteria": "The Korean document is present, faithful to the English report, and discoverable from package docs."
+    },
+    "steps": [
+      {
+        "target": {
+          "id": "inspect-korean-report",
+          "instruction": "Inspect packages/ndx/docs/agent-loop-analysis_ko.md after implementation.",
+          "expected": "The Korean report exists and contains translated sections for evidence, response stream, tool follow-up, sub-agents and agent jobs, queues and concurrency, initial instructions, and branch outcome."
+        },
+        "result": true,
+        "descript": "The Korean report exists and mirrors the English report's durable sections and code evidence.",
+        "evidence": [
+          "packages/ndx/docs/agent-loop-analysis_ko.md contains sections for 근거, 응답 스트림, Tool Follow-Up, Sub-Agent와 Agent Job, Queue와 Concurrency, 초기 Instructions, and 브랜치 결과.",
+          "packages/ndx/docs/agent-loop-analysis_ko.md preserves Rust evidence paths under codex-rs/core and current TypeScript evidence paths under packages/ndx/src.",
+          "packages/ndx/docs/agent-loop-analysis_ko.md translates the branch conclusions for response streaming, all-tool-output follow-up blocking, placeholder sub-agent tools, queue topology, and initial instruction assembly."
+        ]
+      },
+      {
+        "target": {
+          "id": "inspect-doc-index",
+          "instruction": "Inspect package docs indexes after implementation.",
+          "expected": "The Korean report is discoverable from the package README or related internals/testing docs."
+        },
+        "result": true,
+        "descript": "The Korean report is linked from the package README and the verification suite is documented.",
+        "evidence": [
+          "packages/ndx/README.md includes docs/agent-loop-analysis_ko.md in the navigation table.",
+          "packages/ndx/docs/testing.md records test/20260508/174826_agent-loop-analysis-ko.json as the Korean report verification suite."
+        ]
+      }
+    ],
+    "result": {
+      "result": true,
+      "descript": "The Korean report is present, faithful to the English source, and discoverable from package documentation.",
+      "evidence": [
+        "packages/ndx/docs/agent-loop-analysis_ko.md was added.",
+        "packages/ndx/README.md and packages/ndx/docs/testing.md were updated."
+      ]
+    }
+  }
+]

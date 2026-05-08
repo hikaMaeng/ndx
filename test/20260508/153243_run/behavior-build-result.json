@@ -1,0 +1,39 @@
+{
+  "target": {
+    "id": "tool-followup-preserved",
+    "title": "Tool call follow-up behavior is preserved",
+    "test": "Streaming support must not break the existing model tool call -> worker execution -> function_call_output -> follow-up sampling cycle.",
+    "steps": [
+      {
+        "id": "run-build",
+        "instruction": "Run yarn build from the repository root after implementation.",
+        "expected": "The command exits successfully."
+      }
+    ],
+    "passCriteria": "The TypeScript build succeeds with existing tool-call contracts intact."
+  },
+  "steps": [
+    {
+      "target": {
+        "id": "run-build",
+        "instruction": "Run yarn build from the repository root after implementation.",
+        "expected": "The command exits successfully."
+      },
+      "result": true,
+      "descript": "The workspace build completed after stream events and initial context injection were added.",
+      "evidence": [
+        "yarn build exited 0.",
+        "Turbo reported 4 successful tasks.",
+        "TypeScript accepted ModelClient.stream, runtime protocol events, provider adapters, and initial-context input construction."
+      ]
+    }
+  ],
+  "result": {
+    "result": true,
+    "descript": "Tool follow-up contracts still compile with streaming support.",
+    "evidence": [
+      "Command: yarn build",
+      "Output included: Tasks: 4 successful, 4 total."
+    ]
+  }
+}

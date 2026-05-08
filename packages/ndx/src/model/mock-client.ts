@@ -1,4 +1,8 @@
-import type { ModelClient, ModelResponse } from "../shared/types.js";
+import type {
+  ModelClient,
+  ModelResponse,
+  ModelStreamEvent,
+} from "../shared/types.js";
 
 export class MockModelClient implements ModelClient {
   private step = 0;
@@ -28,6 +32,47 @@ export class MockModelClient implements ModelClient {
       toolCalls: [],
       raw: { input },
     };
+  }
+
+  async *stream(input: unknown): AsyncIterable<ModelStreamEvent> {
+    const response = await this.create(input);
+    yield { type: "response_started", responseId: response.id };
+    if (response.text.length > 0) {
+      const itemId = response.id === undefined ? "mock-message" : response.id;
+      yield { type: "item_started", itemId, itemType: "message" };
+      yield { type: "text_delta", itemId, delta: response.text };
+      yield {
+        type: "item_completed",
+        itemId,
+        itemType: "message",
+        text: response.text,
+      };
+    }
+    for (const call of response.toolCalls) {
+      yield {
+        type: "item_started",
+        itemId: call.callId,
+        itemType: "function_call",
+        callId: call.callId,
+        name: call.name,
+        arguments: call.arguments,
+      };
+      yield {
+        type: "tool_call_delta",
+        itemId: call.callId,
+        callId: call.callId,
+        delta: call.arguments,
+      };
+      yield {
+        type: "item_completed",
+        itemId: call.callId,
+        itemType: "function_call",
+        callId: call.callId,
+        name: call.name,
+        arguments: call.arguments,
+      };
+    }
+    yield { type: "response_completed", response };
   }
 }
 
